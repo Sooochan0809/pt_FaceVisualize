@@ -40,30 +40,48 @@
             pointer-events: none;
         }
 
-        #out,
-        #controls {
+        .visualize {
             position: absolute;
-            padding: 0.5em;
+            inset: 0;
+            z-index: 1;
             background: #f0f0f0cc;
         }
 
+        .visualize[hidden] {
+            display: none;
+        }
+
+        #out,
+        #layerControls {
+            padding: 0.5em;
+            background: #f0f0f0cc;
+            font: 0.85em "Yu Gothic Medium", "Yu Gothic", sans-serif;
+        }
+
         #out {
+            position: absolute;
             right: 8px;
             bottom: 8px;
             margin: 0;
             font: 0.85em monospace;
         }
 
-        #controls {
-            top: 8px;
-            left: 8px;
-            right: 8px;
-            box-sizing: border-box;
+        #calibControls {
             display: flex;
             flex-wrap: wrap;
             gap: 0.5em;
             align-items: center;
-            font: 0.85em "Yu Gothic Medium", "Yu Gothic", sans-serif;
+            margin-top: 0.5em;
+        }
+
+        #layerControls {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            z-index: 999;
+            display: flex;
+            gap: 0.4em;
+            align-items: center;
         }
 
         button {
@@ -88,7 +106,7 @@
 
         .shape {
             display: grid;
-            grid-template-columns: auto 7em 4.5em;
+            grid-template-columns: auto 7em 3em;
             gap: 0.5em;
             align-items: center;
         }
@@ -144,12 +162,18 @@
     <main>
         <video id="video" autoplay playsinline muted></video>
         <canvas id="canvas"></canvas>
-        <div id="controls">
-            <button id="calibrate">キャリブレーション</button>
-            <button id="clearBaseline">解除</button>
-            <span id="status"></span>
+        <section id="visualize_01" class="visualize" hidden></section>
+        <label id="layerControls">
+            <input id="visualizeToggle" type="checkbox">
+            <span>visualize_01</span>
+        </label>
+        <div id="out">
+            <div id="calibControls">
+                <button id="calibrate">キャリブ</button>
+                <button id="clearBaseline">解除</button>
+                <span id="status"></span>
+            </div>
         </div>
-        <div id="out"></div>
     </main>
 </body>
 
@@ -157,11 +181,11 @@
     import { FaceLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.34";
 
     const $ = id => document.getElementById(id);
-    const [video, canvas, out, calibrate, clearBaseline, status] = ["video", "canvas", "out", "calibrate", "clearBaseline", "status"].map($);
+    const [video, canvas, out, calibControls, calibrate, clearBaseline, status, visualizeToggle, visualize] = ["video", "canvas", "out", "calibControls", "calibrate", "clearBaseline", "status", "visualizeToggle", "visualize_01"].map($);
     const ctx = canvas.getContext("2d");
     const shapes = new Map();
     const base = new Map();
-    const [WARMUP_FRAMES, CALIBRATION_FRAMES] = [30, 120];
+    const [WARMUP_FRAMES, CALIBRATION_FRAMES, DEADZONE] = [30, 120, 0.005];
     const calibration = { warmup: 0, remaining: 0, samples: 0, stats: new Map() };
     const [VW, VH] = [1280, 720];
 
@@ -185,22 +209,26 @@
 
     video.onloadeddata = () => requestAnimationFrame(loop);
 
+    visualizeToggle.onchange = () => {
+        visualize.hidden = !visualizeToggle.checked;
+        out.hidden = visualizeToggle.checked;
+    };
+
     calibrate.onclick = () => {
         resetCalibration(WARMUP_FRAMES, CALIBRATION_FRAMES);
         calibrate.disabled = true;
-        status.textContent = "無表情を維持してください";
     };
 
     clearBaseline.onclick = () => {
         resetCalibration();
         calibrate.disabled = false;
-        status.textContent = "未キャリブレーション";
     };
 
     function resetCalibration(warmup = 0, frames = 0) {
         base.clear();
         Object.assign(calibration, { warmup, remaining: frames, samples: 0 });
         calibration.stats.clear();
+        status.textContent = "";
     }
 
     function loop() {
@@ -215,8 +243,8 @@
 
         for (const { categoryName, score } of categories) {
             if (!shapes.has(categoryName)) {
-                out.insertAdjacentHTML("beforeend", `<div class="shape"><span>${categoryName}</span><span class="bar raw"><span class="fill"></span></span><span class="value"></span></div>`);
-                shapes.set(categoryName, [...out.lastElementChild.children].slice(1));
+                calibControls.insertAdjacentHTML("beforebegin", `<div class="shape"><span>${categoryName}</span><span class="bar raw"><span class="fill"></span></span><span class="value"></span></div>`);
+                shapes.set(categoryName, [...calibControls.previousElementSibling.children].slice(1));
             }
             const [bar, value] = shapes.get(categoryName);
             const calibrated = base.size > 0;
@@ -254,7 +282,7 @@
         for (const [categoryName, { sum, sq }] of calibration.stats) {
             const mean = sum / calibration.samples;
             const variance = Math.max(sq / calibration.samples - mean * mean, 0);
-            base.set(categoryName, { mean, dead: Math.max(Math.sqrt(variance) * 3, 0.005) });
+            base.set(categoryName, { mean, dead: Math.max(Math.sqrt(variance) * 3, DEADZONE) });
         }
         calibrate.disabled = false;
         status.textContent = `キャリブ済み (${calibration.samples} frames)`;
