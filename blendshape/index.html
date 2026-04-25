@@ -18,6 +18,7 @@
         main {
             position: relative;
             width: min(100dvw, 75dvh);
+            min-height: 100dvh;
             aspect-ratio: 3 / 4;
             overflow: hidden;
         }
@@ -39,26 +40,98 @@
             pointer-events: none;
         }
 
-        #out {
+        #out,
+        #controls {
             position: absolute;
+            padding: 0.5em;
+            background: #f0f0f0cc;
+        }
+
+        #out {
             right: 8px;
             bottom: 8px;
             margin: 0;
-            padding: 0.5em;
             font: 0.85em monospace;
-            background: #f0f0f0cc;
+        }
+
+        #controls {
+            top: 8px;
+            left: 8px;
+            right: 8px;
+            box-sizing: border-box;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5em;
+            align-items: center;
+            font: 0.85em "Yu Gothic Medium", "Yu Gothic", sans-serif;
+        }
+
+        button {
+            border: 1px solid #999;
+            border-radius: 4px;
+            padding: 0.35em 0.6em;
+            background: #fff;
+            color: #111;
+            cursor: pointer;
+            font: inherit;
+            overflow-wrap: anywhere;
+        }
+
+        button:disabled {
+            opacity: 0.55;
+            cursor: wait;
+        }
+
+        #status {
+            min-width: min(11em, 100%);
         }
 
         .shape {
             display: grid;
-            grid-template-columns: auto 6em 3em;
+            grid-template-columns: auto 7em 4.5em;
             gap: 0.5em;
             align-items: center;
         }
 
         .bar {
+            position: relative;
             height: 0.9em;
-            background: linear-gradient(90deg, green var(--v), #ccc 0);
+            overflow: hidden;
+            background: #ccc;
+        }
+
+        .bar::before {
+            content: "";
+            position: absolute;
+            inset: 0 auto 0 50%;
+            width: 1px;
+            background: #666;
+        }
+
+        .fill {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            width: var(--v);
+            background: green;
+        }
+
+        .bar.raw::before {
+            display: none;
+        }
+
+        .bar.raw .fill,
+        .bar.positive .fill {
+            left: 50%;
+        }
+
+        .bar.raw .fill {
+            left: 0;
+        }
+
+        .bar.negative .fill {
+            right: 50%;
+            background: #c44;
         }
 
         .value {
@@ -71,6 +144,11 @@
     <main>
         <video id="video" autoplay playsinline muted></video>
         <canvas id="canvas"></canvas>
+        <div id="controls">
+            <button id="calibrate">キャリブレーション</button>
+            <button id="clearBaseline">解除</button>
+            <span id="status"></span>
+        </div>
         <div id="out"></div>
     </main>
 </body>
@@ -79,9 +157,12 @@
     import { FaceLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.34";
 
     const $ = id => document.getElementById(id);
-    const [video, canvas, out] = ["video", "canvas", "out"].map($);
+    const [video, canvas, out, calibrate, clearBaseline, status] = ["video", "canvas", "out", "calibrate", "clearBaseline", "status"].map($);
     const ctx = canvas.getContext("2d");
     const shapes = new Map();
+    const base = new Map();
+    const [WARMUP_FRAMES, CALIBRATION_FRAMES] = [30, 120];
+    const calibration = { warmup: 0, remaining: 0, samples: 0, stats: new Map() };
     const [VW, VH] = [1280, 720];
 
     Object.assign(canvas, { width: 720, height: 960 });
@@ -104,6 +185,24 @@
 
     video.onloadeddata = () => requestAnimationFrame(loop);
 
+    calibrate.onclick = () => {
+        resetCalibration(WARMUP_FRAMES, CALIBRATION_FRAMES);
+        calibrate.disabled = true;
+        status.textContent = "無表情を維持してください";
+    };
+
+    clearBaseline.onclick = () => {
+        resetCalibration();
+        calibrate.disabled = false;
+        status.textContent = "未キャリブレーション";
+    };
+
+    function resetCalibration(warmup = 0, frames = 0) {
+        base.clear();
+        Object.assign(calibration, { warmup, remaining: frames, samples: 0 });
+        calibration.stats.clear();
+    }
+
     function loop() {
         const { faceLandmarks, faceBlendshapes } = faceLandmarker.detectForVideo(video, performance.now());
         draw(faceLandmarks[0]);
@@ -112,15 +211,63 @@
     }
 
     function updateShapes(categories) {
+        updateCalibration(categories);
+
         for (const { categoryName, score } of categories) {
             if (!shapes.has(categoryName)) {
-                out.insertAdjacentHTML("beforeend", `<div class="shape"><span>${categoryName}</span><span class="bar"></span><span class="value"></span></div>`);
+                out.insertAdjacentHTML("beforeend", `<div class="shape"><span>${categoryName}</span><span class="bar raw"><span class="fill"></span></span><span class="value"></span></div>`);
                 shapes.set(categoryName, [...out.lastElementChild.children].slice(1));
             }
             const [bar, value] = shapes.get(categoryName);
-            bar.style.setProperty("--v", `${score * 100}%`);
-            value.textContent = score.toFixed(4);
+            const calibrated = base.size > 0;
+            const displayScore = calibrated ? calibratedScore(categoryName, score) : score;
+            const width = calibrated
+                ? Math.min(Math.abs(displayScore) * 100, 50)
+                : Math.min(score * 100, 100);
+            bar.className = `bar ${calibrated ? (displayScore < 0 ? "negative" : "positive") : "raw"}`;
+            bar.style.setProperty("--v", `${width}%`);
+            value.textContent = calibrated ? signed(displayScore) : score.toFixed(4);
         }
+    }
+
+    function updateCalibration(categories) {
+        if ((!calibration.warmup && !calibration.remaining) || !categories.length) return;
+
+        if (calibration.warmup) {
+            status.textContent = `準備中 ${--calibration.warmup}`;
+            return;
+        }
+
+        for (const { categoryName, score } of categories) {
+            const stat = calibration.stats.get(categoryName) ?? { sum: 0, sq: 0 };
+            stat.sum += score;
+            stat.sq += score * score;
+            calibration.stats.set(categoryName, stat);
+        }
+
+        calibration.samples++;
+        status.textContent = `キャリブレーション中 ${--calibration.remaining}`;
+
+        if (calibration.remaining) return;
+
+        base.clear();
+        for (const [categoryName, { sum, sq }] of calibration.stats) {
+            const mean = sum / calibration.samples;
+            const variance = Math.max(sq / calibration.samples - mean * mean, 0);
+            base.set(categoryName, { mean, dead: Math.max(Math.sqrt(variance) * 3, 0.005) });
+        }
+        calibrate.disabled = false;
+        status.textContent = `キャリブ済み (${calibration.samples} frames)`;
+    }
+
+    function calibratedScore(categoryName, score) {
+        const { mean = 0, dead = 0 } = base.get(categoryName) ?? {};
+        const diff = score - mean;
+        return Math.abs(diff) <= dead ? 0 : diff;
+    }
+
+    function signed(value) {
+        return `${value >= 0 ? "+" : ""}${value.toFixed(4)}`;
     }
 
     function draw(landmarks = []) {
