@@ -1,0 +1,568 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Emotion</title>
+    <script defer src="../faceAPI/face-api.min.js"></script>
+    <style>
+        :root {
+            --panel-bg: rgba(27, 32, 38, 0.88);
+            --accent: #42d392;
+        }
+
+        body {
+            margin: 0;
+            min-height: 100dvh;
+            display: grid;
+            place-items: center;
+            background: #f0f0f0;
+            color: #f4f7fb;
+            font-family: "Yu Gothic Medium", "Yu Gothic", sans-serif;
+        }
+
+        main {
+            position: relative;
+            width: min(100vw, 75vh);
+            aspect-ratio: 3 / 4;
+            overflow: hidden;
+        }
+
+        video,
+        img {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+        }
+
+        video[hidden],
+        img[hidden] {
+            display: none;
+        }
+
+        main.file-source video,
+        main.file-source img {
+            object-fit: contain;
+        }
+
+        .visualize {
+            position: fixed;
+            inset: 0;
+            display: grid;
+            place-items: center;
+            background: #f0f0f07d;
+        }
+
+        .visualize[hidden] {
+            display: none;
+        }
+
+        .radar {
+            width: min(80vmin, 640px);
+            height: min(80vmin, 640px);
+            overflow: visible;
+        }
+
+        .radar-grid,
+        .radar-axis {
+            fill: none;
+            stroke: rgba(27, 32, 38, 0.42);
+            stroke-width: 1;
+        }
+
+        .radar-shape {
+            fill: rgba(66, 211, 146, 0.34);
+            stroke: var(--accent);
+            stroke-width: 2;
+            transition: points 120ms linear;
+        }
+
+        .radar-label {
+            fill: #1b2026;
+            font-size: 10px;
+            text-anchor: middle;
+            dominant-baseline: middle;
+        }
+
+        .circumplex {
+            width: min(80vmin, 640px);
+            height: min(80vmin, 640px);
+            overflow: visible;
+        }
+
+        .circumplex-ring,
+        .circumplex-axis-line,
+        .circumplex-guide {
+            fill: none;
+            stroke: rgba(27, 32, 38, 0.28);
+            stroke-width: 1;
+        }
+
+        .circumplex-axis-line {
+            stroke: rgba(27, 32, 38, 0.42);
+        }
+
+        .circumplex-label {
+            fill: #1b2026;
+            font-size: 10px;
+            text-anchor: middle;
+            dominant-baseline: middle;
+        }
+
+        .circumplex-point {
+            fill: var(--accent);
+        }
+
+        .color-field {
+            width: min(86vmin, 700px);
+            height: min(86vmin, 700px);
+            position: relative;
+            display: grid;
+            place-items: center;
+            pointer-events: none;
+        }
+
+        .color-field::before {
+            content: "";
+            position: absolute;
+            inset: 0;
+            border-radius: 50%;
+            background:
+                radial-gradient(circle at center, rgba(var(--emotion-rgb, 255, 255, 255), var(--emotion-alpha, 0)) 0%, rgba(var(--emotion-rgb, 255, 255, 255), calc(var(--emotion-alpha, 0) * 0.6)) 32%, rgba(var(--emotion-rgb, 255, 255, 255), 0) 74%);
+            filter: blur(24px);
+            transform: scale(1.04);
+            transition: background 120ms linear;
+        }
+
+        .panel,
+        .layer-controls {
+            padding: 12px;
+            border-radius: 8px;
+            background: var(--panel-bg);
+        }
+
+        .panel {
+            position: absolute;
+            right: 1rem;
+            bottom: 1rem;
+            width: min(240px, calc(100% - 2rem));
+        }
+
+        .layer-controls {
+            position: absolute;
+            top: 1rem;
+            right: 1rem;
+            z-index: 999;
+            display: grid;
+            gap: 8px;
+        }
+
+        .source-controls {
+            position: absolute;
+            top: 1rem;
+            left: 1rem;
+            z-index: 999;
+            display: grid;
+            gap: 8px;
+        }
+
+        .source-controls button,
+        .source-controls label {
+            padding: 8px 10px;
+            border: 0;
+            border-radius: 8px;
+            background: var(--panel-bg);
+            color: #f4f7fb;
+            font: inherit;
+            font-size: 12px;
+            cursor: pointer;
+        }
+
+        .source-controls input {
+            position: absolute;
+            inline-size: 1px;
+            block-size: 1px;
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .layer-controls label {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+            cursor: pointer;
+        }
+
+        input[type="checkbox"] {
+            accent-color: var(--accent);
+        }
+
+        .bar-row {
+            display: grid;
+            grid-template-columns: 56px 1fr 24px;
+            gap: 8px;
+            align-items: center;
+            margin: 8px 0;
+            font-size: 11px;
+        }
+
+        .bar-row span:last-child {
+            text-align: right;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .bar {
+            height: 7px;
+            overflow: hidden;
+            border-radius: 999px;
+            background: #101419;
+        }
+
+        .fill {
+            display: block;
+            height: 100%;
+            background: var(--accent);
+            transition: width 120ms linear;
+        }
+
+        @media (max-width: 800px) {
+            .panel {
+                right: 8px;
+                bottom: 8px;
+                width: min(240px, calc(100% - 16px));
+            }
+
+            .layer-controls {
+                top: 8px;
+                right: 8px;
+            }
+
+            .source-controls {
+                top: 8px;
+                left: 8px;
+                max-width: calc(100% - 112px);
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <section id="visualize_01" class="visualize" hidden>
+        <svg id="radarChart" class="radar" viewBox="0 0 200 200" aria-label="emotion radar chart">
+            <g id="radarGrid"></g>
+            <g id="radarAxes"></g>
+            <polygon id="radarShape" class="radar-shape" points=""></polygon>
+            <g id="radarLabels"></g>
+        </svg>
+    </section>
+    <section id="visualize_02" class="visualize" hidden>
+        <svg id="circumplexChart" class="circumplex" viewBox="0 0 200 200" aria-label="emotion circumplex chart">
+            <circle class="circumplex-ring" cx="100" cy="100" r="72"></circle>
+            <circle class="circumplex-guide" cx="100" cy="100" r="36"></circle>
+            <line class="circumplex-axis-line" x1="28" y1="100" x2="172" y2="100"></line>
+            <line class="circumplex-axis-line" x1="100" y1="28" x2="100" y2="172"></line>
+            <text class="circumplex-label" x="100" y="18">覚醒</text>
+            <text class="circumplex-label" x="100" y="184">非覚醒</text>
+            <text class="circumplex-label" x="22" y="100">不快</text>
+            <text class="circumplex-label" x="178" y="100">快</text>
+            <circle id="circumplexPoint" class="circumplex-point" cx="100" cy="100" r="6"></circle>
+        </svg>
+    </section>
+    <section id="visualize_03" class="visualize" hidden>
+        <div id="colorField" class="color-field" aria-label="emotion color field">
+        </div>
+    </section>
+    <main>
+        <video id="video" autoplay muted playsinline></video>
+        <img id="image" alt="インポートした画像" hidden>
+        <div class="source-controls">
+            <button id="cameraButton" type="button">WebCam</button>
+            <label for="fileInput">ファイルから
+                <input id="fileInput" type="file" accept="image/*,video/*">
+            </label>
+        </div>
+        <div id="layerControls" class="layer-controls"></div>
+        <aside class="panel">
+            <span id="status">モデル読み込み中...</span>
+            <div id="bars"></div>
+        </aside>
+    </main>
+
+    <script>
+        window.addEventListener("load", () => {
+            const MODEL_URL = "../faceAPI/models";
+            const MAX_CAMERA_SIZE = 4096;
+            const RADAR_AXES = ["happy", "surprised", "fearful", "sad", "disgusted", "angry"];
+            const EMOTION_COLORS = {
+                happy: [255, 210, 58],
+                sad: [34, 66, 168],
+                angry: [142, 18, 28],
+                fearful: [104, 66, 156],
+                disgusted: [76, 138, 74],
+                surprised: [255, 149, 46]
+            };
+            const SOURCE_LABELS = {
+                camera: "カメラ",
+                "image-file": "画像ファイル",
+                "video-file": "動画ファイル"
+            };
+            const $ = (id) => document.getElementById(id);
+            const clamp = (n, min = 0, max = 1) => Math.min(max, Math.max(min, Number(n || 0)));
+            const point = (i, r) => {
+                const a = -Math.PI / 2 + (Math.PI * 2 * i) / RADAR_AXES.length;
+                return [100 + Math.cos(a) * r, 100 + Math.sin(a) * r];
+            };
+            const polygon = (radiusFn) => RADAR_AXES.map((name, i) => point(i, radiusFn(name)).join(",")).join(" ");
+            const formatStatus = (...parts) => parts.filter(Boolean).join(" / ");
+            const detectOptions = new faceapi.TinyFaceDetectorOptions();
+
+            const stage = document.querySelector("main");
+            const panel = document.querySelector(".panel");
+            const video = $("video");
+            const image = $("image");
+            const status = $("status");
+            const bars = $("bars");
+            const fileInput = $("fileInput");
+            const layerControls = $("layerControls");
+            const radarGrid = $("radarGrid");
+            const radarAxes = $("radarAxes");
+            const radarLabels = $("radarLabels");
+            const radarShape = $("radarShape");
+            const circumplexPoint = $("circumplexPoint");
+            const colorField = $("colorField");
+            const sections = [...document.querySelectorAll('section[id^="visualize_"]')];
+
+            let running = false;
+            let mediaSize = "";
+            let activeMedia = video;
+            let activeMode = "camera";
+            let activeObjectUrl = "";
+            let detectToken = 0;
+
+            const updateStatus = (message) => { status.textContent = message; };
+            const showDetectionError = (error) => updateStatus(`推定エラー: ${error.message}`);
+            const stopDetection = () => { running = false; detectToken += 1; };
+            const stopCameraStream = () => {
+                const stream = video.srcObject instanceof MediaStream ? video.srcObject : null;
+                if (stream) stream.getTracks().forEach((track) => track.stop());
+                video.srcObject = null;
+            };
+            const clearImportedFile = () => {
+                if (activeObjectUrl) URL.revokeObjectURL(activeObjectUrl);
+                activeObjectUrl = "";
+                image.removeAttribute("src");
+                video.removeAttribute("src");
+                video.load();
+                fileInput.value = "";
+            };
+            const formatMediaSize = (media) => {
+                const width = media.videoWidth || media.naturalWidth || media.width;
+                const height = media.videoHeight || media.naturalHeight || media.height;
+                return width && height ? `${width}x${height}` : "";
+            };
+            const setActiveMedia = (media, mode, size = "") => {
+                activeMedia = media;
+                activeMode = mode;
+                mediaSize = size;
+                stage.classList.toggle("file-source", mode !== "camera");
+                image.hidden = media !== image;
+                video.hidden = media !== video;
+                video.controls = video.loop = mode === "video-file";
+            };
+            const loadMedia = (media, src, eventName) => new Promise((resolve, reject) => {
+                const done = () => {
+                    media.removeEventListener(eventName, onLoad);
+                    media.removeEventListener("error", onError);
+                };
+                const onLoad = () => { done(); resolve(); };
+                const onError = () => { done(); reject(new Error("ファイルを読み込めません")); };
+                media.addEventListener(eventName, onLoad, { once: true });
+                media.addEventListener("error", onError, { once: true });
+                media.src = src;
+                media.load?.();
+            });
+
+            radarGrid.innerHTML = [0.25, 0.5, 0.75, 1].map((scale) => `<polygon class="radar-grid" points="${polygon(() => 72 * scale)}"></polygon>`).join("");
+            radarAxes.innerHTML = RADAR_AXES.map((_, i) => {
+                const [x, y] = point(i, 72);
+                return `<line class="radar-axis" x1="100" y1="100" x2="${x}" y2="${y}"></line>`;
+            }).join("");
+            radarLabels.innerHTML = RADAR_AXES.map((name, i) => {
+                const [x, y] = point(i, 90);
+                return `<text class="radar-label" x="${x}" y="${y}">${name}</text>`;
+            }).join("");
+
+            sections.forEach((section) => {
+                section.style.zIndex = String(10 + Number(section.id.replace("visualize_", "")));
+                section.hidden = true;
+            });
+            layerControls.innerHTML = sections.map((section) => `
+                <label>
+                    <input type="checkbox" data-target="${section.id}">
+                    <span>${section.id}</span>
+                </label>
+            `).join("");
+            layerControls.addEventListener("change", ({ target }) => {
+                if (!(target instanceof HTMLInputElement)) return;
+                const section = $(target.dataset.target);
+                if (section) section.hidden = !target.checked;
+                panel.hidden = [...layerControls.querySelectorAll("input")].some((input) => input.checked);
+            });
+
+            const updateExpressions = (expressions = {}) => {
+                bars.innerHTML = Object.entries(expressions).map(([name, score]) => {
+                    const value = clamp(score);
+                    return `
+                        <div class="bar-row">
+                            <span>${name}</span>
+                            <span class="bar"><span class="fill" style="width: ${value * 100}%"></span></span>
+                            <span>${value.toFixed(1)}</span>
+                        </div>
+                    `;
+                }).join("");
+
+                radarShape.setAttribute("points", polygon((name) => 72 * clamp(expressions[name])));
+
+                const get = (name) => clamp(expressions[name]);
+                const happy = get("happy");
+                const angry = get("angry");
+                const disgusted = get("disgusted");
+                const fearful = get("fearful");
+                const sad = get("sad");
+                let x = clamp(happy - ((angry + (angry + disgusted) / 2 + disgusted + fearful + sad) / 5), -1, 1);
+                let y = clamp(Math.max(angry, fearful, get("surprised"), happy) - sad, -1, 1);
+                const scale = Math.max(1, Math.hypot(x, y));
+                x /= scale;
+                y /= scale;
+                circumplexPoint.setAttribute("cx", 100 + x * 72);
+                circumplexPoint.setAttribute("cy", 100 - y * 72);
+
+                const mixed = Object.entries(EMOTION_COLORS).reduce((acc, [name, [r, g, b]]) => {
+                    const score = get(name);
+                    return score ? {
+                        total: acc.total + score,
+                        peak: Math.max(acc.peak, score),
+                        r: acc.r + r * score,
+                        g: acc.g + g * score,
+                        b: acc.b + b * score
+                    } : acc;
+                }, { total: 0, peak: 0, r: 0, g: 0, b: 0 });
+                colorField.style.setProperty("--emotion-rgb",
+                    mixed.total ? `${Math.round(mixed.r / mixed.total)}, ${Math.round(mixed.g / mixed.total)}, ${Math.round(mixed.b / mixed.total)}` : "255, 255, 255");
+                colorField.style.setProperty("--emotion-alpha",
+                    mixed.total ? Math.min(0.92, Math.max(mixed.peak * 0.9, mixed.total / 2.4)).toFixed(3) : "0");
+            };
+
+            const runDetection = async () => {
+                const detections = await faceapi.detectAllFaces(activeMedia, detectOptions).withFaceExpressions();
+                updateExpressions(detections[0]?.expressions || {});
+                updateStatus(formatStatus(SOURCE_LABELS[activeMode], mediaSize, detections.length ? "検出中" : "顔が見つかりません"));
+            };
+
+            const detect = async (token = detectToken) => {
+                if (!running) return;
+                try {
+                    await runDetection();
+                } catch (error) {
+                    showDetectionError(error);
+                }
+                if (running && token === detectToken) requestAnimationFrame(() => detect(token));
+            };
+
+            const startCamera = async () => {
+                updateStatus("カメラ起動中...");
+                stopDetection();
+                stopCameraStream();
+                clearImportedFile();
+                try {
+                    video.srcObject = await navigator.mediaDevices.getUserMedia({
+                        video: {
+                            width: { ideal: MAX_CAMERA_SIZE },
+                            height: { ideal: MAX_CAMERA_SIZE },
+                            frameRate: { ideal: 60 }
+                        },
+                        audio: false
+                    });
+                    await video.play();
+                    const settings = video.srcObject.getVideoTracks()[0].getSettings();
+                    setActiveMedia(video, "camera", `${settings.width}x${settings.height}`);
+                    updateStatus(formatStatus(SOURCE_LABELS.camera, mediaSize));
+                    running = true;
+                    detect();
+                } catch (error) {
+                    updateStatus(`カメラを開始できません: ${error.message}`);
+                }
+            };
+
+            const importFile = async (file) => {
+                if (!file) return;
+                stopDetection();
+                stopCameraStream();
+                clearImportedFile();
+                activeObjectUrl = URL.createObjectURL(file);
+
+                if (file.type.startsWith("image/")) {
+                    updateStatus("画像ファイル読み込み中...");
+                    await loadMedia(image, activeObjectUrl, "load");
+                    setActiveMedia(image, "image-file", formatMediaSize(image));
+                    try {
+                        await runDetection();
+                    } catch (error) {
+                        showDetectionError(error);
+                    }
+                    return;
+                }
+
+                if (file.type.startsWith("video/")) {
+                    updateStatus("動画ファイル読み込み中...");
+                    await loadMedia(video, activeObjectUrl, "loadedmetadata");
+                    setActiveMedia(video, "video-file", formatMediaSize(video));
+                    try {
+                        running = true;
+                        await video.play();
+                        detect();
+                    } catch (error) {
+                        stopDetection();
+                        updateStatus("動画を再生すると検出を開始します");
+                    }
+                    return;
+                }
+
+                clearImportedFile();
+                updateStatus("画像または動画ファイルを選択してください");
+            };
+
+            $("cameraButton").addEventListener("click", startCamera);
+            fileInput.addEventListener("change", (event) => {
+                importFile(event.target.files[0]).catch((error) => {
+                    updateStatus(`ファイルを読み込めません: ${error.message}`);
+                });
+            });
+            video.addEventListener("play", () => {
+                if (activeMode === "video-file" && !running) {
+                    running = true;
+                    detectToken += 1;
+                    detect();
+                }
+            });
+            video.addEventListener("pause", () => {
+                if (activeMode === "video-file") stopDetection();
+            });
+
+            updateExpressions();
+            Promise.all([
+                faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
+                faceapi.nets.faceExpressionNet.loadFromUri(MODEL_URL)
+            ]).then(startCamera).catch((error) => {
+                updateStatus(`モデルを読み込めません: ${error.message}`);
+            });
+        });
+    </script>
+</body>
+
+</html>
