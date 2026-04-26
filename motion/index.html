@@ -6,12 +6,18 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Motion</title>
     <style>
+        :root {
+            --panel-bg: #1b2026e0;
+            --accent: #42d392;
+        }
+
         body {
             margin: 0;
             min-height: 100dvh;
             display: grid;
             place-items: center;
             background: #f0f0f0;
+            color: #f4f7fb;
             font-family: "Yu Gothic Medium", "Yu Gothic", sans-serif;
         }
 
@@ -53,8 +59,9 @@
 
         #out,
         #layerControls {
-            padding: 0.5em;
-            background: #f0f0f0cc;
+            padding: 12px;
+            background: var(--panel-bg);
+            border-radius: 8px;
             font: 0.85em "Yu Gothic Medium", "Yu Gothic", sans-serif;
         }
 
@@ -71,7 +78,7 @@
             flex-wrap: wrap;
             gap: 0.5em;
             align-items: center;
-            margin-top: 0.5em;
+            margin-bottom: 0.5em;
         }
 
         #layerControls {
@@ -106,7 +113,7 @@
 
         .shape {
             display: grid;
-            grid-template-columns: auto 7em 3em;
+            grid-template-columns: 9em 7em 4em;
             gap: 0.5em;
             align-items: center;
         }
@@ -131,7 +138,7 @@
             top: 0;
             bottom: 0;
             width: var(--v);
-            background: green;
+            background: var(--accent);
         }
 
         .bar.raw::before {
@@ -243,8 +250,8 @@
 
         for (const { categoryName, score } of categories) {
             if (!shapes.has(categoryName)) {
-                calibControls.insertAdjacentHTML("beforebegin", `<div class="shape"><span>${categoryName}</span><span class="bar raw"><span class="fill"></span></span><span class="value"></span></div>`);
-                shapes.set(categoryName, [...calibControls.previousElementSibling.children].slice(1));
+                out.insertAdjacentHTML("beforeend", `<div class="shape"><span>${categoryName}</span><span class="bar raw"><span class="fill"></span></span><span class="value"></span></div>`);
+                shapes.set(categoryName, [...out.lastElementChild.children].slice(1));
             }
             const [bar, value] = shapes.get(categoryName);
             const calibrated = base.size > 0;
