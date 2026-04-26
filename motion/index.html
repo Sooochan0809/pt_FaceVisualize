@@ -53,14 +53,11 @@
             background: #f0f0f0cc;
         }
 
-        #vizCanvas {
-            width: 100%;
-            height: 100%;
-            display: block;
-        }
-
-        .visualize[hidden] {
-            display: none;
+        #shuffleSpectrum {
+            position: absolute;
+            top: 56px;
+            right: 8px;
+            z-index: 2;
         }
 
         #out,
@@ -76,7 +73,6 @@
             position: absolute;
             right: 8px;
             bottom: 8px;
-            margin: 0;
             font: 0.85em monospace;
         }
 
@@ -97,7 +93,6 @@
             position: absolute;
             top: 8px;
             right: 8px;
-            z-index: 999;
             display: flex;
             gap: 0.4em;
             align-items: center;
@@ -121,10 +116,6 @@
 
         #status {
             min-width: min(11em, 100%);
-        }
-
-        #shapesPanel[hidden] {
-            display: none;
         }
 
         .shape {
@@ -187,6 +178,7 @@
         <canvas id="canvas"></canvas>
         <section id="visualize_01" class="visualize" hidden>
             <canvas id="vizCanvas"></canvas>
+            <button id="shuffleSpectrum" type="button">シャッフル</button>
         </section>
         <label id="layerControls">
             <input id="visualizeToggle" type="checkbox">
@@ -208,13 +200,15 @@
     import { FaceLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.34";
 
     const $ = id => document.getElementById(id);
-    const [video, canvas, vizCanvas, out, calibrate, clearBaseline, toggleShapes, status, shapesPanel, visualizeToggle, visualize] = ["video", "canvas", "vizCanvas", "out", "calibrate", "clearBaseline", "toggleShapes", "status", "shapesPanel", "visualizeToggle", "visualize_01"].map($);
+    const [video, canvas, vizCanvas, calibrate, clearBaseline, toggleShapes, status, shapesPanel, visualizeToggle, visualize, shuffleSpectrum] = ["video", "canvas", "vizCanvas", "calibrate", "clearBaseline", "toggleShapes", "status", "shapesPanel", "visualizeToggle", "visualize_01", "shuffleSpectrum"].map($);
     const ctx = canvas.getContext("2d");
     const vizCtx = vizCanvas.getContext("2d");
     const shapes = new Map();
     const spectrum = new Map();
+    const spectrumSharpness = new Map();
+    let spectrumOrder = [];
     const base = new Map();
-    const [WARMUP_FRAMES, CALIBRATION_FRAMES, DEADZONE] = [30, 120, 0.005];
+    const [WARMUP_FRAMES, CALIBRATION_FRAMES, DEADZONE, SPECTRUM_ZERO_THRESHOLD] = [30, 120, 0.005, 0.012];
     const calibration = { warmup: 0, remaining: 0, samples: 0, stats: new Map() };
     const [VW, VH] = [1280, 720];
 
@@ -252,6 +246,10 @@
     clearBaseline.onclick = () => {
         resetCalibration();
         calibrate.disabled = false;
+    };
+
+    shuffleSpectrum.onclick = () => {
+        spectrumOrder = shuffle(spectrumOrder);
     };
 
     toggleShapes.onclick = () => {
@@ -346,15 +344,24 @@
         const baseRadius = Math.min(width, height) * 0.28;
         const maxSpike = Math.min(width, height) * 0.18;
         const calibrated = base.size > 0;
-        const points = categories.map(({ categoryName, score }, i) => {
-            const value = calibrated ? Math.abs(calibratedScore(categoryName, score)) : 0;
-            const smoothed = (spectrum.get(categoryName) ?? 0) * 0.82 + value * 0.18;
+        const ordered = orderedSpectrumCategories(categories);
+        const points = ordered.map(({ categoryName, score }, i) => {
+            const rawValue = calibrated ? calibratedScore(categoryName, score) : 0;
+            const value = Math.abs(rawValue) < SPECTRUM_ZERO_THRESHOLD ? 0 : rawValue;
+            const previous = spectrum.get(categoryName) ?? 0;
+            const smoothed = previous * 0.82 + value * 0.18;
+            const rawSpeed = Math.max(Math.abs(smoothed - previous) - 0.002, 0);
+            const previousSharpness = spectrumSharpness.get(categoryName) ?? 0;
+            const changeSharpness = Math.min(rawSpeed * 180, 1);
+            const sharpness = value === 0 ? previousSharpness * 0.82 : Math.max(previousSharpness, changeSharpness);
             spectrum.set(categoryName, smoothed);
-            const angle = i / categories.length * Math.PI * 2 - Math.PI / 2;
-            const radius = baseRadius + Math.min(smoothed * 18, 1) * maxSpike;
+            spectrumSharpness.set(categoryName, sharpness);
+            const angle = i / ordered.length * Math.PI * 2 - Math.PI / 2;
+            const radius = baseRadius + Math.max(-1, Math.min(smoothed * 18, 1)) * maxSpike;
             return {
                 x: cx + Math.cos(angle) * radius,
-                y: cy + Math.sin(angle) * radius
+                y: cy + Math.sin(angle) * radius,
+                sharpness
             };
         });
 
@@ -364,38 +371,80 @@
         drawSpectrumPath(points, calibrated);
     }
 
+    function orderedSpectrumCategories(categories) {
+        const byName = new Map(categories.map(category => [category.categoryName, category]));
+        const known = spectrumOrder.filter(categoryName => byName.has(categoryName));
+        const added = categories
+            .map(({ categoryName }) => categoryName)
+            .filter(categoryName => !known.includes(categoryName));
+        spectrumOrder = known.length ? [...known, ...shuffle(added)] : shuffle(categories.map(({ categoryName }) => categoryName));
+        return spectrumOrder.map(categoryName => byName.get(categoryName)).filter(Boolean);
+    }
+
+    function shuffle(items) {
+        const shuffled = [...items];
+        for (let i = shuffled.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+        }
+        return shuffled;
+    }
+
     function drawSpectrumPath(points, active) {
         if (points.length < 3) return;
 
         vizCtx.save();
-        vizCtx.lineWidth = active ? 6 : 3;
-        vizCtx.lineJoin = "round";
+        vizCtx.lineWidth = 3;
+        vizCtx.lineJoin = "miter";
+        vizCtx.miterLimit = 2.5;
         vizCtx.lineCap = "round";
-        vizCtx.shadowColor = "#42d39299";
-        vizCtx.shadowBlur = active ? 18 : 0;
-        vizCtx.strokeStyle = active ? "#42d392" : "#789";
+        vizCtx.strokeStyle = active ? "#999" : "#bbb";
         vizCtx.beginPath();
 
+        const start = midpoint(points[points.length - 1], points[0]);
+        vizCtx.moveTo(start.x, start.y);
+
         for (let i = 0; i < points.length; i++) {
+            const previous = points[(i - 1 + points.length) % points.length];
             const current = points[i];
             const next = points[(i + 1) % points.length];
-            const mid = {
-                x: (current.x + next.x) / 2,
-                y: (current.y + next.y) / 2
-            };
-            if (i === 0) {
-                vizCtx.moveTo(mid.x, mid.y);
+            const previousMid = midpoint(previous, current);
+            const nextMid = midpoint(current, next);
+            const sharpness = current.sharpness ?? 0;
+
+            if (sharpness > 0.85) {
+                vizCtx.lineTo(current.x, current.y);
+                vizCtx.lineTo(nextMid.x, nextMid.y);
+            } else if (sharpness > 0.08) {
+                const corner = 0.45 + sharpness * 0.5;
+                const entry = lerpPoint(previousMid, current, corner);
+                const exit = lerpPoint(nextMid, current, corner);
+                vizCtx.quadraticCurveTo(current.x, current.y, entry.x, entry.y);
+                vizCtx.lineTo(current.x, current.y);
+                vizCtx.lineTo(exit.x, exit.y);
+                vizCtx.quadraticCurveTo(current.x, current.y, nextMid.x, nextMid.y);
             } else {
-                vizCtx.quadraticCurveTo(current.x, current.y, mid.x, mid.y);
+                vizCtx.quadraticCurveTo(current.x, current.y, nextMid.x, nextMid.y);
             }
         }
 
-        const first = points[0];
-        const second = points[1];
-        vizCtx.quadraticCurveTo(first.x, first.y, (first.x + second.x) / 2, (first.y + second.y) / 2);
         vizCtx.closePath();
         vizCtx.stroke();
         vizCtx.restore();
+    }
+
+    function midpoint(a, b) {
+        return {
+            x: (a.x + b.x) / 2,
+            y: (a.y + b.y) / 2
+        };
+    }
+
+    function lerpPoint(a, b, t) {
+        return {
+            x: a.x + (b.x - a.x) * t,
+            y: a.y + (b.y - a.y) * t
+        };
     }
 
     function draw(landmarks = []) {
