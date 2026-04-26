@@ -79,6 +79,11 @@
             gap: 0.5em;
             align-items: center;
             margin-bottom: 0.5em;
+            min-width: 100%;
+        }
+
+        #toggleShapes {
+            margin-left: auto;
         }
 
         #layerControls {
@@ -109,6 +114,10 @@
 
         #status {
             min-width: min(11em, 100%);
+        }
+
+        #shapesPanel[hidden] {
+            display: none;
         }
 
         .shape {
@@ -178,8 +187,10 @@
             <div id="calibControls">
                 <button id="calibrate">キャリブ</button>
                 <button id="clearBaseline">解除</button>
+                <button id="toggleShapes" type="button" aria-expanded="true" aria-controls="shapesPanel">▲</button>
                 <span id="status"></span>
             </div>
+            <div id="shapesPanel"></div>
         </div>
     </main>
 </body>
@@ -188,7 +199,7 @@
     import { FaceLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.34";
 
     const $ = id => document.getElementById(id);
-    const [video, canvas, out, calibControls, calibrate, clearBaseline, status, visualizeToggle, visualize] = ["video", "canvas", "out", "calibControls", "calibrate", "clearBaseline", "status", "visualizeToggle", "visualize_01"].map($);
+    const [video, canvas, out, calibrate, clearBaseline, toggleShapes, status, shapesPanel, visualizeToggle, visualize] = ["video", "canvas", "out", "calibrate", "clearBaseline", "toggleShapes", "status", "shapesPanel", "visualizeToggle", "visualize_01"].map($);
     const ctx = canvas.getContext("2d");
     const shapes = new Map();
     const base = new Map();
@@ -231,6 +242,13 @@
         calibrate.disabled = false;
     };
 
+    toggleShapes.onclick = () => {
+        const expanded = shapesPanel.hidden;
+        shapesPanel.hidden = !expanded;
+        toggleShapes.setAttribute("aria-expanded", expanded);
+        toggleShapes.textContent = `${expanded ? "▲" : "▼"}`;
+    };
+
     function resetCalibration(warmup = 0, frames = 0) {
         base.clear();
         Object.assign(calibration, { warmup, remaining: frames, samples: 0 });
@@ -250,8 +268,8 @@
 
         for (const { categoryName, score } of categories) {
             if (!shapes.has(categoryName)) {
-                out.insertAdjacentHTML("beforeend", `<div class="shape"><span>${categoryName}</span><span class="bar raw"><span class="fill"></span></span><span class="value"></span></div>`);
-                shapes.set(categoryName, [...out.lastElementChild.children].slice(1));
+                shapesPanel.insertAdjacentHTML("beforeend", `<div class="shape"><span>${categoryName}</span><span class="bar raw"><span class="fill"></span></span><span class="value"></span></div>`);
+                shapes.set(categoryName, [...shapesPanel.lastElementChild.children].slice(1));
             }
             const [bar, value] = shapes.get(categoryName);
             const calibrated = base.size > 0;
