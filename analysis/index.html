@@ -68,11 +68,14 @@
             };
             const names = Object.keys(colors);
             const [file, video, chart, download, scores] = ["file", "video", "chart", "download", "scores"].map($);
-            const ctx = chart.getContext("2d");
             const options = new faceapi.TinyFaceDetectorOptions();
-            const history = [];
+            const models = Promise.all([
+                faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
+                faceapi.nets.faceExpressionNet.loadFromUri(MODEL_URL)
+            ]);
+            let history = [];
             let objectUrl;
-            let timer;
+            let analyzeToken = 0;
 
             scores.innerHTML = names.map((name) =>
                 `<div class="score" style="color:${colors[name]}">${name}: <span id="${name}Score">0.0000</span></div>`
@@ -82,10 +85,12 @@
                 $(`${name}Score`).textContent = (expressions[name] || 0).toFixed(4);
             });
 
-            const draw = (data = history, dpr = window.devicePixelRatio || 1) => {
-                const { width, height } = chart.getBoundingClientRect();
-                chart.width = width * dpr;
-                chart.height = height * dpr;
+            const visibleHistory = () => history.filter(({ time }) => time <= video.currentTime);
+            const drawChart = (canvas, data = visibleHistory(), dpr = window.devicePixelRatio || 1, width = chart.getBoundingClientRect().width) => {
+                const ctx = canvas.getContext("2d");
+                const height = chart.getBoundingClientRect().height;
+                canvas.width = width * dpr;
+                canvas.height = height * dpr;
                 ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
                 ctx.clearRect(0, 0, width, height);
                 ctx.font = "12px sans-serif";
@@ -126,6 +131,14 @@
                 });
             };
 
+            const draw = () => drawChart(chart);
+
+            const sync = () => {
+                const data = visibleHistory();
+                updateScores(data.at(-1)?.expressions || {});
+                drawChart(chart, data);
+            };
+
             const seek = (time) => new Promise((resolve) => {
                 const target = Math.max(0, Math.min(time, video.duration - 0.01));
                 if (Math.abs(video.currentTime - target) < 0.001 && video.readyState >= 2) {
@@ -136,75 +149,74 @@
                 video.currentTime = target;
             });
 
-            const saveChart = (name) => {
+            const saveChart = (name, canvas = chart) => {
                 const a = document.createElement("a");
-                a.href = chart.toDataURL("image/png");
+                a.href = canvas.toDataURL("image/png");
                 a.download = name;
                 a.click();
             };
 
-            file.addEventListener("change", async () => {
-                if (!file.files[0]) return;
-                if (objectUrl) URL.revokeObjectURL(objectUrl);
-                objectUrl = URL.createObjectURL(file.files[0]);
-                video.src = objectUrl;
-                history.length = 0;
-                updateScores({});
-                draw();
-                download.disabled = true;
-            });
-
-            video.addEventListener("loadedmetadata", () => {
-                download.disabled = false;
-            });
-
-            download.addEventListener("click", async () => {
+            const analyze = async () => {
                 if (!Number.isFinite(video.duration)) return;
-                clearInterval(timer);
+                const token = analyzeToken;
+                await models;
+                if (token !== analyzeToken) return;
                 video.pause();
+                history = [];
                 download.disabled = true;
 
                 const currentTime = video.currentTime;
                 const minutes = Math.ceil(video.duration / 60);
                 for (let minute = 0; minute < minutes; minute++) {
-                    download.textContent = `${minute + 1}/${minutes}`;
-                    const data = [];
+                    download.textContent = `analyzing ${minute + 1}/${minutes}`;
                     const start = minute * 60;
                     const end = Math.min(start + 60, video.duration);
                     for (let time = start; time < end; time += 1) {
+                        if (token !== analyzeToken) return;
                         await seek(time);
                         const detection = await faceapi.detectSingleFace(video, options).withFaceExpressions();
-                        if (detection) data.push({ time, expressions: detection.expressions });
+                        if (detection) history.push({ time, expressions: detection.expressions });
                     }
-                    draw(data, 3);
-                    saveChart(`chart_${String(minute + 1).padStart(3, "0")}.png`);
                 }
 
                 await seek(currentTime);
+                sync();
+                download.disabled = false;
+                download.textContent = "download";
+            };
+
+            file.addEventListener("change", async () => {
+                if (!file.files[0]) return;
+                analyzeToken += 1;
+                if (objectUrl) URL.revokeObjectURL(objectUrl);
+                objectUrl = URL.createObjectURL(file.files[0]);
+                video.src = objectUrl;
+                history = [];
+                updateScores({});
                 draw();
+                download.disabled = true;
+            });
+
+            video.addEventListener("loadedmetadata", analyze);
+
+            download.addEventListener("click", async () => {
+                if (!history.length) return;
+                download.disabled = true;
+
+                const rect = chart.getBoundingClientRect();
+                const allChart = document.createElement("canvas");
+                drawChart(allChart, history, 3, rect.width * Math.max(1, Math.ceil(video.duration / 60)));
+                saveChart("chart_all.png", allChart);
+
                 download.disabled = false;
                 download.textContent = "download";
             });
 
-            video.addEventListener("play", () => {
-                clearInterval(timer);
-                timer = setInterval(async () => {
-                    if (video.readyState < 2) return;
-                    const detection = await faceapi.detectSingleFace(video, options).withFaceExpressions();
-                    if (!detection) return;
-                    history.push({ time: video.currentTime, expressions: detection.expressions });
-                    if (history.length > 120) history.shift();
-                    updateScores(detection.expressions);
-                    draw();
-                }, 200);
-            });
-            ["pause", "ended"].forEach((event) => video.addEventListener(event, () => clearInterval(timer)));
+            video.addEventListener("seeked", sync);
+            video.addEventListener("timeupdate", sync);
             window.addEventListener("resize", draw);
 
-            await Promise.all([
-                faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
-                faceapi.nets.faceExpressionNet.loadFromUri(MODEL_URL)
-            ]);
+            await models;
             draw();
         });
     </script>
