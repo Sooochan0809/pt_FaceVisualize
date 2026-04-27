@@ -8,37 +8,31 @@
     <script defer src="../faceAPI/face-api.min.js"></script>
     <style>
         body {
-            font-family: sans-serif;
             margin: 16px;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
+            display: grid;
+            place-items: start center;
+            font-family: sans-serif;
         }
 
         main {
-            width: min(90%, 720px);
-            display: flex;
-            flex-direction: column;
-            align-items: stretch;
+            width: min(90vw, 720px);
         }
 
-        video {
+        video,
+        canvas {
             width: 100%;
-            height: auto;
             display: block;
             margin: 12px 0;
         }
 
-        .score {
-            width: 100%;
-            margin: 6px 0;
-            font-variant-numeric: tabular-nums;
+        canvas {
+            height: 240px;
+            background: #f4f4f4;
         }
 
-        @media (max-width: 720px) {
-            main {
-                width: 100%;
-            }
+        .score {
+            margin: 6px 0;
+            font-variant-numeric: tabular-nums;
         }
     </style>
 </head>
@@ -47,53 +41,117 @@
     <main>
         <video id="video" controls playsinline muted></video>
         <input id="file" type="file" accept="video/*">
+        <canvas id="chart"></canvas>
         <div id="scores"></div>
     </main>
+
+    <script>
+        window.addEventListener("load", async () => {
+            const $ = (id) => document.getElementById(id);
+            const MODEL_URL = "../faceAPI/models";
+            const colors = {
+                neutral: "#666",
+                happy: "#e6b800",
+                sad: "#3366ff",
+                angry: "#e53935",
+                fearful: "#8e44ad",
+                disgusted: "#43a047",
+                surprised: "#fb8c00"
+            };
+            const names = Object.keys(colors);
+            const [file, video, chart, scores] = ["file", "video", "chart", "scores"].map($);
+            const ctx = chart.getContext("2d");
+            const options = new faceapi.TinyFaceDetectorOptions();
+            const history = [];
+            let objectUrl;
+            let timer;
+
+            scores.innerHTML = names.map((name) =>
+                `<div class="score" style="color:${colors[name]}">${name}: <span id="${name}Score">0.0000</span></div>`
+            ).join("");
+
+            const updateScores = (expressions) => names.forEach((name) => {
+                $(`${name}Score`).textContent = (expressions[name] || 0).toFixed(4);
+            });
+
+            const draw = () => {
+                const { width, height } = chart.getBoundingClientRect();
+                const dpr = window.devicePixelRatio || 1;
+                chart.width = width * dpr;
+                chart.height = height * dpr;
+                ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+                ctx.clearRect(0, 0, width, height);
+                ctx.font = "12px sans-serif";
+                ctx.lineWidth = 1;
+
+                for (let y = 0; y <= 1; y += 0.25) {
+                    const py = height - y * height;
+                    ctx.strokeStyle = "#ddd";
+                    ctx.beginPath();
+                    ctx.moveTo(0, py);
+                    ctx.lineTo(width, py);
+                    ctx.stroke();
+                    ctx.fillStyle = "#666";
+                    ctx.fillText(y.toFixed(2), 4, py - 4);
+                }
+
+                const first = history[0]?.time || 0;
+                const last = history.at(-1)?.time || 0;
+                for (let i = 0; i <= 4; i++) {
+                    const x = i * width / 4;
+                    ctx.strokeStyle = "#ddd";
+                    ctx.beginPath();
+                    ctx.moveTo(x, 0);
+                    ctx.lineTo(x, height);
+                    ctx.stroke();
+                    if (i) ctx.fillText(`${(first + (last - first) * i / 4).toFixed(1)}s`, x + 4, height - 6);
+                }
+
+                names.forEach((name) => {
+                    ctx.strokeStyle = colors[name];
+                    ctx.beginPath();
+                    history.forEach(({ expressions }, i) => {
+                        const x = history.length < 2 ? 0 : i * width / (history.length - 1);
+                        const y = height - expressions[name] * height;
+                        i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+                    });
+                    ctx.stroke();
+                });
+            };
+
+            file.addEventListener("change", async () => {
+                if (!file.files[0]) return;
+                if (objectUrl) URL.revokeObjectURL(objectUrl);
+                objectUrl = URL.createObjectURL(file.files[0]);
+                video.src = objectUrl;
+                history.length = 0;
+                updateScores({});
+                draw();
+                await video.play().catch(() => { });
+            });
+
+            video.addEventListener("play", () => {
+                clearInterval(timer);
+                timer = setInterval(async () => {
+                    if (video.readyState < 2) return;
+                    const detection = await faceapi.detectSingleFace(video, options).withFaceExpressions();
+                    if (!detection) return;
+                    history.push({ time: video.currentTime, expressions: detection.expressions });
+                    if (history.length > 120) history.shift();
+                    updateScores(detection.expressions);
+                    draw();
+                }, 200);
+            });
+            ["pause", "ended"].forEach((event) => video.addEventListener(event, () => clearInterval(timer)));
+            window.addEventListener("resize", draw);
+
+            await Promise.all([
+                faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
+                faceapi.nets.faceExpressionNet.loadFromUri(MODEL_URL)
+            ]);
+            draw();
+        });
+    </script>
 </body>
-
-<script>
-    window.addEventListener("load", async () => {
-        const MODEL_URL = "../faceAPI/models";
-        const file = document.getElementById("file");
-        const video = document.getElementById("video");
-        const scores = document.getElementById("scores");
-        const options = new faceapi.TinyFaceDetectorOptions();
-
-        let objectUrl;
-        let timer;
-
-        const show = (expressions) => {
-            scores.innerHTML = Object.entries(expressions)
-                .map(([name, value]) => `<div class="score">${name}: ${value.toFixed(4)}</div>`)
-                .join("");
-        };
-
-        file.addEventListener("change", async () => {
-            if (!file.files[0]) return;
-            if (objectUrl) URL.revokeObjectURL(objectUrl);
-            objectUrl = URL.createObjectURL(file.files[0]);
-            video.src = objectUrl;
-            scores.innerHTML = "";
-            await video.play().catch(() => { });
-        });
-
-        video.addEventListener("play", () => {
-            clearInterval(timer);
-            timer = setInterval(async () => {
-                if (video.readyState < 2) return;
-                const detection = await faceapi.detectSingleFace(video, options).withFaceExpressions();
-                scores.textContent = detection ? "" : "検知不可";
-                if (detection) show(detection.expressions);
-            }, 200);
-        });
-        video.addEventListener("pause", () => clearInterval(timer));
-        video.addEventListener("ended", () => clearInterval(timer));
-
-        await Promise.all([
-            faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
-            faceapi.nets.faceExpressionNet.loadFromUri(MODEL_URL)
-        ]);
-    });
-</script>
 
 </html>
