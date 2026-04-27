@@ -30,6 +30,11 @@
             background: #f4f4f4;
         }
 
+        .actions {
+            display: flex;
+            justify-content: flex-end;
+        }
+
         .score {
             margin: 6px 0;
             font-variant-numeric: tabular-nums;
@@ -42,6 +47,9 @@
         <video id="video" controls playsinline muted></video>
         <input id="file" type="file" accept="video/*">
         <canvas id="chart"></canvas>
+        <div class="actions">
+            <button id="download" type="button" disabled>download</button>
+        </div>
         <div id="scores"></div>
     </main>
 
@@ -59,7 +67,7 @@
                 surprised: "#fb8c00"
             };
             const names = Object.keys(colors);
-            const [file, video, chart, scores] = ["file", "video", "chart", "scores"].map($);
+            const [file, video, chart, download, scores] = ["file", "video", "chart", "download", "scores"].map($);
             const ctx = chart.getContext("2d");
             const options = new faceapi.TinyFaceDetectorOptions();
             const history = [];
@@ -74,9 +82,8 @@
                 $(`${name}Score`).textContent = (expressions[name] || 0).toFixed(4);
             });
 
-            const draw = () => {
+            const draw = (data = history, dpr = window.devicePixelRatio || 1) => {
                 const { width, height } = chart.getBoundingClientRect();
-                const dpr = window.devicePixelRatio || 1;
                 chart.width = width * dpr;
                 chart.height = height * dpr;
                 ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -95,8 +102,8 @@
                     ctx.fillText(y.toFixed(2), 4, py - 4);
                 }
 
-                const first = history[0]?.time || 0;
-                const last = history.at(-1)?.time || 0;
+                const first = data[0]?.time || 0;
+                const last = data.at(-1)?.time || 0;
                 for (let i = 0; i <= 4; i++) {
                     const x = i * width / 4;
                     ctx.strokeStyle = "#ddd";
@@ -110,13 +117,30 @@
                 names.forEach((name) => {
                     ctx.strokeStyle = colors[name];
                     ctx.beginPath();
-                    history.forEach(({ expressions }, i) => {
-                        const x = history.length < 2 ? 0 : i * width / (history.length - 1);
+                    data.forEach(({ expressions }, i) => {
+                        const x = data.length < 2 ? 0 : i * width / (data.length - 1);
                         const y = height - expressions[name] * height;
                         i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
                     });
                     ctx.stroke();
                 });
+            };
+
+            const seek = (time) => new Promise((resolve) => {
+                const target = Math.max(0, Math.min(time, video.duration - 0.01));
+                if (Math.abs(video.currentTime - target) < 0.001 && video.readyState >= 2) {
+                    requestAnimationFrame(resolve);
+                    return;
+                }
+                video.addEventListener("seeked", resolve, { once: true });
+                video.currentTime = target;
+            });
+
+            const saveChart = (name) => {
+                const a = document.createElement("a");
+                a.href = chart.toDataURL("image/png");
+                a.download = name;
+                a.click();
             };
 
             file.addEventListener("change", async () => {
@@ -127,7 +151,39 @@
                 history.length = 0;
                 updateScores({});
                 draw();
-                await video.play().catch(() => { });
+                download.disabled = true;
+            });
+
+            video.addEventListener("loadedmetadata", () => {
+                download.disabled = false;
+            });
+
+            download.addEventListener("click", async () => {
+                if (!Number.isFinite(video.duration)) return;
+                clearInterval(timer);
+                video.pause();
+                download.disabled = true;
+
+                const currentTime = video.currentTime;
+                const minutes = Math.ceil(video.duration / 60);
+                for (let minute = 0; minute < minutes; minute++) {
+                    download.textContent = `${minute + 1}/${minutes}`;
+                    const data = [];
+                    const start = minute * 60;
+                    const end = Math.min(start + 60, video.duration);
+                    for (let time = start; time < end; time += 1) {
+                        await seek(time);
+                        const detection = await faceapi.detectSingleFace(video, options).withFaceExpressions();
+                        if (detection) data.push({ time, expressions: detection.expressions });
+                    }
+                    draw(data, 3);
+                    saveChart(`chart_${String(minute + 1).padStart(3, "0")}.png`);
+                }
+
+                await seek(currentTime);
+                draw();
+                download.disabled = false;
+                download.textContent = "download";
             });
 
             video.addEventListener("play", () => {
