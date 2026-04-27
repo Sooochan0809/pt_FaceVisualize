@@ -5,12 +5,95 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Analysis</title>
+    <script defer src="../faceAPI/face-api.min.js"></script>
+    <style>
+        body {
+            font-family: sans-serif;
+            margin: 16px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        main {
+            width: min(90%, 720px);
+            display: flex;
+            flex-direction: column;
+            align-items: stretch;
+        }
+
+        video {
+            width: 100%;
+            height: auto;
+            display: block;
+            margin: 12px 0;
+        }
+
+        .score {
+            width: 100%;
+            margin: 6px 0;
+            font-variant-numeric: tabular-nums;
+        }
+
+        @media (max-width: 720px) {
+            main {
+                width: 100%;
+            }
+        }
+    </style>
 </head>
 
 <body>
+    <main>
+        <video id="video" controls playsinline muted></video>
+        <input id="file" type="file" accept="video/*">
+        <div id="scores"></div>
+    </main>
 </body>
 
 <script>
+    window.addEventListener("load", async () => {
+        const MODEL_URL = "../faceAPI/models";
+        const file = document.getElementById("file");
+        const video = document.getElementById("video");
+        const scores = document.getElementById("scores");
+        const options = new faceapi.TinyFaceDetectorOptions();
+
+        let objectUrl;
+        let timer;
+
+        const show = (expressions) => {
+            scores.innerHTML = Object.entries(expressions)
+                .map(([name, value]) => `<div class="score">${name}: ${value.toFixed(4)}</div>`)
+                .join("");
+        };
+
+        file.addEventListener("change", async () => {
+            if (!file.files[0]) return;
+            if (objectUrl) URL.revokeObjectURL(objectUrl);
+            objectUrl = URL.createObjectURL(file.files[0]);
+            video.src = objectUrl;
+            scores.innerHTML = "";
+            await video.play().catch(() => { });
+        });
+
+        video.addEventListener("play", () => {
+            clearInterval(timer);
+            timer = setInterval(async () => {
+                if (video.readyState < 2) return;
+                const detection = await faceapi.detectSingleFace(video, options).withFaceExpressions();
+                scores.textContent = detection ? "" : "検知不可";
+                if (detection) show(detection.expressions);
+            }, 200);
+        });
+        video.addEventListener("pause", () => clearInterval(timer));
+        video.addEventListener("ended", () => clearInterval(timer));
+
+        await Promise.all([
+            faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
+            faceapi.nets.faceExpressionNet.loadFromUri(MODEL_URL)
+        ]);
+    });
 </script>
 
 </html>

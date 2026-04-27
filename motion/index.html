@@ -42,6 +42,14 @@
             object-fit: cover;
         }
 
+        video[hidden] {
+            display: none;
+        }
+
+        main.file-source video {
+            object-fit: contain;
+        }
+
         canvas {
             pointer-events: none;
         }
@@ -50,7 +58,7 @@
             position: absolute;
             inset: 0;
             z-index: 1;
-            background: #f0f0f0cc;
+            background: #f0f0f07d;
         }
 
         #shuffleSpectrum {
@@ -96,6 +104,35 @@
             display: flex;
             gap: 0.4em;
             align-items: center;
+        }
+
+        #sourceControls {
+            position: absolute;
+            top: 1rem;
+            left: 1rem;
+            z-index: 999;
+            display: grid;
+            gap: 8px;
+        }
+
+        #sourceControls input {
+            position: absolute;
+            inline-size: 1px;
+            block-size: 1px;
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        #sourceControls button,
+        #sourceControls label {
+            padding: 8px 10px;
+            border: 0;
+            border-radius: 8px;
+            background: var(--panel-bg);
+            color: #f4f7fb;
+            font: inherit;
+            font-size: 12px;
+            cursor: pointer;
         }
 
         button {
@@ -173,7 +210,7 @@
 </head>
 
 <body>
-    <main>
+    <main id="stage">
         <video id="video" autoplay playsinline muted></video>
         <canvas id="canvas"></canvas>
         <section id="visualize_01" class="visualize" hidden>
@@ -184,6 +221,12 @@
             <input id="visualizeToggle" type="checkbox">
             <span>visualize_01</span>
         </label>
+        <div id="sourceControls">
+            <button id="cameraButton" type="button">WebCam</button>
+            <label for="fileInput"><span>ファイルから</span>
+                <input id="fileInput" type="file" accept="video/*">
+            </label>
+        </div>
         <div id="out">
             <div id="calibControls">
                 <button id="calibrate">キャリブ</button>
@@ -200,7 +243,7 @@
     import { FaceLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.34";
 
     const $ = id => document.getElementById(id);
-    const [video, canvas, vizCanvas, calibrate, clearBaseline, toggleShapes, status, shapesPanel, visualizeToggle, visualize, shuffleSpectrum] = ["video", "canvas", "vizCanvas", "calibrate", "clearBaseline", "toggleShapes", "status", "shapesPanel", "visualizeToggle", "visualize_01", "shuffleSpectrum"].map($);
+    const [stage, video, canvas, vizCanvas, cameraButton, fileInput, calibrate, clearBaseline, toggleShapes, status, shapesPanel, visualizeToggle, visualize, shuffleSpectrum] = ["stage", "video", "canvas", "vizCanvas", "cameraButton", "fileInput", "calibrate", "clearBaseline", "toggleShapes", "status", "shapesPanel", "visualizeToggle", "visualize_01", "shuffleSpectrum"].map($);
     const ctx = canvas.getContext("2d");
     const vizCtx = vizCanvas.getContext("2d");
     const shapes = new Map();
@@ -208,9 +251,16 @@
     const spectrumSharpness = new Map();
     let spectrumOrder = [];
     const base = new Map();
-    const [WARMUP_FRAMES, CALIBRATION_FRAMES, DEADZONE, SPECTRUM_ZERO_THRESHOLD] = [30, 120, 0.005, 0.012];
+    const [WARMUP_FRAMES, CALIBRATION_FRAMES, DEADZONE, SPECTRUM_ZERO_THRESHOLD, VIDEO_BASELINE_SECONDS, VIDEO_BASELINE_PASSES] = [30, 120, 0.005, 0.012, 0.2, 5];
     const calibration = { warmup: 0, remaining: 0, samples: 0, stats: new Map() };
     const [VW, VH] = [1280, 720];
+    let activeMedia = video;
+    let activeMode = "camera";
+    let activeObjectUrl = "";
+    let running = false;
+    let loopToken = 0;
+    let landmarkerMode = "VIDEO";
+    let calibratingVideoFile = false;
 
     Object.assign(canvas, { width: 720, height: 960 });
     Object.assign(vizCanvas, { width: canvas.width, height: canvas.height });
@@ -227,18 +277,31 @@
         }
     );
 
-    video.srcObject = await navigator.mediaDevices.getUserMedia({
-        video: { width: { ideal: VW }, height: { ideal: VH }, aspectRatio: { ideal: 16 / 9 } }
+    startCamera().catch(error => {
+        status.textContent = `カメラを開始できません: ${error.message}`;
     });
-
-    video.onloadeddata = () => requestAnimationFrame(loop);
 
     visualizeToggle.onchange = () => {
         visualize.hidden = !visualizeToggle.checked;
         if (visualizeToggle.checked) setShapesExpanded(false);
     };
 
-    calibrate.onclick = () => {
+    calibrate.onclick = async () => {
+        if (activeMode === "video-file") {
+            stopLoop();
+            calibrate.disabled = true;
+            try {
+                await calibrateFromVideoStart();
+                await seekVideo(0);
+                processResults(faceLandmarker.detectForVideo(video, performance.now()));
+                await video.play();
+                startLoop();
+            } catch (error) {
+                calibrate.disabled = false;
+                status.textContent = `動画キャリブレーション失敗: ${error.message}`;
+            }
+            return;
+        }
         resetCalibration(WARMUP_FRAMES, CALIBRATION_FRAMES);
         calibrate.disabled = true;
     };
@@ -250,6 +313,26 @@
 
     shuffleSpectrum.onclick = () => {
         spectrumOrder = shuffle(spectrumOrder);
+    };
+
+    cameraButton.onclick = () => {
+        startCamera().catch(error => {
+            status.textContent = `カメラを開始できません: ${error.message}`;
+        });
+    };
+
+    fileInput.onchange = event => {
+        importFile(event.target.files[0]).catch(error => {
+            status.textContent = `ファイルを読み込めません: ${error.message}`;
+        });
+    };
+
+    video.onplay = () => {
+        if (activeMode === "video-file" && !calibratingVideoFile && !running) startLoop();
+    };
+
+    video.onpause = () => {
+        if (activeMode === "video-file" && !calibratingVideoFile) stopLoop();
     };
 
     toggleShapes.onclick = () => {
@@ -269,13 +352,139 @@
         status.textContent = "";
     }
 
-    function loop() {
-        const { faceLandmarks, faceBlendshapes } = faceLandmarker.detectForVideo(video, performance.now());
+    async function startCamera() {
+        stopLoop();
+        stopCameraStream();
+        clearImportedFile();
+        await setLandmarkerMode("VIDEO");
+        video.srcObject = await navigator.mediaDevices.getUserMedia({
+            video: { width: { ideal: VW }, height: { ideal: VH }, aspectRatio: { ideal: 16 / 9 } }
+        });
+        await video.play();
+        setActiveMedia(video, "camera");
+        startLoop();
+    }
+
+    async function importFile(file) {
+        if (!file) return;
+        stopLoop();
+        stopCameraStream();
+        clearImportedFile();
+        activeObjectUrl = URL.createObjectURL(file);
+
+        if (file.type.startsWith("video/")) {
+            await loadMedia(video, activeObjectUrl, "loadeddata");
+            setActiveMedia(video, "video-file");
+            video.pause();
+            await seekVideo(0);
+            await calibrateFromVideoStart();
+            await seekVideo(0);
+            processResults(faceLandmarker.detectForVideo(video, performance.now()));
+            await video.play();
+            startLoop();
+            return;
+        }
+
+        clearImportedFile();
+        status.textContent = "動画ファイルを選択してください";
+    }
+
+    function startLoop() {
+        if (running) return;
+        running = true;
+        requestAnimationFrame(() => loop(++loopToken));
+    }
+
+    function stopLoop() {
+        running = false;
+        loopToken++;
+    }
+
+    function loop(token) {
+        if (!running || token !== loopToken) return;
+        processResults(faceLandmarker.detectForVideo(video, performance.now()));
+        requestAnimationFrame(() => loop(token));
+    }
+
+    function processResults({ faceLandmarks, faceBlendshapes }) {
         const categories = faceBlendshapes[0]?.categories ?? [];
         draw(faceLandmarks[0]);
         updateShapes(categories);
         drawSpectrum(categories);
-        requestAnimationFrame(loop);
+    }
+
+    async function setLandmarkerMode(mode) {
+        if (landmarkerMode === mode) return;
+        await faceLandmarker.setOptions({ runningMode: mode });
+        landmarkerMode = mode;
+    }
+
+    function setActiveMedia(media, mode) {
+        activeMedia = media;
+        activeMode = mode;
+        stage.classList.toggle("file-source", mode !== "camera");
+        video.hidden = media !== video;
+        video.controls = video.loop = mode === "video-file";
+    }
+
+    function stopCameraStream() {
+        const stream = video.srcObject instanceof MediaStream ? video.srcObject : null;
+        if (stream) stream.getTracks().forEach(track => track.stop());
+        video.srcObject = null;
+    }
+
+    function clearImportedFile() {
+        if (activeObjectUrl) URL.revokeObjectURL(activeObjectUrl);
+        activeObjectUrl = "";
+        video.removeAttribute("src");
+        video.load();
+        fileInput.value = "";
+    }
+
+    function loadMedia(media, src, eventName) {
+        return new Promise((resolve, reject) => {
+            const done = () => {
+                media.removeEventListener(eventName, done);
+                media.removeEventListener("error", fail);
+                resolve();
+            };
+            const fail = () => {
+                media.removeEventListener(eventName, done);
+                media.removeEventListener("error", fail);
+                reject(new Error("メディアを読み込めません"));
+            };
+            media.addEventListener(eventName, done, { once: true });
+            media.addEventListener("error", fail, { once: true });
+            media.src = src;
+        });
+    }
+
+    function seekVideo(time) {
+        return new Promise(resolve => {
+            if (Math.abs(video.currentTime - time) < 0.001) {
+                resolve();
+                return;
+            }
+            video.addEventListener("seeked", resolve, { once: true });
+            video.currentTime = time;
+        });
+    }
+
+    function waitVideoFrame() {
+        return new Promise(resolve => {
+            let done = false;
+            const finish = () => {
+                if (done) return;
+                done = true;
+                resolve();
+            };
+            setTimeout(finish, 80);
+            if ("requestVideoFrameCallback" in video) {
+                video.requestVideoFrameCallback(finish);
+                return;
+            }
+            requestAnimationFrame(finish);
+        });
     }
 
     function updateShapes(categories) {
@@ -328,10 +537,59 @@
         status.textContent = `キャリブ済み (${calibration.samples} frames)`;
     }
 
+    async function calibrateFromVideoStart() {
+        const duration = Math.min(VIDEO_BASELINE_SECONDS, video.duration || VIDEO_BASELINE_SECONDS);
+        const samplesByName = new Map();
+        let sampleCount = 0;
+
+        await setLandmarkerMode("VIDEO");
+        calibratingVideoFile = true;
+        try {
+            for (let pass = 0; pass < VIDEO_BASELINE_PASSES; pass++) {
+                status.textContent = `動画キャリブレーション中 ${pass + 1}/${VIDEO_BASELINE_PASSES}`;
+                await seekVideo(0);
+                await video.play();
+                while (video.currentTime < duration) {
+                    await waitVideoFrame();
+                    const categories = faceLandmarker.detectForVideo(video, performance.now()).faceBlendshapes[0]?.categories ?? [];
+                    if (!categories.length) continue;
+                    sampleCount++;
+                    for (const { categoryName, score } of categories) {
+                        const values = samplesByName.get(categoryName) ?? [];
+                        values.push(score);
+                        samplesByName.set(categoryName, values);
+                    }
+                }
+                video.pause();
+            }
+        } finally {
+            video.pause();
+            calibratingVideoFile = false;
+        }
+
+        if (!sampleCount) {
+            status.textContent = `最初の${VIDEO_BASELINE_SECONDS}秒x${VIDEO_BASELINE_PASSES}回で顔を検出できません`;
+            return;
+        }
+
+        base.clear();
+        calibration.stats.clear();
+        Object.assign(calibration, { warmup: 0, remaining: 0, samples: sampleCount });
+        for (const [categoryName, values] of samplesByName) {
+            const mean = values.reduce((sum, value) => sum + value, 0) / values.length;
+            const min = Math.min(...values);
+            const max = Math.max(...values);
+            const dead = Math.max((max - min) * 0.1, DEADZONE);
+            base.set(categoryName, { mean, min, max, dead });
+        }
+        calibrate.disabled = false;
+        status.textContent = `キャリブ済み (${VIDEO_BASELINE_SECONDS * VIDEO_BASELINE_PASSES}s)`;
+    }
+
     function calibratedScore(categoryName, score) {
-        const { mean = 0, dead = 0 } = base.get(categoryName) ?? {};
-        const diff = score - mean;
-        return Math.abs(diff) <= dead ? 0 : diff;
+        const { mean = 0, dead = 0, min = mean - dead, max = mean + dead } = base.get(categoryName) ?? {};
+        if (score >= min - dead && score <= max + dead) return 0;
+        return score < mean ? score - (min - dead) : score - (max + dead);
     }
 
     function signed(value) {
@@ -366,8 +624,6 @@
         });
 
         vizCtx.clearRect(0, 0, width, height);
-        vizCtx.fillStyle = "#f0f0f0cc";
-        vizCtx.fillRect(0, 0, width, height);
         drawSpectrumPath(points, calibrated);
     }
 
@@ -449,7 +705,10 @@
 
     function draw(landmarks = []) {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
-        const [sw, sh] = [video.videoWidth || VW, video.videoHeight || VH];
+        const [sw, sh] = [
+            activeMedia.videoWidth || activeMedia.naturalWidth || VW,
+            activeMedia.videoHeight || activeMedia.naturalHeight || VH
+        ];
         const scale = Math.max(canvas.width / sw, canvas.height / sh);
         const [dx, dy] = [(canvas.width - sw * scale) / 2, (canvas.height - sh * scale) / 2];
 
