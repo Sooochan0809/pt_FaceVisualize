@@ -75,6 +75,7 @@
         const resetButton = document.getElementById("resetButton");
         const morphMeshes = [];
         let shuffledBlendshapeMap = null;
+        let shuffleBaselineScores = null;
         let latestBlendshapeCategories = null;
         let shouldShuffleBlendshapes = false;
 
@@ -141,11 +142,18 @@
             );
         }
 
+        function createBlendshapeScoreMap(categories) {
+            return Object.fromEntries(
+                categories.map((c) => [c.categoryName, c.score])
+            );
+        }
+
         function applyBlendshapes(categories) {
             latestBlendshapeCategories = categories;
 
             if (shouldShuffleBlendshapes) {
                 shuffledBlendshapeMap ??= createShuffledBlendshapeMap(categories);
+                shuffleBaselineScores ??= createBlendshapeScoreMap(categories);
             }
 
             for (const mesh of morphMeshes) {
@@ -159,9 +167,19 @@
                     const index = dict[targetName];
 
                     if (index !== undefined) {
+                        const targetScore = shouldShuffleBlendshapes
+                            ? THREE.MathUtils.clamp(
+                                (shuffleBaselineScores[targetName] ?? 0) +
+                                c.score -
+                                (shuffleBaselineScores[c.categoryName] ?? 0),
+                                0,
+                                1
+                            )
+                            : c.score;
+
                         influences[index] = THREE.MathUtils.lerp(
                             influences[index],
-                            c.score,
+                            targetScore,
                             0.45
                         );
                     }
@@ -173,14 +191,17 @@
             shouldShuffleBlendshapes = true;
             if (latestBlendshapeCategories) {
                 shuffledBlendshapeMap = createShuffledBlendshapeMap(latestBlendshapeCategories);
+                shuffleBaselineScores = createBlendshapeScoreMap(latestBlendshapeCategories);
             } else {
                 shuffledBlendshapeMap = null;
+                shuffleBaselineScores = null;
             }
         });
 
         resetButton.addEventListener("click", () => {
             shouldShuffleBlendshapes = false;
             shuffledBlendshapeMap = null;
+            shuffleBaselineScores = null;
         });
 
         function loop() {
