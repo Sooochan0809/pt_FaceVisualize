@@ -19,6 +19,30 @@
             transform: scaleX(-1);
             opacity: .7;
         }
+
+        .controls {
+            position: fixed;
+            top: 12px;
+            left: 12px;
+            z-index: 1;
+            display: flex;
+            gap: 8px;
+        }
+
+        button {
+            appearance: none;
+            border: 1px solid rgba(255, 255, 255, .18);
+            border-radius: 6px;
+            background: rgba(28, 28, 28, .82);
+            color: #fff;
+            font: 14px/1.2 system-ui, sans-serif;
+            padding: 8px 12px;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background: rgba(52, 52, 52, .9);
+        }
     </style>
 
     <script type="importmap">
@@ -32,6 +56,10 @@
 </head>
 
 <body>
+    <div class="controls">
+        <button id="shuffleButton" type="button">Shuffle</button>
+        <button id="resetButton" type="button">Reset</button>
+    </div>
     <video id="video" autoplay playsinline muted></video>
 
     <script type="module">
@@ -43,7 +71,12 @@
         } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.18/vision_bundle.mjs";
 
         const video = document.getElementById("video");
+        const shuffleButton = document.getElementById("shuffleButton");
+        const resetButton = document.getElementById("resetButton");
         const morphMeshes = [];
+        let shuffledBlendshapeMap = null;
+        let latestBlendshapeCategories = null;
+        let shouldShuffleBlendshapes = false;
 
         const scene = new THREE.Scene();
         scene.background = new THREE.Color(0x111111);
@@ -94,13 +127,36 @@
         video.srcObject = stream;
         await video.play();
 
+        function createShuffledBlendshapeMap(categories) {
+            const sourceNames = categories.map((c) => c.categoryName);
+            const targetNames = [...sourceNames];
+
+            for (let i = targetNames.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * i);
+                [targetNames[i], targetNames[j]] = [targetNames[j], targetNames[i]];
+            }
+
+            return Object.fromEntries(
+                sourceNames.map((sourceName, i) => [sourceName, targetNames[i]])
+            );
+        }
+
         function applyBlendshapes(categories) {
+            latestBlendshapeCategories = categories;
+
+            if (shouldShuffleBlendshapes) {
+                shuffledBlendshapeMap ??= createShuffledBlendshapeMap(categories);
+            }
+
             for (const mesh of morphMeshes) {
                 const dict = mesh.morphTargetDictionary;
                 const influences = mesh.morphTargetInfluences;
 
                 for (const c of categories) {
-                    const index = dict[c.categoryName];
+                    const targetName = shouldShuffleBlendshapes
+                        ? shuffledBlendshapeMap[c.categoryName]
+                        : c.categoryName;
+                    const index = dict[targetName];
 
                     if (index !== undefined) {
                         influences[index] = THREE.MathUtils.lerp(
@@ -112,6 +168,20 @@
                 }
             }
         }
+
+        shuffleButton.addEventListener("click", () => {
+            shouldShuffleBlendshapes = true;
+            if (latestBlendshapeCategories) {
+                shuffledBlendshapeMap = createShuffledBlendshapeMap(latestBlendshapeCategories);
+            } else {
+                shuffledBlendshapeMap = null;
+            }
+        });
+
+        resetButton.addEventListener("click", () => {
+            shouldShuffleBlendshapes = false;
+            shuffledBlendshapeMap = null;
+        });
 
         function loop() {
             const result = faceLandmarker.detectForVideo(video, performance.now());
