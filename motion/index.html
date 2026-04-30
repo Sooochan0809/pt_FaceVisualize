@@ -61,13 +61,6 @@
             background: #f0f0f07d;
         }
 
-        #shuffleSpectrum {
-            position: absolute;
-            top: 56px;
-            right: 8px;
-            z-index: 2;
-        }
-
         #out,
         #layerControls {
             padding: 12px;
@@ -102,8 +95,23 @@
             top: 8px;
             right: 8px;
             display: flex;
+            flex-direction: column;
+            gap: 0.45em;
+            align-items: flex-start;
+        }
+
+        #layerControls label {
+            display: flex;
             gap: 0.4em;
             align-items: center;
+        }
+
+        #shuffleSpectrum,
+        #viz2Tone {
+            width: 100%;
+            padding: 0.25em 0.4em;
+            border-color: #777;
+            font-size: 0.85em;
         }
 
         #sourceControls {
@@ -215,12 +223,22 @@
         <canvas id="canvas"></canvas>
         <section id="visualize_01" class="visualize" hidden>
             <canvas id="vizCanvas"></canvas>
-            <button id="shuffleSpectrum" type="button">シャッフル</button>
         </section>
-        <label id="layerControls">
-            <input id="visualizeToggle" type="checkbox">
-            <span>visualize_01</span>
-        </label>
+        <section id="visualize_02" class="visualize" hidden>
+            <canvas id="vizCanvas2"></canvas>
+        </section>
+        <div id="layerControls">
+            <label>
+                <input id="visualizeToggle" type="checkbox">
+                <span>visualize_01</span>
+            </label>
+            <button id="shuffleSpectrum" type="button" hidden>シャッフル</button>
+            <label>
+                <input id="visualizeToggle2" type="checkbox">
+                <span>visualize_02</span>
+            </label>
+            <button id="viz2Tone" type="button" aria-pressed="false" hidden>カラー</button>
+        </div>
         <div id="sourceControls">
             <button id="cameraButton" type="button">WebCam</button>
             <label for="fileInput"><span>ファイルから</span>
@@ -243,12 +261,22 @@
     import { FaceLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.34";
 
     const $ = id => document.getElementById(id);
-    const [stage, video, canvas, vizCanvas, cameraButton, fileInput, calibrate, clearBaseline, toggleShapes, status, shapesPanel, visualizeToggle, visualize, shuffleSpectrum] = ["stage", "video", "canvas", "vizCanvas", "cameraButton", "fileInput", "calibrate", "clearBaseline", "toggleShapes", "status", "shapesPanel", "visualizeToggle", "visualize_01", "shuffleSpectrum"].map($);
+    const [
+        stage, video, canvas, vizCanvas, vizCanvas2, cameraButton, fileInput,
+        calibrate, clearBaseline, toggleShapes, status, shapesPanel,
+        visualizeToggle, visualizeToggle2, visualize, visualize2, shuffleSpectrum, viz2Tone
+    ] = [
+        "stage", "video", "canvas", "vizCanvas", "vizCanvas2", "cameraButton", "fileInput",
+        "calibrate", "clearBaseline", "toggleShapes", "status", "shapesPanel",
+        "visualizeToggle", "visualizeToggle2", "visualize_01", "visualize_02", "shuffleSpectrum", "viz2Tone"
+    ].map($);
     const ctx = canvas.getContext("2d");
     const vizCtx = vizCanvas.getContext("2d");
+    const vizCtx2 = vizCanvas2.getContext("2d");
     const shapes = new Map();
     const spectrum = new Map();
     const spectrumSharpness = new Map();
+    const circles = new Map();
     let spectrumOrder = [];
     const base = new Map();
     const [WARMUP_FRAMES, CALIBRATION_FRAMES, DEADZONE, SPECTRUM_ZERO_THRESHOLD, VIDEO_BASELINE_SECONDS, VIDEO_BASELINE_PASSES] = [30, 120, 0.005, 0.012, 0.2, 5];
@@ -261,9 +289,12 @@
     let loopToken = 0;
     let landmarkerMode = "VIDEO";
     let calibratingVideoFile = false;
+    let viz2Monochrome = false;
 
     Object.assign(canvas, { width: 720, height: 960 });
-    Object.assign(vizCanvas, { width: canvas.width, height: canvas.height });
+    for (const target of [vizCanvas, vizCanvas2]) {
+        Object.assign(target, { width: canvas.width, height: canvas.height });
+    }
 
     const faceLandmarker = await FaceLandmarker.createFromOptions(
         await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.34/wasm"),
@@ -282,8 +313,17 @@
     });
 
     visualizeToggle.onchange = () => {
-        visualize.hidden = !visualizeToggle.checked;
-        if (visualizeToggle.checked) setShapesExpanded(false);
+        toggleLayer(visualizeToggle, visualize, shuffleSpectrum);
+    };
+
+    visualizeToggle2.onchange = () => {
+        toggleLayer(visualizeToggle2, visualize2, viz2Tone);
+    };
+
+    viz2Tone.onclick = () => {
+        viz2Monochrome = !viz2Monochrome;
+        viz2Tone.textContent = viz2Monochrome ? "モノクロ" : "カラー";
+        viz2Tone.setAttribute("aria-pressed", viz2Monochrome);
     };
 
     calibrate.onclick = async () => {
@@ -343,6 +383,12 @@
         shapesPanel.hidden = !expanded;
         toggleShapes.setAttribute("aria-expanded", expanded);
         toggleShapes.textContent = `${expanded ? "▲" : "▼"}`;
+    }
+
+    function toggleLayer(toggle, layer, control) {
+        const active = toggle.checked;
+        layer.hidden = control.hidden = !active;
+        if (active) setShapesExpanded(false);
     }
 
     function resetCalibration(warmup = 0, frames = 0) {
@@ -411,6 +457,7 @@
         draw(faceLandmarks[0]);
         updateShapes(categories);
         drawSpectrum(categories);
+        drawMotionCircles(categories);
     }
 
     async function setLandmarkerMode(mode) {
@@ -687,6 +734,87 @@
         vizCtx.closePath();
         vizCtx.stroke();
         vizCtx.restore();
+    }
+
+    function drawMotionCircles(categories) {
+        const { width, height } = vizCanvas2;
+        vizCtx2.clearRect(0, 0, width, height);
+        if (!categories.length) return;
+
+        const calibrated = base.size > 0;
+        const values = categories.map(({ categoryName, score }) => {
+            const target = calibrated ? calibratedScore(categoryName, score) : 0;
+            const state = circles.get(categoryName) ?? { value: 0, speed: 0, phase: Math.random() * Math.PI * 2 };
+            const previous = state.value;
+            state.value = previous * 0.78 + target * 0.22;
+            state.speed = state.speed * 0.72 + Math.abs(state.value - previous) * 0.28;
+            state.phase += 0.02 + Math.abs(state.value) * 0.16;
+            circles.set(categoryName, state);
+            return { ...state, categoryName, amount: Math.abs(state.value) };
+        });
+
+        const maxAmount = Math.max(...values.map(({ amount }) => amount), calibrated ? 0.08 : 0.25);
+        const [cx, cy] = [width / 2, height / 2];
+        const minStage = Math.min(width, height);
+
+        vizCtx2.save();
+        vizCtx2.lineWidth = 1.8;
+        vizCtx2.lineCap = "round";
+        vizCtx2.lineJoin = "round";
+
+        values.forEach(({ value, speed, phase, amount }, i) => {
+            const normalized = clamp(amount / maxAmount, 0, 1);
+            const radius = minStage * (0.12 + normalized * 0.28);
+            const amplitude = minStage * normalized * 0.08;
+            const sharpness = clamp(speed * (calibrated ? 220 : 42), 0, 1) ** 0.65;
+            const waves = Math.round(3 + normalized * 10);
+            const hue = (i * 41 + 165) % 360;
+            const alpha = 0.36 + normalized * 0.55;
+
+            vizCtx2.strokeStyle = viz2Monochrome
+                ? `rgba(40, 40, 40, ${alpha})`
+                : `hsla(${hue}, 55%, ${value >= 0 ? 42 : 55}%, ${alpha})`;
+            vizCtx2.fillStyle = viz2Monochrome
+                ? `rgba(40, 40, 40, ${0.025 + normalized * 0.075})`
+                : `hsla(${hue}, 62%, 58%, ${0.035 + normalized * 0.09})`;
+            drawWavyCircle(cx, cy, radius, amplitude, waves, phase, sharpness);
+        });
+
+        vizCtx2.restore();
+    }
+
+    function drawWavyCircle(cx, cy, radius, amplitude, waves, phase, sharpness) {
+        const steps = 96;
+        vizCtx2.beginPath();
+
+        for (let i = 0; i <= steps; i++) {
+            const angle = i / steps * Math.PI * 2;
+            const wave = shapedWave(angle * waves + phase, sharpness);
+            const r = radius + wave * amplitude;
+            const x = cx + Math.cos(angle) * r;
+            const y = cy + Math.sin(angle) * r;
+            if (i === 0) {
+                vizCtx2.moveTo(x, y);
+            } else {
+                vizCtx2.lineTo(x, y);
+            }
+        }
+
+        vizCtx2.closePath();
+        vizCtx2.fill();
+        vizCtx2.stroke();
+    }
+
+    function shapedWave(angle, sharpness) {
+        const wrapped = ((angle % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+        const triangle = 1 - Math.abs(wrapped / Math.PI - 1);
+        const pointed = Math.pow(triangle, 1 + sharpness * 8) * 2 - 1;
+        const smooth = Math.cos(angle);
+        return smooth * (1 - sharpness) + pointed * sharpness;
+    }
+
+    function clamp(value, min, max) {
+        return Math.max(min, Math.min(value, max));
     }
 
     function midpoint(a, b) {
