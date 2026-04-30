@@ -139,6 +139,20 @@
             transition: background 120ms linear;
         }
 
+        .plutchik-3d {
+            width: min(86vmin, 700px);
+            height: min(86vmin, 700px);
+            position: relative;
+            display: grid;
+            place-items: center;
+        }
+
+        .plutchik-3d canvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+
         .panel,
         .layer-controls {
             padding: 12px;
@@ -278,6 +292,10 @@
         <div id="colorField" class="color-field" aria-label="emotion color field">
         </div>
     </section>
+    <section id="visualize_04" class="visualize" hidden>
+        <div id="plutchik3d" class="plutchik-3d" aria-label="three dimensional plutchik emotion chart">
+        </div>
+    </section>
     <main>
         <video id="video" autoplay muted playsinline></video>
         <img id="image" alt="インポートした画像" hidden>
@@ -294,11 +312,31 @@
         </aside>
     </main>
 
-    <script>
+    <script type="module">
+        import * as THREE from "../vendor/three.module.min.js";
+
         window.addEventListener("load", () => {
             const MODEL_URL = "../faceAPI/models";
             const MAX_CAMERA_SIZE = 4096;
             const RADAR_AXES = ["happy", "surprised", "fearful", "sad", "disgusted", "angry"];
+            const PLUTCHIK_THRESHOLD = 0.04;
+            const PLUTCHIK_AXES = [
+                { name: "happy", label: "喜び", angle: -90, color: "#ffd23a" },
+                { name: "surprised", label: "驚き", angle: -30, color: "#2f9dff" },
+                { name: "fearful", label: "恐れ", angle: 30, color: "#20b7a8" },
+                { name: "sad", label: "悲しみ", angle: 90, color: "#4767c8" },
+                { name: "disgusted", label: "嫌悪", angle: 150, color: "#8b4dbf" },
+                { name: "angry", label: "怒り", angle: 210, color: "#d62839" }
+            ];
+            const PLUTCHIK_LEVEL_COLORS = {
+                happy: ["#F9F8CB", "#F4EA82", "#F0D451", "#E3BE1F"],
+                surprised: ["#D9F0FF", "#92D3FF", "#55B5F4", "#228DD0"],
+                fearful: ["#D6F4EE", "#92E1D3", "#4FC9BA", "#18998D"],
+                sad: ["#DCE5FF", "#9FB6F0", "#627FD4", "#3355A8"],
+                disgusted: ["#EBDDFA", "#C9A9E8", "#9D70C8", "#7042A0"],
+                angry: ["#F8D5D9", "#F0939A", "#DC5260", "#A92231"]
+            };
+            const PLUTCHIK_SECTOR_HALF_ANGLE = 30;
             const EMOTION_COLORS = {
                 happy: [255, 210, 58],
                 sad: [34, 66, 168],
@@ -336,6 +374,7 @@
             const radarShape = $("radarShape");
             const circumplexPoint = $("circumplexPoint");
             const colorField = $("colorField");
+            const plutchik3d = $("plutchik3d");
             const sections = [...document.querySelectorAll('section[id^="visualize_"]')];
 
             let running = false;
@@ -398,6 +437,323 @@
                 return `<text class="radar-label" x="${x}" y="${y}">${name}</text>`;
             }).join("");
 
+            const createPlutchikScene = (container) => {
+                const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+                renderer.setClearColor(0x000000, 0);
+                renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+                renderer.shadowMap.enabled = true;
+                renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+                container.appendChild(renderer.domElement);
+
+                const scene = new THREE.Scene();
+                const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 100);
+                camera.position.set(0, 4.6, 8.6);
+                camera.lookAt(0, 0.55, 0);
+
+                const group = new THREE.Group();
+                group.rotation.y = -0.42;
+                scene.add(group);
+
+                const ambient = new THREE.HemisphereLight(0xffffff, 0x9aa5b1, 2.1);
+                scene.add(ambient);
+                const key = new THREE.DirectionalLight(0xffffff, 3.2);
+                key.position.set(3.5, 7, 5);
+                key.castShadow = true;
+                scene.add(key);
+
+                const axisGroup = new THREE.Group();
+                const valueGroup = new THREE.Group();
+                group.add(axisGroup, valueGroup);
+
+                const setSize = () => {
+                    const rect = container.getBoundingClientRect();
+                    const size = Math.max(1, Math.min(rect.width, rect.height));
+                    renderer.setSize(size, size, false);
+                    camera.aspect = 1;
+                    camera.updateProjectionMatrix();
+                };
+
+                const disposeChildren = (target) => {
+                    target.children.forEach((child) => {
+                        child.traverse?.((object) => {
+                            object.geometry?.dispose?.();
+                            if (Array.isArray(object.material)) {
+                                object.material.forEach((m) => {
+                                    m.map?.dispose?.();
+                                    m.dispose?.();
+                                });
+                            } else {
+                                object.material?.map?.dispose?.();
+                                object.material?.dispose?.();
+                            }
+                        });
+                    });
+                    target.clear();
+                };
+
+                const pointFor = (angle, radius, y = 1.62) => {
+                    const a = (angle * Math.PI) / 180;
+                    return new THREE.Vector3(Math.cos(a) * radius, y, Math.sin(a) * radius);
+                };
+                const createTextSprite = (text, color = "#1b2026", size = 72) => {
+                    const canvas = document.createElement("canvas");
+                    canvas.width = 256;
+                    canvas.height = 128;
+                    const context = canvas.getContext("2d");
+                    context.clearRect(0, 0, canvas.width, canvas.height);
+                    context.fillStyle = color;
+                    context.font = `700 ${size}px Yu Gothic, sans-serif`;
+                    context.textAlign = "center";
+                    context.textBaseline = "middle";
+                    context.fillText(text, canvas.width / 2, canvas.height / 2);
+                    const texture = new THREE.CanvasTexture(canvas);
+                    texture.colorSpace = THREE.SRGBColorSpace;
+                    const material = new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false });
+                    const sprite = new THREE.Sprite(material);
+                    sprite.scale.set(0.72, 0.34, 1);
+                    return sprite;
+                };
+                const apex = new THREE.Vector3(0, -1.62, 0);
+                const coneRadius = 2.74;
+                const coneHeight = 3.08;
+
+                const lineMaterial = (opacity = 0.34) => new THREE.LineBasicMaterial({
+                    color: 0x59636d,
+                    transparent: true,
+                    opacity
+                });
+
+                const createRing = (level, opacity = 0.32) => {
+                    const radius = coneRadius * level;
+                    const y = apex.y + coneHeight * level;
+                    return new THREE.LineLoop(
+                        new THREE.BufferGeometry().setFromPoints(
+                            Array.from({ length: 160 }, (_, i) => pointFor((360 * i) / 160, radius, y))
+                        ),
+                        lineMaterial(opacity)
+                    );
+                };
+                const createBaseArc = (startAngle, endAngle, opacity = 0.48) => {
+                    const y = apex.y + coneHeight;
+                    return new THREE.Line(
+                        new THREE.BufferGeometry().setFromPoints(
+                            Array.from({ length: 20 }, (_, i) => {
+                                const t = i / 19;
+                                return pointFor(startAngle + (endAngle - startAngle) * t, coneRadius, y);
+                            })
+                        ),
+                        lineMaterial(opacity)
+                    );
+                };
+                const createSectorBandGeometry = (angle, halfAngle, lowerLevel, upperLevel, segments = 18) => {
+                    const lowerRadius = coneRadius * lowerLevel;
+                    const upperRadius = coneRadius * upperLevel;
+                    const lowerY = apex.y + coneHeight * lowerLevel;
+                    const upperY = apex.y + coneHeight * upperLevel;
+                    const lowerRim = Array.from({ length: segments + 1 }, (_, i) => {
+                        const t = i / segments;
+                        return pointFor(angle - halfAngle + halfAngle * 2 * t, lowerRadius, lowerY);
+                    });
+                    const upperRim = Array.from({ length: segments + 1 }, (_, i) => {
+                        const t = i / segments;
+                        return pointFor(angle - halfAngle + halfAngle * 2 * t, upperRadius, upperY);
+                    });
+                    const points = lowerLevel <= 0.001 ? [apex, ...upperRim] : [...lowerRim, ...upperRim];
+                    const indices = [];
+                    if (lowerLevel <= 0.001) {
+                        for (let i = 1; i < points.length - 1; i += 1) indices.push(0, i, i + 1);
+                    } else {
+                        const offset = lowerRim.length;
+                        for (let i = 0; i < lowerRim.length - 1; i += 1) {
+                            indices.push(i, offset + i, offset + i + 1, i, offset + i + 1, i + 1);
+                        }
+                    }
+                    const geometry = new THREE.BufferGeometry().setFromPoints(points);
+                    geometry.setIndex(indices);
+                    geometry.computeVertexNormals();
+                    return geometry;
+                };
+                const createSectorCapGeometry = (angle, halfAngle, radius, y, segments = 18) => {
+                    const inner = pointFor(angle, 0, y);
+                    const rim = Array.from({ length: segments + 1 }, (_, i) => {
+                        const t = i / segments;
+                        return pointFor(angle - halfAngle + halfAngle * 2 * t, radius, y);
+                    });
+                    const geometry = new THREE.BufferGeometry().setFromPoints([inner, ...rim]);
+                    const indices = [];
+                    for (let i = 1; i < rim.length; i += 1) indices.push(0, i, i + 1);
+                    geometry.setIndex(indices);
+                    geometry.computeVertexNormals();
+                    return geometry;
+                };
+                const createSectorSideBandGeometry = (angle, lowerLevel, upperLevel) => {
+                    const lowerRadius = coneRadius * lowerLevel;
+                    const upperRadius = coneRadius * upperLevel;
+                    const lowerY = apex.y + coneHeight * lowerLevel;
+                    const upperY = apex.y + coneHeight * upperLevel;
+                    const lowerInner = lowerLevel <= 0.001 ? apex : pointFor(angle, 0, lowerY);
+                    const lowerOuter = lowerLevel <= 0.001 ? apex : pointFor(angle, lowerRadius, lowerY);
+                    const upperInner = pointFor(angle, 0, upperY);
+                    const upperOuter = pointFor(angle, upperRadius, upperY);
+                    const geometry = new THREE.BufferGeometry().setFromPoints([lowerInner, lowerOuter, upperOuter, upperInner]);
+                    geometry.setIndex([0, 1, 2, 0, 2, 3]);
+                    geometry.computeVertexNormals();
+                    return geometry;
+                };
+
+                const frame = new THREE.Group();
+                [1 / 3, 2 / 3, 1].forEach((level) => frame.add(createRing(level, level === 1 ? 0.56 : 0.32)));
+                const sectorBoundaries = PLUTCHIK_AXES.map((axis) => axis.angle - PLUTCHIK_SECTOR_HALF_ANGLE);
+                PLUTCHIK_AXES.forEach((axis) => {
+                    const y = apex.y + coneHeight;
+                    frame.add(createBaseArc(
+                        axis.angle - PLUTCHIK_SECTOR_HALF_ANGLE,
+                        axis.angle + PLUTCHIK_SECTOR_HALF_ANGLE,
+                        0.5
+                    ));
+                    const label = createTextSprite(axis.label);
+                    label.position.copy(pointFor(axis.angle, coneRadius * 0.66, y + 0.12));
+                    frame.add(label);
+                });
+                sectorBoundaries.forEach((angle) => {
+                    const y = apex.y + coneHeight;
+                    frame.add(new THREE.Line(
+                        new THREE.BufferGeometry().setFromPoints([
+                            pointFor(angle, 0, y),
+                            pointFor(angle, coneRadius, y)
+                        ]),
+                        lineMaterial(0.5)
+                    ));
+                    frame.add(new THREE.Line(
+                        new THREE.BufferGeometry().setFromPoints([apex, pointFor(angle, coneRadius, apex.y + coneHeight)]),
+                        lineMaterial(0.26)
+                    ));
+                });
+                group.add(frame);
+
+                let lastKey = "";
+                const levelStyle = (axisName, fallbackColor, tier) => {
+                    const palette = PLUTCHIK_LEVEL_COLORS[axisName];
+                    return {
+                        color: new THREE.Color(palette?.[tier] || fallbackColor),
+                        fillOpacity: [0.58, 0.66, 0.74, 0.82][tier],
+                        sideOpacity: [0.38, 0.46, 0.54, 0.62][tier],
+                        capOpacity: [0.64, 0.72, 0.8, 0.9][tier]
+                    };
+                };
+                const update = (axes) => {
+                    const key = axes.map((axis) => `${axis.name}:${clamp(axis.value).toFixed(2)}`).join("|");
+                    if (key === lastKey) return;
+                    lastKey = key;
+                    disposeChildren(axisGroup);
+                    disposeChildren(valueGroup);
+
+                    axes.forEach((axis) => {
+                        const value = clamp(axis.value);
+                        const level = Math.max(value, 0.015);
+                        const baseRadius = coneRadius * level;
+                        const baseY = apex.y + coneHeight * level;
+                        const halfAngle = PLUTCHIK_SECTOR_HALF_ANGLE;
+                        const color = new THREE.Color(axis.color);
+                        const activeTier = value >= 0.995 ? 3 : Math.min(2, Math.floor(value * 3));
+                        const outer = pointFor(axis.angle, baseRadius, baseY);
+                        const left = pointFor(axis.angle - halfAngle, baseRadius, baseY);
+                        const right = pointFor(axis.angle + halfAngle, baseRadius, baseY);
+
+                        axisGroup.add(new THREE.Line(
+                            new THREE.BufferGeometry().setFromPoints([apex, pointFor(axis.angle - halfAngle, coneRadius, apex.y + coneHeight)]),
+                            lineMaterial(0.22)
+                        ));
+                        axisGroup.add(new THREE.Line(
+                            new THREE.BufferGeometry().setFromPoints([apex, pointFor(axis.angle + halfAngle, coneRadius, apex.y + coneHeight)]),
+                            lineMaterial(0.22)
+                        ));
+
+                        [1 / 3, 2 / 3, 1].reduce((lowerLevel, upperLimit, tier) => {
+                            const upperLevel = Math.min(value, upperLimit);
+                            if (upperLevel > lowerLevel) {
+                                const bandStyle = levelStyle(axis.name, color, tier);
+                                const fillMaterial = new THREE.MeshPhysicalMaterial({
+                                    color: bandStyle.color,
+                                    roughness: 0.42,
+                                    metalness: 0.02,
+                                    transparent: true,
+                                    opacity: bandStyle.fillOpacity,
+                                    side: THREE.DoubleSide,
+                                    clearcoat: 0.18,
+                                    clearcoatRoughness: 0.58
+                                });
+                                const sectorFill = new THREE.Mesh(
+                                    createSectorBandGeometry(axis.angle, halfAngle, lowerLevel, upperLevel),
+                                    fillMaterial
+                                );
+                                sectorFill.castShadow = true;
+                                sectorFill.receiveShadow = true;
+                                valueGroup.add(sectorFill);
+
+                                const sideMaterial = new THREE.MeshPhysicalMaterial({
+                                    color: bandStyle.color,
+                                    roughness: 0.48,
+                                    metalness: 0.01,
+                                    transparent: true,
+                                    opacity: bandStyle.sideOpacity,
+                                    side: THREE.DoubleSide,
+                                    clearcoat: 0.12,
+                                    clearcoatRoughness: 0.62
+                                });
+                                [axis.angle - halfAngle, axis.angle + halfAngle].forEach((sideAngle) => {
+                                    const sideMesh = new THREE.Mesh(
+                                        createSectorSideBandGeometry(sideAngle, lowerLevel, upperLevel),
+                                        sideMaterial.clone()
+                                    );
+                                    sideMesh.castShadow = true;
+                                    sideMesh.receiveShadow = true;
+                                    valueGroup.add(sideMesh);
+                                });
+                            }
+                            return upperLimit;
+                        }, 0);
+
+                        const geometry = createSectorCapGeometry(axis.angle, halfAngle, baseRadius, baseY);
+                        const style = levelStyle(axis.name, color, activeTier);
+                        const material = new THREE.MeshPhysicalMaterial({
+                            color: style.color,
+                            roughness: 0.36,
+                            metalness: 0.02,
+                            transparent: true,
+                            opacity: style.capOpacity,
+                            side: THREE.DoubleSide,
+                            clearcoat: 0.35,
+                            clearcoatRoughness: 0.42
+                        });
+                        const valuePlate = new THREE.Mesh(geometry, material);
+                        valuePlate.castShadow = true;
+                        valuePlate.receiveShadow = true;
+                        valueGroup.add(valuePlate);
+
+                        const outline = new THREE.LineLoop(
+                            new THREE.BufferGeometry().setFromPoints([apex, left, outer, right]),
+                            new THREE.LineBasicMaterial({ color: 0x1b2026, transparent: true, opacity: 0.38 })
+                        );
+                        valueGroup.add(outline);
+
+                    });
+                };
+
+                const animate = () => {
+                    group.rotation.y += 0.0022;
+                    renderer.render(scene, camera);
+                    requestAnimationFrame(animate);
+                };
+
+                setSize();
+                new ResizeObserver(setSize).observe(container);
+                animate();
+                return { update };
+            };
+
+            const plutchikScene = createPlutchikScene(plutchik3d);
+
             sections.forEach((section) => {
                 section.style.zIndex = String(10 + Number(section.id.replace("visualize_", "")));
                 section.hidden = true;
@@ -457,6 +813,11 @@
                     mixed.total ? `${Math.round(mixed.r / mixed.total)}, ${Math.round(mixed.g / mixed.total)}, ${Math.round(mixed.b / mixed.total)}` : "255, 255, 255");
                 colorField.style.setProperty("--emotion-alpha",
                     mixed.total ? Math.min(0.92, Math.max(mixed.peak * 0.9, mixed.total / 2.4)).toFixed(3) : "0");
+
+                const activePlutchikAxes = PLUTCHIK_AXES
+                    .map((axis) => ({ ...axis, value: get(axis.name) }))
+                    .filter((axis) => axis.value >= PLUTCHIK_THRESHOLD);
+                plutchikScene.update(activePlutchikAxes);
             };
 
             const runDetection = async () => {
