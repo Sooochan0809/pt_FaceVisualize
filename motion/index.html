@@ -58,7 +58,62 @@
             position: absolute;
             inset: 0;
             z-index: 1;
-            background: #f0f0f07d;
+            background: #f0f0f0c8;
+        }
+
+        #calibrationGuide {
+            position: absolute;
+            inset: 0;
+            z-index: 6;
+            isolation: isolate;
+            display: grid;
+            place-items: center;
+            pointer-events: none;
+            text-align: center;
+            font-weight: 500;
+        }
+
+        #calibrationGuide[hidden] {
+            display: none;
+        }
+
+        #calibrationPoint {
+            position: relative;
+            z-index: 1;
+            width: 42px;
+            height: 42px;
+            transform: rotate(-90deg);
+        }
+
+        #calibrationPointCenter {
+            fill: #111;
+        }
+
+        #calibrationPointBase,
+        #calibrationPointProgress {
+            fill: none;
+            stroke-width: 5;
+        }
+
+        #calibrationPointBase {
+            stroke: #ffffffc9;
+        }
+
+        #calibrationPointProgress {
+            stroke: var(--accent);
+            stroke-dasharray: 100;
+            stroke-dashoffset: calc(100 - var(--progress, 0));
+            transition: stroke-dashoffset 0.12s linear;
+        }
+
+        #calibrationCard {
+            position: absolute;
+            z-index: 2;
+            top: 50%;
+            width: min(22em, 82%);
+            max-width: min(22em, 82%);
+            color: #111;
+            white-space: pre-line;
         }
 
         #out,
@@ -227,6 +282,16 @@
         <section id="visualize_02" class="visualize" hidden>
             <canvas id="vizCanvas2"></canvas>
         </section>
+        <div id="calibrationGuide" hidden>
+            <svg id="calibrationPoint" viewBox="0 0 42 42" aria-hidden="true">
+                <circle id="calibrationPointBase" cx="21" cy="21" r="12"></circle>
+                <circle id="calibrationPointProgress" cx="21" cy="21" r="12" pathLength="100"></circle>
+                <circle id="calibrationPointCenter" cx="21" cy="21" r="9.5"></circle>
+            </svg>
+            <div id="calibrationCard">
+                <span id="calibrationGuideText"></span>
+            </div>
+        </div>
         <div id="layerControls">
             <label>
                 <input id="visualizeToggle" type="checkbox">
@@ -264,11 +329,11 @@
     const [
         stage, video, canvas, vizCanvas, vizCanvas2, cameraButton, fileInput,
         calibrate, clearBaseline, toggleShapes, status, shapesPanel,
-        visualizeToggle, visualizeToggle2, visualize, visualize2, shuffleSpectrum, viz2Tone
+        visualizeToggle, visualizeToggle2, visualize, visualize2, calibrationGuide, calibrationGuideText, calibrationPoint, shuffleSpectrum, viz2Tone
     ] = [
         "stage", "video", "canvas", "vizCanvas", "vizCanvas2", "cameraButton", "fileInput",
         "calibrate", "clearBaseline", "toggleShapes", "status", "shapesPanel",
-        "visualizeToggle", "visualizeToggle2", "visualize_01", "visualize_02", "shuffleSpectrum", "viz2Tone"
+        "visualizeToggle", "visualizeToggle2", "visualize_01", "visualize_02", "calibrationGuide", "calibrationGuideText", "calibrationPoint", "shuffleSpectrum", "viz2Tone"
     ].map($);
     const ctx = canvas.getContext("2d");
     const vizCtx = vizCanvas.getContext("2d");
@@ -279,7 +344,7 @@
     const circles = new Map();
     let spectrumOrder = [];
     const base = new Map();
-    const [WARMUP_FRAMES, CALIBRATION_FRAMES, DEADZONE, SPECTRUM_ZERO_THRESHOLD, VIDEO_BASELINE_SECONDS, VIDEO_BASELINE_PASSES] = [30, 120, 0.005, 0.012, 0.2, 5];
+    const [WARMUP_FRAMES, CALIBRATION_FRAMES, DEADZONE, SPECTRUM_ZERO_THRESHOLD, VIDEO_BASELINE_SECONDS, VIDEO_BASELINE_PASSES] = [20, 120, 0.005, 0.012, 0.2, 5];
     const calibration = { warmup: 0, remaining: 0, samples: 0, stats: new Map() };
     const [VW, VH] = [1280, 720];
     let activeMedia = video;
@@ -343,11 +408,13 @@
             return;
         }
         resetCalibration(WARMUP_FRAMES, CALIBRATION_FRAMES);
+        showCalibrationGuide("この点を見つめてください.");
         calibrate.disabled = true;
     };
 
     clearBaseline.onclick = () => {
         resetCalibration();
+        hideCalibrationGuide();
         calibrate.disabled = false;
     };
 
@@ -388,14 +455,56 @@
     function toggleLayer(toggle, layer, control) {
         const active = toggle.checked;
         layer.hidden = control.hidden = !active;
-        if (active) setShapesExpanded(false);
+        if (!active) {
+            if (visualize.hidden && visualize2.hidden) hideCalibrationGuide();
+            return;
+        }
+
+        setShapesExpanded(false);
+        waitForFaceCalibration();
+    }
+
+    function startGuidedCalibration() {
+        if (activeMode === "video-file") return;
+        resetCalibration(WARMUP_FRAMES, CALIBRATION_FRAMES);
+        showCalibrationGuide("この点を見つめてください.");
+        updateCalibrationPoint();
+        calibrate.disabled = true;
+    }
+
+    function showCalibrationGuide(message) {
+        calibrationGuideText.textContent = message;
+        calibrationGuide.hidden = false;
+    }
+
+    function hideCalibrationGuide() {
+        calibrationGuide.hidden = true;
+        calibrationPoint.style.setProperty("--progress", 0);
+    }
+
+    function visualizing() {
+        return !visualize.hidden || !visualize2.hidden;
+    }
+
+    function calibrationActive() {
+        return calibration.warmup || calibration.remaining;
+    }
+
+    function waitForFaceCalibration() {
+        if (activeMode === "video-file") return;
+        resetCalibration();
+        showCalibrationGuide("顔を検出中です...");
     }
 
     function resetCalibration(warmup = 0, frames = 0) {
         base.clear();
+        spectrum.clear();
+        spectrumSharpness.clear();
+        circles.clear();
         Object.assign(calibration, { warmup, remaining: frames, samples: 0 });
         calibration.stats.clear();
         status.textContent = "";
+        updateCalibrationPoint();
     }
 
     async function startCamera() {
@@ -454,10 +563,22 @@
 
     function processResults({ faceLandmarks, faceBlendshapes }) {
         const categories = faceBlendshapes[0]?.categories ?? [];
+        updateAutoCalibration(categories.length > 0);
         draw(faceLandmarks[0]);
         updateShapes(categories);
         drawSpectrum(categories);
         drawMotionCircles(categories);
+    }
+
+    function updateAutoCalibration(faceDetected) {
+        if (!visualizing() || activeMode === "video-file") return;
+
+        if (!faceDetected) {
+            if (base.size || calibrationActive()) waitForFaceCalibration();
+            return;
+        }
+
+        if (!base.size && !calibrationActive()) startGuidedCalibration();
     }
 
     async function setLandmarkerMode(mode) {
@@ -559,6 +680,7 @@
 
         if (calibration.warmup) {
             status.textContent = `準備中 ${--calibration.warmup}`;
+            updateCalibrationPoint();
             return;
         }
 
@@ -571,6 +693,7 @@
 
         calibration.samples++;
         status.textContent = `キャリブレーション中 ${--calibration.remaining}`;
+        updateCalibrationPoint();
 
         if (calibration.remaining) return;
 
@@ -581,7 +704,15 @@
             base.set(categoryName, { mean, dead: Math.max(Math.sqrt(variance) * 3, DEADZONE) });
         }
         calibrate.disabled = false;
+        hideCalibrationGuide();
         status.textContent = `キャリブ済み (${calibration.samples} frames)`;
+    }
+
+    function updateCalibrationPoint() {
+        const progress = !calibrationActive() || calibration.warmup
+            ? 0
+            : clamp((CALIBRATION_FRAMES - calibration.remaining) / CALIBRATION_FRAMES * 100, 0, 100);
+        calibrationPoint.style.setProperty("--progress", progress);
     }
 
     async function calibrateFromVideoStart() {
@@ -630,6 +761,7 @@
             base.set(categoryName, { mean, min, max, dead });
         }
         calibrate.disabled = false;
+        hideCalibrationGuide();
         status.textContent = `キャリブ済み (${VIDEO_BASELINE_SECONDS * VIDEO_BASELINE_PASSES}s)`;
     }
 
