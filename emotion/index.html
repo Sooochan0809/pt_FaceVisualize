@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Emotion</title>
-    <script defer src="../faceAPI/face-api.min.js"></script>
+    <script defer src="../modules/faceAPI/face-api.min.js"></script>
     <style>
         :root {
             --panel-bg: #1b2026e0;
@@ -313,10 +313,10 @@
     </main>
 
     <script type="module">
-        import * as THREE from "../vendor/three.module.min.js";
+        import * as THREE from "../modules/three.js/three.module.min.js";
 
         window.addEventListener("load", () => {
-            const MODEL_URL = "../faceAPI/models";
+            const MODEL_URL = "../modules/faceAPI/models";
             const MAX_CAMERA_SIZE = 4096;
             const RADAR_AXES = ["happy", "surprised", "fearful", "sad", "disgusted", "angry"];
             const PLUTCHIK_THRESHOLD = 0.04;
