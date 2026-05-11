@@ -312,6 +312,9 @@
         <section id="visualize_03" class="visualize" hidden>
             <canvas id="vizCanvas3"></canvas>
         </section>
+        <section id="visualize_04" class="visualize" hidden>
+            <canvas id="vizCanvas4"></canvas>
+        </section>
         <div id="calibrationGuide" hidden>
             <svg id="calibrationPoint" viewBox="0 0 42 42" aria-hidden="true">
                 <circle id="calibrationPointBase" cx="21" cy="21" r="12"></circle>
@@ -338,6 +341,10 @@
                 <span>visualize_03</span>
             </label>
             <button id="viz3Tone" type="button" aria-pressed="false" hidden>カラー</button>
+            <label>
+                <input id="visualizeToggle4" type="checkbox">
+                <span>visualize_04</span>
+            </label>
         </div>
         <div id="sourceControls">
             <button id="cameraButton" type="button">WebCam</button>
@@ -367,14 +374,14 @@
 
     const $ = id => document.getElementById(id);
     const ids = [
-        "stage", "video", "canvas", "vizCanvas", "vizCanvas2", "vizCanvas3", "cameraButton", "fileInput",
+        "stage", "video", "canvas", "vizCanvas", "vizCanvas2", "vizCanvas3", "vizCanvas4", "cameraButton", "fileInput",
         "calibrate", "clearBaseline", "toggleShapes", "status", "paramSetSelect", "saveParamSet", "shapesPanel",
-        "visualizeToggle", "visualizeToggle2", "visualizeToggle3", "visualize_01", "visualize_02", "visualize_03", "calibrationGuide", "calibrationGuideText", "calibrationPoint", "shuffleSpectrum", "viz2Tone", "viz3Tone"
+        "visualizeToggle", "visualizeToggle2", "visualizeToggle3", "visualizeToggle4", "visualize_01", "visualize_02", "visualize_03", "visualize_04", "calibrationGuide", "calibrationGuideText", "calibrationPoint", "shuffleSpectrum", "viz2Tone", "viz3Tone"
     ];
     const {
-        stage, video, canvas, vizCanvas, vizCanvas2, vizCanvas3, cameraButton, fileInput,
+        stage, video, canvas, vizCanvas, vizCanvas2, vizCanvas3, vizCanvas4, cameraButton, fileInput,
         calibrate, clearBaseline, toggleShapes, status, paramSetSelect, saveParamSet, shapesPanel,
-        visualizeToggle, visualizeToggle2, visualizeToggle3, visualize_01: visualize, visualize_02: visualize2, visualize_03: visualize3,
+        visualizeToggle, visualizeToggle2, visualizeToggle3, visualizeToggle4, visualize_01: visualize, visualize_02: visualize2, visualize_03: visualize3, visualize_04: visualize4,
         calibrationGuide, calibrationGuideText, calibrationPoint, shuffleSpectrum, viz2Tone, viz3Tone
     } = Object.fromEntries(ids.map(id => [id, $(id)]));
     const ctx = canvas.getContext("2d");
@@ -406,10 +413,11 @@
     let activeParamSetName = "";
 
     Object.assign(canvas, { width: 720, height: 960 });
-    for (const target of [vizCanvas, vizCanvas2, vizCanvas3]) {
+    for (const target of [vizCanvas, vizCanvas2, vizCanvas3, vizCanvas4]) {
         Object.assign(target, { width: canvas.width, height: canvas.height });
     }
     const viz3 = setupViz3();
+    const viz4 = setupViz4();
 
     const faceLandmarker = await FaceLandmarker.createFromOptions(
         await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.34/wasm"),
@@ -430,7 +438,7 @@
     startCamera().catch(report("カメラを開始できません"));
     renderParamSetOptions();
 
-    for (const args of [[visualizeToggle, visualize, shuffleSpectrum], [visualizeToggle2, visualize2, viz2Tone], [visualizeToggle3, visualize3, viz3Tone]]) {
+    for (const args of [[visualizeToggle, visualize, shuffleSpectrum], [visualizeToggle2, visualize2, viz2Tone], [visualizeToggle3, visualize3, viz3Tone], [visualizeToggle4, visualize4]]) {
         args[0].onchange = () => toggleLayer(...args);
     }
 
@@ -511,9 +519,10 @@
 
     function toggleLayer(toggle, layer, control) {
         const active = toggle.checked;
-        layer.hidden = control.hidden = !active;
+        layer.hidden = !active;
+        if (control) control.hidden = !active;
         if (!active) {
-            if (visualize.hidden && visualize2.hidden && visualize3.hidden) hideCalibrationGuide();
+            if (visualize.hidden && visualize2.hidden && visualize3.hidden && visualize4.hidden) hideCalibrationGuide();
             return;
         }
 
@@ -540,7 +549,7 @@
     }
 
     function visualizing() {
-        return !visualize.hidden || !visualize2.hidden || !visualize3.hidden;
+        return !visualize.hidden || !visualize2.hidden || !visualize3.hidden || !visualize4.hidden;
     }
 
     function calibrationActive() {
@@ -626,6 +635,7 @@
         drawSpectrum(activeCategories);
         drawMotionCircles(motionValues);
         drawMotionCircleLayers(motionValues);
+        drawThreeWaveLine(motionValues);
     }
 
     function updateAutoCalibration(faceDetected) {
@@ -1138,6 +1148,81 @@
         scene.add(group);
 
         return { scene, camera, renderer, group };
+    }
+
+    function setupViz4() {
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(38, vizCanvas4.width / vizCanvas4.height, 0.1, 100);
+        const renderer = new THREE.WebGLRenderer({ canvas: vizCanvas4, alpha: true, antialias: true });
+        const group = new THREE.Group();
+        const ridge = new THREE.Line(
+            new THREE.BufferGeometry(),
+            new THREE.LineBasicMaterial({ color: 0x167e70, transparent: true, opacity: 0.92 })
+        );
+        const grid = new THREE.LineSegments(
+            new THREE.BufferGeometry(),
+            new THREE.LineBasicMaterial({ color: 0x45484f, transparent: true, opacity: 0.18 })
+        );
+
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+        renderer.setSize(vizCanvas4.width, vizCanvas4.height, false);
+        renderer.setClearColor(0xf0f0f0, 0);
+        camera.position.set(3.6, 3.1, 4.8);
+        camera.lookAt(0, -0.15, 0);
+        group.rotation.set(-0.04, -0.58, 0.02);
+        group.add(grid, ridge);
+        scene.add(group);
+
+        return { scene, camera, renderer, ridge, grid };
+    }
+
+    function drawThreeWaveLine({ values, maxAmount }) {
+        if (!values.length) {
+            viz4.renderer.clear();
+            return;
+        }
+
+        const totalAmount = values.reduce((sum, { amount }) => sum + amount, 0);
+        const averageAmount = totalAmount / values.length;
+        const normalizedAmount = clamp(averageAmount / maxAmount, 0, 1);
+        const ridgePoints = [];
+        const gridPoints = [];
+        const width = 2.4;
+        const height = 0.86;
+        const depth = 3.1;
+        const baseY = -0.3;
+        const rows = 7;
+        const columns = 7;
+        const lastIndex = Math.max(values.length - 1, 1);
+
+        values.forEach(({ amount }, i) => {
+            const t = i / lastIndex;
+            const normalizedValue = clamp(amount / maxAmount, 0, 1);
+            const x = (0.5 - t) * width;
+            const y = baseY + normalizedValue * height;
+            const z = depth / 2;
+            ridgePoints.push(new THREE.Vector3(x, y, z));
+        });
+
+        const leftX = width / 2;
+        const rightX = -width / 2;
+        const frontZ = -depth / 2;
+        const backZ = depth / 2;
+        for (let row = 0; row < rows; row++) {
+            const z = frontZ + (depth * row) / (rows - 1);
+            gridPoints.push(new THREE.Vector3(leftX, baseY, z), new THREE.Vector3(rightX, baseY, z));
+        }
+        for (let i = 0; i < columns; i++) {
+            const x = leftX + ((rightX - leftX) * i) / (columns - 1);
+            gridPoints.push(new THREE.Vector3(x, baseY, frontZ), new THREE.Vector3(x, baseY, backZ));
+        }
+        viz4.ridge.geometry.dispose();
+        viz4.ridge.geometry = new THREE.BufferGeometry().setFromPoints(ridgePoints);
+        viz4.grid.geometry.dispose();
+        viz4.grid.geometry = new THREE.BufferGeometry().setFromPoints(gridPoints);
+        viz4.ridge.material.color.set(values.reduce((sum, { value }) => sum + value, 0) >= 0 ? 0x167e70 : 0xc63e5b);
+        viz4.ridge.material.opacity = 0.72 + normalizedAmount * 0.24;
+        viz4.renderer.render(viz4.scene, viz4.camera);
     }
 
     function drawMotionCircleLayers({ calibrated, values, maxAmount }) {
