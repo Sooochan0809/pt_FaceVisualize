@@ -61,6 +61,40 @@
             background: #f0f0f0c8;
         }
 
+        #viz4Controls {
+            position: absolute;
+            left: 50%;
+            bottom: 14px;
+            z-index: 3;
+            display: grid;
+            gap: 0.45em;
+            width: min(320px, calc(100% - 28px));
+            padding: 10px 12px;
+            border-radius: 8px;
+            background: #1b2026cc;
+            color: #f4f7fb;
+            font: 0.78em "Yu Gothic Medium", "Yu Gothic", sans-serif;
+            transform: translateX(-50%);
+            pointer-events: auto;
+        }
+
+        #viz4Controls label {
+            display: grid;
+            grid-template-columns: 5.8em 1fr 4.2em;
+            gap: 0.6em;
+            align-items: center;
+        }
+
+        #viz4Controls input {
+            width: 100%;
+            accent-color: var(--accent);
+        }
+
+        #viz4Controls output {
+            text-align: right;
+            font-variant-numeric: tabular-nums;
+        }
+
         #calibrationGuide {
             position: absolute;
             inset: 0;
@@ -314,6 +348,18 @@
         </section>
         <section id="visualize_04" class="visualize" hidden>
             <canvas id="vizCanvas4"></canvas>
+            <div id="viz4Controls">
+                <label>
+                    <span>間隔</span>
+                    <input id="viz4SnapshotInterval" type="range" min="10" max="600" step="10" value="100">
+                    <output id="viz4SnapshotIntervalValue"></output>
+                </label>
+                <label>
+                    <span>時間</span>
+                    <input id="viz4HistoryLifetime" type="range" min="800" max="10000" step="100" value="2800">
+                    <output id="viz4HistoryLifetimeValue"></output>
+                </label>
+            </div>
         </section>
         <div id="calibrationGuide" hidden>
             <svg id="calibrationPoint" viewBox="0 0 42 42" aria-hidden="true">
@@ -376,13 +422,15 @@
     const ids = [
         "stage", "video", "canvas", "vizCanvas", "vizCanvas2", "vizCanvas3", "vizCanvas4", "cameraButton", "fileInput",
         "calibrate", "clearBaseline", "toggleShapes", "status", "paramSetSelect", "saveParamSet", "shapesPanel",
-        "visualizeToggle", "visualizeToggle2", "visualizeToggle3", "visualizeToggle4", "visualize_01", "visualize_02", "visualize_03", "visualize_04", "calibrationGuide", "calibrationGuideText", "calibrationPoint", "shuffleSpectrum", "viz2Tone", "viz3Tone"
+        "visualizeToggle", "visualizeToggle2", "visualizeToggle3", "visualizeToggle4", "visualize_01", "visualize_02", "visualize_03", "visualize_04", "calibrationGuide", "calibrationGuideText", "calibrationPoint", "shuffleSpectrum", "viz2Tone", "viz3Tone",
+        "viz4SnapshotInterval", "viz4SnapshotIntervalValue", "viz4HistoryLifetime", "viz4HistoryLifetimeValue"
     ];
     const {
         stage, video, canvas, vizCanvas, vizCanvas2, vizCanvas3, vizCanvas4, cameraButton, fileInput,
         calibrate, clearBaseline, toggleShapes, status, paramSetSelect, saveParamSet, shapesPanel,
         visualizeToggle, visualizeToggle2, visualizeToggle3, visualizeToggle4, visualize_01: visualize, visualize_02: visualize2, visualize_03: visualize3, visualize_04: visualize4,
-        calibrationGuide, calibrationGuideText, calibrationPoint, shuffleSpectrum, viz2Tone, viz3Tone
+        calibrationGuide, calibrationGuideText, calibrationPoint, shuffleSpectrum, viz2Tone, viz3Tone,
+        viz4SnapshotInterval, viz4SnapshotIntervalValue, viz4HistoryLifetime, viz4HistoryLifetimeValue
     } = Object.fromEntries(ids.map(id => [id, $(id)]));
     const ctx = canvas.getContext("2d");
     const vizCtx = vizCanvas.getContext("2d");
@@ -416,8 +464,13 @@
     for (const target of [vizCanvas, vizCanvas2, vizCanvas3, vizCanvas4]) {
         Object.assign(target, { width: canvas.width, height: canvas.height });
     }
+    const [VIZ4_WIDTH, VIZ4_HEIGHT, VIZ4_DEPTH, VIZ4_BASE_Y, VIZ4_ROWS, VIZ4_COLUMNS] = [2.4, 0.86, 3.1, -0.3, 7, 7];
     const viz3 = setupViz3();
     const viz4 = setupViz4();
+    let viz4History = [];
+    let viz4LastSnapshotAt = 0;
+    let viz4SnapshotIntervalMs = Number(viz4SnapshotInterval.value);
+    let viz4HistoryLifetimeMs = Number(viz4HistoryLifetime.value);
 
     const faceLandmarker = await FaceLandmarker.createFromOptions(
         await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.34/wasm"),
@@ -441,6 +494,9 @@
     for (const args of [[visualizeToggle, visualize, shuffleSpectrum], [visualizeToggle2, visualize2, viz2Tone], [visualizeToggle3, visualize3, viz3Tone], [visualizeToggle4, visualize4]]) {
         args[0].onchange = () => toggleLayer(...args);
     }
+    viz4SnapshotInterval.oninput = updateViz4Controls;
+    viz4HistoryLifetime.oninput = updateViz4Controls;
+    updateViz4Controls();
 
     viz2Tone.onclick = () => {
         viz2Monochrome = !viz2Monochrome;
@@ -550,6 +606,13 @@
 
     function visualizing() {
         return !visualize.hidden || !visualize2.hidden || !visualize3.hidden || !visualize4.hidden;
+    }
+
+    function updateViz4Controls() {
+        viz4SnapshotIntervalMs = Number(viz4SnapshotInterval.value);
+        viz4HistoryLifetimeMs = Number(viz4HistoryLifetime.value);
+        viz4SnapshotIntervalValue.value = `${viz4SnapshotIntervalMs}ms`;
+        viz4HistoryLifetimeValue.value = `${(viz4HistoryLifetimeMs / 1000).toFixed(1)}s`;
     }
 
     function calibrationActive() {
@@ -1155,12 +1218,11 @@
         const camera = new THREE.PerspectiveCamera(38, vizCanvas4.width / vizCanvas4.height, 0.1, 100);
         const renderer = new THREE.WebGLRenderer({ canvas: vizCanvas4, alpha: true, antialias: true });
         const group = new THREE.Group();
-        const ridge = new THREE.Line(
-            new THREE.BufferGeometry(),
-            new THREE.LineBasicMaterial({ color: 0x167e70, transparent: true, opacity: 0.92 })
-        );
+        const lineMaterial = new THREE.LineBasicMaterial({ color: 0x167e70, transparent: true, opacity: 0.92 });
+        const ridge = new THREE.Line(new THREE.BufferGeometry(), lineMaterial);
+        const trail = new THREE.LineSegments(new THREE.BufferGeometry(), lineMaterial);
         const grid = new THREE.LineSegments(
-            new THREE.BufferGeometry(),
+            createViz4GridGeometry(),
             new THREE.LineBasicMaterial({ color: 0x45484f, transparent: true, opacity: 0.18 })
         );
 
@@ -1170,58 +1232,82 @@
         camera.position.set(3.6, 3.1, 4.8);
         camera.lookAt(0, -0.15, 0);
         group.rotation.set(-0.04, -0.58, 0.02);
-        group.add(grid, ridge);
+        group.add(grid, trail, ridge);
         scene.add(group);
 
-        return { scene, camera, renderer, ridge, grid };
+        return { scene, camera, renderer, ridge, trail };
+    }
+
+    function createViz4GridGeometry() {
+        const points = [];
+        const leftX = VIZ4_WIDTH / 2;
+        const rightX = -VIZ4_WIDTH / 2;
+        const frontZ = -VIZ4_DEPTH / 2;
+        const backZ = VIZ4_DEPTH / 2;
+
+        for (let row = 0; row < VIZ4_ROWS; row++) {
+            const z = frontZ + (VIZ4_DEPTH * row) / (VIZ4_ROWS - 1);
+            points.push(new THREE.Vector3(leftX, VIZ4_BASE_Y, z), new THREE.Vector3(rightX, VIZ4_BASE_Y, z));
+        }
+        for (let i = 0; i < VIZ4_COLUMNS; i++) {
+            const x = leftX + ((rightX - leftX) * i) / (VIZ4_COLUMNS - 1);
+            points.push(new THREE.Vector3(x, VIZ4_BASE_Y, frontZ), new THREE.Vector3(x, VIZ4_BASE_Y, backZ));
+        }
+
+        return new THREE.BufferGeometry().setFromPoints(points);
     }
 
     function drawThreeWaveLine({ values, maxAmount }) {
         if (!values.length) {
+            viz4History = [];
+            viz4LastSnapshotAt = 0;
             viz4.renderer.clear();
             return;
         }
 
-        const totalAmount = values.reduce((sum, { amount }) => sum + amount, 0);
-        const averageAmount = totalAmount / values.length;
-        const normalizedAmount = clamp(averageAmount / maxAmount, 0, 1);
+        const now = performance.now();
+        const currentValues = values.map(({ amount }) => clamp(amount / maxAmount, 0, 1));
         const ridgePoints = [];
-        const gridPoints = [];
-        const width = 2.4;
-        const height = 0.86;
-        const depth = 3.1;
-        const baseY = -0.3;
-        const rows = 7;
-        const columns = 7;
+        const trailPoints = [];
         const lastIndex = Math.max(values.length - 1, 1);
+        const backZ = VIZ4_DEPTH / 2;
 
-        values.forEach(({ amount }, i) => {
-            const t = i / lastIndex;
-            const normalizedValue = clamp(amount / maxAmount, 0, 1);
-            const x = (0.5 - t) * width;
-            const y = baseY + normalizedValue * height;
-            const z = depth / 2;
-            ridgePoints.push(new THREE.Vector3(x, y, z));
+        if (viz4History[0]?.values.length !== currentValues.length) {
+            viz4History = [];
+            viz4LastSnapshotAt = 0;
+        }
+        if (!viz4LastSnapshotAt || now - viz4LastSnapshotAt >= viz4SnapshotIntervalMs) {
+            viz4History.unshift({
+                values: currentValues,
+                createdAt: now
+            });
+            viz4LastSnapshotAt = now;
+        }
+        viz4History = viz4History.filter(({ createdAt }) => now - createdAt <= viz4HistoryLifetimeMs);
+
+        viz4History.forEach(({ values: historyValues, createdAt }, historyIndex) => {
+            const rowT = clamp((now - createdAt) / viz4HistoryLifetimeMs, 0, 1);
+            const z = backZ - VIZ4_DEPTH * rowT;
+            const points = historyValues.map((normalizedValue, i) => {
+                const t = i / lastIndex;
+                const x = (0.5 - t) * VIZ4_WIDTH;
+                const y = VIZ4_BASE_Y + normalizedValue * VIZ4_HEIGHT;
+                return new THREE.Vector3(x, y, z);
+            });
+
+            if (historyIndex === 0) {
+                ridgePoints.push(...points);
+            } else {
+                for (let i = 0; i < points.length - 1; i++) {
+                    trailPoints.push(points[i], points[i + 1]);
+                }
+            }
         });
 
-        const leftX = width / 2;
-        const rightX = -width / 2;
-        const frontZ = -depth / 2;
-        const backZ = depth / 2;
-        for (let row = 0; row < rows; row++) {
-            const z = frontZ + (depth * row) / (rows - 1);
-            gridPoints.push(new THREE.Vector3(leftX, baseY, z), new THREE.Vector3(rightX, baseY, z));
-        }
-        for (let i = 0; i < columns; i++) {
-            const x = leftX + ((rightX - leftX) * i) / (columns - 1);
-            gridPoints.push(new THREE.Vector3(x, baseY, frontZ), new THREE.Vector3(x, baseY, backZ));
-        }
         viz4.ridge.geometry.dispose();
         viz4.ridge.geometry = new THREE.BufferGeometry().setFromPoints(ridgePoints);
-        viz4.grid.geometry.dispose();
-        viz4.grid.geometry = new THREE.BufferGeometry().setFromPoints(gridPoints);
-        viz4.ridge.material.color.set(values.reduce((sum, { value }) => sum + value, 0) >= 0 ? 0x167e70 : 0xc63e5b);
-        viz4.ridge.material.opacity = 0.72 + normalizedAmount * 0.24;
+        viz4.trail.geometry.dispose();
+        viz4.trail.geometry = new THREE.BufferGeometry().setFromPoints(trailPoints);
         viz4.renderer.render(viz4.scene, viz4.camera);
     }
 
