@@ -474,12 +474,10 @@
     const [GUIDE_MESSAGE, WAIT_MESSAGE] = ["この点を見つめてください.", "顔を検出中です..."];
     const calibration = { warmup: 0, remaining: 0, samples: 0, stats: new Map() };
     const [VW, VH] = [1280, 720];
-    let activeMedia = video;
     let activeMode = "camera";
     let activeObjectUrl = "";
     let running = false;
     let loopToken = 0;
-    let landmarkerMode = "VIDEO";
     let calibratingVideoFile = false;
     let viz2Monochrome = false;
     let viz3Monochrome = false;
@@ -674,12 +672,11 @@
         stopLoop();
         stopCameraStream();
         clearImportedFile();
-        await setLandmarkerMode("VIDEO");
         video.srcObject = await navigator.mediaDevices.getUserMedia({
             video: { width: { ideal: VW }, height: { ideal: VH }, aspectRatio: { ideal: 16 / 9 } }
         });
         await video.play();
-        setActiveMedia(video, "camera");
+        setActiveMode("camera");
         startLoop();
     }
 
@@ -692,7 +689,7 @@
 
         if (file.type.startsWith("video/")) {
             await loadMedia(video, activeObjectUrl, "loadeddata");
-            setActiveMedia(video, "video-file");
+            setActiveMode("video-file");
             video.pause();
             await seekVideo(0);
             await calibrateFromVideoStart();
@@ -727,16 +724,25 @@
     function processResults({ faceLandmarks, faceBlendshapes }) {
         const categories = faceBlendshapes[0]?.categories ?? [];
         updateAutoCalibration(categories.length > 0);
-        draw(faceLandmarks[0]);
+        drawLandmarks(faceLandmarks[0]);
         updateShapes(categories);
+
         const activeCategories = selectedCategories(categories);
-        const spectrumFrame = updateSpectrumFrame(activeCategories);
-        const motionValues = updateMotionValues(activeCategories);
-        drawSpectrum(spectrumFrame);
-        drawSpectrumTimeline(spectrumFrame);
-        drawMotionCircles(motionValues);
-        drawMotionCircleLayers(motionValues);
-        drawThreeWaveLine(motionValues);
+        const spectrumVisible = !visualize.hidden || !visualize5.hidden;
+        const motionVisible = !visualize2.hidden || !visualize3.hidden || !visualize4.hidden;
+
+        if (spectrumVisible) {
+            const spectrumFrame = updateSpectrumFrame(activeCategories);
+            if (!visualize.hidden) drawSpectrum(spectrumFrame);
+            if (!visualize5.hidden) drawSpectrumTimeline(spectrumFrame);
+        }
+
+        if (motionVisible) {
+            const motionValues = updateMotionValues(activeCategories);
+            if (!visualize2.hidden) drawMotionCircles(motionValues);
+            if (!visualize3.hidden) drawMotionCircleLayers(motionValues);
+            if (!visualize4.hidden) drawThreeWaveLine(motionValues);
+        }
     }
 
     function updateAutoCalibration(faceDetected) {
@@ -749,17 +755,10 @@
         }
     }
 
-    async function setLandmarkerMode(mode) {
-        if (landmarkerMode === mode) return;
-        await faceLandmarker.setOptions({ runningMode: mode });
-        landmarkerMode = mode;
-    }
-
-    function setActiveMedia(media, mode) {
-        activeMedia = media;
+    function setActiveMode(mode) {
         activeMode = mode;
         stage.classList.toggle("file-source", mode !== "camera");
-        video.hidden = media !== video;
+        video.hidden = false;
         video.controls = video.loop = mode === "video-file";
     }
 
@@ -1039,7 +1038,6 @@
         const samplesByName = new Map();
         let sampleCount = 0;
 
-        await setLandmarkerMode("VIDEO");
         calibratingVideoFile = true;
         try {
             for (let pass = 0; pass < VIDEO_BASELINE_PASSES; pass++) {
@@ -1584,11 +1582,11 @@
         };
     }
 
-    function draw(landmarks = []) {
+    function drawLandmarks(landmarks = []) {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         const [sw, sh] = [
-            activeMedia.videoWidth || activeMedia.naturalWidth || VW,
-            activeMedia.videoHeight || activeMedia.naturalHeight || VH
+            video.videoWidth || VW,
+            video.videoHeight || VH
         ];
         const scale = Math.max(canvas.width / sw, canvas.height / sh);
         const [dx, dy] = [(canvas.width - sw * scale) / 2, (canvas.height - sh * scale) / 2];
