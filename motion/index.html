@@ -1327,13 +1327,13 @@
             }
         }
 
-        const baseRadius = 0.42;
+        const baseRadius = 0.34;
         const layerGap = 0.055;
         const centerOffset = (values.length - 1) * layerGap * 0.5;
 
         values.forEach(({ categoryName, value, speed, phase, amount }, i) => {
             const normalized = clamp(amount / maxAmount, 0, 1);
-            const radius = baseRadius + normalized * 1.45;
+            const radius = baseRadius + normalized * 0.82;
             const amplitude = normalized * 0.12;
             const waves = Math.round(3 + normalized * 10);
             const targetDepth = i * layerGap - centerOffset;
