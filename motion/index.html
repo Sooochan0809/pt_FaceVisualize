@@ -144,6 +144,33 @@
             margin-left: auto;
         }
 
+        #paramSetControls {
+            display: flex;
+            gap: 0.5em;
+            margin-bottom: 0.6em;
+        }
+
+        #paramSetControls select {
+            min-width: 9em;
+            padding: 0.25em 0.35em;
+            font: inherit;
+            font-size: 0.85em;
+        }
+
+        .param {
+            display: flex;
+            gap: 0.35em;
+            align-items: center;
+            min-width: 0;
+            font-size: 0.82em;
+        }
+
+        .param span {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
         #layerControls {
             position: absolute;
             top: 8px;
@@ -316,6 +343,10 @@
                 <button id="toggleShapes" type="button" aria-expanded="true" aria-controls="shapesPanel">▲</button>
                 <span id="status"></span>
             </div>
+            <div id="paramSetControls">
+                <select id="paramSetSelect" aria-label="パラメーターセット"></select>
+                <button id="saveParamSet" type="button">セット保存</button>
+            </div>
             <div id="shapesPanel"></div>
         </div>
     </main>
@@ -327,12 +358,12 @@
     const $ = id => document.getElementById(id);
     const ids = [
         "stage", "video", "canvas", "vizCanvas", "vizCanvas2", "cameraButton", "fileInput",
-        "calibrate", "clearBaseline", "toggleShapes", "status", "shapesPanel",
+        "calibrate", "clearBaseline", "toggleShapes", "status", "paramSetSelect", "saveParamSet", "shapesPanel",
         "visualizeToggle", "visualizeToggle2", "visualize_01", "visualize_02", "calibrationGuide", "calibrationGuideText", "calibrationPoint", "shuffleSpectrum", "viz2Tone"
     ];
     const {
         stage, video, canvas, vizCanvas, vizCanvas2, cameraButton, fileInput,
-        calibrate, clearBaseline, toggleShapes, status, shapesPanel,
+        calibrate, clearBaseline, toggleShapes, status, paramSetSelect, saveParamSet, shapesPanel,
         visualizeToggle, visualizeToggle2, visualize_01: visualize, visualize_02: visualize2,
         calibrationGuide, calibrationGuideText, calibrationPoint, shuffleSpectrum, viz2Tone
     } = Object.fromEntries(ids.map(id => [id, $(id)]));
@@ -340,10 +371,12 @@
     const vizCtx = vizCanvas.getContext("2d");
     const vizCtx2 = vizCanvas2.getContext("2d");
     const shapes = new Map();
+    const enabledParams = new Set();
     const spectrum = new Map();
     const spectrumSharpness = new Map();
     const circles = new Map();
     let spectrumOrder = [];
+    const PARAM_SET_DIR = "../parameter";
     const base = new Map();
     const [WARMUP_FRAMES, CALIBRATION_FRAMES, DEADZONE, SPECTRUM_ZERO_THRESHOLD, VIDEO_BASELINE_SECONDS, VIDEO_BASELINE_PASSES] = [20, 60, 0.005, 0.012, 0.2, 5];
     const [GUIDE_MESSAGE, WAIT_MESSAGE] = ["この点を見つめてください.", "顔を検出中です..."];
@@ -357,6 +390,8 @@
     let landmarkerMode = "VIDEO";
     let calibratingVideoFile = false;
     let viz2Monochrome = false;
+    let paramSets = await loadParamSets();
+    let activeParamSetName = "";
 
     Object.assign(canvas, { width: 720, height: 960 });
     for (const target of [vizCanvas, vizCanvas2]) {
@@ -380,6 +415,7 @@
     };
 
     startCamera().catch(report("カメラを開始できません"));
+    renderParamSetOptions();
 
     for (const args of [[visualizeToggle, visualize, shuffleSpectrum], [visualizeToggle2, visualize2, viz2Tone]]) {
         args[0].onchange = () => toggleLayer(...args);
@@ -438,6 +474,14 @@
 
     toggleShapes.onclick = () => {
         setShapesExpanded(shapesPanel.hidden);
+    };
+
+    paramSetSelect.onchange = () => {
+        applyParamSet(paramSetSelect.value);
+    };
+
+    saveParamSet.onclick = async () => {
+        await saveCurrentParamSet();
     };
 
     function setShapesExpanded(expanded) {
@@ -557,8 +601,9 @@
         updateAutoCalibration(categories.length > 0);
         draw(faceLandmarks[0]);
         updateShapes(categories);
-        drawSpectrum(categories);
-        drawMotionCircles(categories);
+        const activeCategories = selectedCategories(categories);
+        drawSpectrum(activeCategories);
+        drawMotionCircles(activeCategories);
     }
 
     function updateAutoCalibration(faceDetected) {
@@ -650,10 +695,35 @@
 
         for (const { categoryName, score } of categories) {
             if (!shapes.has(categoryName)) {
-                shapesPanel.insertAdjacentHTML("beforeend", `<div class="shape"><span>${categoryName}</span><span class="bar raw"><span class="fill"></span></span><span class="value"></span></div>`);
-                shapes.set(categoryName, [...shapesPanel.lastElementChild.children].slice(1));
+                const row = document.createElement("div");
+                const label = document.createElement("label");
+                const input = document.createElement("input");
+                const name = document.createElement("span");
+                const bar = document.createElement("span");
+                const fill = document.createElement("span");
+                const value = document.createElement("span");
+
+                row.className = "shape";
+                label.className = "param";
+                label.title = categoryName;
+                input.type = "checkbox";
+                input.checked = savedParamEnabled(categoryName);
+                name.textContent = categoryName;
+                bar.className = "bar raw";
+                fill.className = "fill";
+                value.className = "value";
+                input.onchange = () => {
+                    setParamEnabled(categoryName, input.checked);
+                };
+
+                setParamEnabled(categoryName, input.checked);
+                label.append(input, name);
+                bar.append(fill);
+                row.append(label, bar, value);
+                shapesPanel.appendChild(row);
+                shapes.set(categoryName, { input, bar, value });
             }
-            const [bar, value] = shapes.get(categoryName);
+            const { bar, value } = shapes.get(categoryName);
             const calibrated = base.size > 0;
             const displayScore = calibrated ? calibratedScore(categoryName, score) : score;
             const width = calibrated
@@ -663,6 +733,132 @@
             bar.style.setProperty("--v", `${width}%`);
             value.textContent = calibrated ? signed(displayScore) : score.toFixed(4);
         }
+    }
+
+    function selectedCategories(categories) {
+        return categories.filter(({ categoryName }) => enabledParams.has(categoryName));
+    }
+
+    function setParamEnabled(categoryName, enabled) {
+        if (enabled) {
+            enabledParams.add(categoryName);
+            return;
+        }
+
+        enabledParams.delete(categoryName);
+        [spectrum, spectrumSharpness, circles].forEach(map => map.delete(categoryName));
+    }
+
+    function savedParamEnabled(categoryName) {
+        const paramSet = paramSets[activeParamSetName];
+        return paramSet && categoryName in paramSet ? Boolean(paramSet[categoryName]) : true;
+    }
+
+    async function loadParamSets() {
+        try {
+            const sets = {};
+
+            for (let index = 1; index <= 99; index++) {
+                const name = datasetName(index);
+                const response = await fetch(`${PARAM_SET_DIR}/${name}`, { cache: "no-store" });
+                if (response.status === 404) break;
+                if (!response.ok) throw new Error(`${name}: HTTP ${response.status}`);
+
+                const text = await response.text();
+                if (!text.trim()) continue;
+
+                const stored = JSON.parse(text);
+                const paramSet = stored?.[name] ?? stored;
+                if (validParamSet(paramSet)) sets[name] = paramSet;
+            }
+
+            return sets;
+        } catch (error) {
+            status.textContent = `parameterを読み込めません: ${error.message}`;
+            return {};
+        }
+    }
+
+    function validParamSet(value) {
+        return value && typeof value === "object" && !Array.isArray(value);
+    }
+
+    function renderParamSetOptions(selectedName = activeParamSetName) {
+        const names = Object.keys(paramSets).sort((a, b) => a.localeCompare(b, "ja", { numeric: true }));
+        paramSetSelect.replaceChildren(new Option("セットなし", ""));
+
+        for (const name of names) {
+            paramSetSelect.appendChild(new Option(name, name));
+        }
+
+        activeParamSetName = names.includes(selectedName) ? selectedName : "";
+        paramSetSelect.value = activeParamSetName;
+    }
+
+    async function saveCurrentParamSet() {
+        if (!shapes.size) {
+            status.textContent = "保存できるパラメーターがありません";
+            return;
+        }
+
+        const name = nextParamSetName();
+        const paramSet = Object.fromEntries([...shapes].map(([categoryName, { input }]) => [categoryName, input.checked]));
+        paramSets[name] = paramSet;
+
+        try {
+            await writeParamSetFile(JSON.stringify(paramSet, null, 2), name);
+            renderParamSetOptions(name);
+            status.textContent = `${name} を書き出しました`;
+        } catch (error) {
+            delete paramSets[name];
+            status.textContent = `保存できません: ${error.message}`;
+        }
+    }
+
+    async function writeParamSetFile(json, name) {
+        const blob = new Blob([json], { type: "application/json" });
+
+        if ("showSaveFilePicker" in window) {
+            const handle = await window.showSaveFilePicker({ suggestedName: name });
+            const writable = await handle.createWritable();
+            await writable.write(blob);
+            await writable.close();
+            return;
+        }
+
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = name;
+        link.click();
+        setTimeout(() => URL.revokeObjectURL(url), 0);
+    }
+
+    function nextParamSetName() {
+        let index = Object.keys(paramSets).length + 1;
+        let name = "";
+
+        do {
+            name = datasetName(index++);
+        } while (name in paramSets);
+
+        return name;
+    }
+
+    function datasetName(index) {
+        return `dataset${String(index).padStart(2, "0")}`;
+    }
+
+    function applyParamSet(name) {
+        activeParamSetName = name;
+        const paramSet = paramSets[name];
+
+        for (const [categoryName, { input }] of shapes) {
+            input.checked = paramSet && categoryName in paramSet ? Boolean(paramSet[categoryName]) : true;
+            setParamEnabled(categoryName, input.checked);
+        }
+
+        status.textContent = name ? `${name} を読み込みました` : "";
     }
 
     function updateCalibration(categories) {
