@@ -61,7 +61,7 @@
             background: #f0f0f0c8;
         }
 
-        #viz4Controls {
+        .timelineControls {
             position: absolute;
             left: 50%;
             bottom: 14px;
@@ -78,19 +78,19 @@
             pointer-events: auto;
         }
 
-        #viz4Controls label {
+        .timelineControls label {
             display: grid;
             grid-template-columns: 5.8em 1fr 4.2em;
             gap: 0.6em;
             align-items: center;
         }
 
-        #viz4Controls input {
+        .timelineControls input {
             width: 100%;
             accent-color: var(--accent);
         }
 
-        #viz4Controls output {
+        .timelineControls output {
             text-align: right;
             font-variant-numeric: tabular-nums;
         }
@@ -348,16 +348,31 @@
         </section>
         <section id="visualize_04" class="visualize" hidden>
             <canvas id="vizCanvas4"></canvas>
-            <div id="viz4Controls">
+            <div class="timelineControls">
                 <label>
                     <span>間隔</span>
-                    <input id="viz4SnapshotInterval" type="range" min="10" max="600" step="10" value="100">
+                    <input id="viz4SnapshotInterval" type="range" min="10" max="600" step="10" value="80">
                     <output id="viz4SnapshotIntervalValue"></output>
                 </label>
                 <label>
                     <span>時間</span>
                     <input id="viz4HistoryLifetime" type="range" min="800" max="10000" step="100" value="2800">
                     <output id="viz4HistoryLifetimeValue"></output>
+                </label>
+            </div>
+        </section>
+        <section id="visualize_05" class="visualize" hidden>
+            <canvas id="vizCanvas5"></canvas>
+            <div class="timelineControls">
+                <label>
+                    <span>間隔</span>
+                    <input id="viz5SnapshotInterval" type="range" min="10" max="600" step="10" value="80">
+                    <output id="viz5SnapshotIntervalValue"></output>
+                </label>
+                <label>
+                    <span>時間</span>
+                    <input id="viz5HistoryLifetime" type="range" min="800" max="10000" step="100" value="2800">
+                    <output id="viz5HistoryLifetimeValue"></output>
                 </label>
             </div>
         </section>
@@ -391,6 +406,10 @@
                 <input id="visualizeToggle4" type="checkbox">
                 <span>visualize_04</span>
             </label>
+            <label>
+                <input id="visualizeToggle5" type="checkbox">
+                <span>visualize_05</span>
+            </label>
         </div>
         <div id="sourceControls">
             <button id="cameraButton" type="button">WebCam</button>
@@ -420,21 +439,24 @@
 
     const $ = id => document.getElementById(id);
     const ids = [
-        "stage", "video", "canvas", "vizCanvas", "vizCanvas2", "vizCanvas3", "vizCanvas4", "cameraButton", "fileInput",
+        "stage", "video", "canvas", "vizCanvas", "vizCanvas2", "vizCanvas3", "vizCanvas4", "vizCanvas5", "cameraButton", "fileInput",
         "calibrate", "clearBaseline", "toggleShapes", "status", "paramSetSelect", "saveParamSet", "shapesPanel",
-        "visualizeToggle", "visualizeToggle2", "visualizeToggle3", "visualizeToggle4", "visualize_01", "visualize_02", "visualize_03", "visualize_04", "calibrationGuide", "calibrationGuideText", "calibrationPoint", "shuffleSpectrum", "viz2Tone", "viz3Tone",
-        "viz4SnapshotInterval", "viz4SnapshotIntervalValue", "viz4HistoryLifetime", "viz4HistoryLifetimeValue"
+        "visualizeToggle", "visualizeToggle2", "visualizeToggle3", "visualizeToggle4", "visualizeToggle5", "visualize_01", "visualize_02", "visualize_03", "visualize_04", "visualize_05", "calibrationGuide", "calibrationGuideText", "calibrationPoint", "shuffleSpectrum", "viz2Tone", "viz3Tone",
+        "viz4SnapshotInterval", "viz4SnapshotIntervalValue", "viz4HistoryLifetime", "viz4HistoryLifetimeValue",
+        "viz5SnapshotInterval", "viz5SnapshotIntervalValue", "viz5HistoryLifetime", "viz5HistoryLifetimeValue"
     ];
     const {
-        stage, video, canvas, vizCanvas, vizCanvas2, vizCanvas3, vizCanvas4, cameraButton, fileInput,
+        stage, video, canvas, vizCanvas, vizCanvas2, vizCanvas3, vizCanvas4, vizCanvas5, cameraButton, fileInput,
         calibrate, clearBaseline, toggleShapes, status, paramSetSelect, saveParamSet, shapesPanel,
-        visualizeToggle, visualizeToggle2, visualizeToggle3, visualizeToggle4, visualize_01: visualize, visualize_02: visualize2, visualize_03: visualize3, visualize_04: visualize4,
+        visualizeToggle, visualizeToggle2, visualizeToggle3, visualizeToggle4, visualizeToggle5, visualize_01: visualize, visualize_02: visualize2, visualize_03: visualize3, visualize_04: visualize4, visualize_05: visualize5,
         calibrationGuide, calibrationGuideText, calibrationPoint, shuffleSpectrum, viz2Tone, viz3Tone,
-        viz4SnapshotInterval, viz4SnapshotIntervalValue, viz4HistoryLifetime, viz4HistoryLifetimeValue
+        viz4SnapshotInterval, viz4SnapshotIntervalValue, viz4HistoryLifetime, viz4HistoryLifetimeValue,
+        viz5SnapshotInterval, viz5SnapshotIntervalValue, viz5HistoryLifetime, viz5HistoryLifetimeValue
     } = Object.fromEntries(ids.map(id => [id, $(id)]));
     const ctx = canvas.getContext("2d");
     const vizCtx = vizCanvas.getContext("2d");
     const vizCtx2 = vizCanvas2.getContext("2d");
+    const vizCtx5 = vizCanvas5.getContext("2d");
     const shapes = new Map();
     const enabledParams = new Set();
     const spectrum = new Map();
@@ -442,6 +464,10 @@
     const circles = new Map();
     const circleLayers = new Map();
     let spectrumOrder = [];
+    let spectrumHistory = [];
+    let spectrumLastSnapshotAt = 0;
+    let viz5SnapshotIntervalMs = Number(viz5SnapshotInterval.value);
+    let viz5HistoryLifetimeMs = Number(viz5HistoryLifetime.value);
     const PARAM_SET_DIR = "../parameter";
     const base = new Map();
     const [WARMUP_FRAMES, CALIBRATION_FRAMES, DEADZONE, SPECTRUM_ZERO_THRESHOLD, VIDEO_BASELINE_SECONDS, VIDEO_BASELINE_PASSES] = [20, 60, 0.005, 0.012, 0.2, 5];
@@ -461,7 +487,7 @@
     let activeParamSetName = "";
 
     Object.assign(canvas, { width: 720, height: 960 });
-    for (const target of [vizCanvas, vizCanvas2, vizCanvas3, vizCanvas4]) {
+    for (const target of [vizCanvas, vizCanvas2, vizCanvas3, vizCanvas4, vizCanvas5]) {
         Object.assign(target, { width: canvas.width, height: canvas.height });
     }
     const [VIZ4_WIDTH, VIZ4_HEIGHT, VIZ4_DEPTH, VIZ4_BASE_Y, VIZ4_ROWS, VIZ4_COLUMNS] = [2.4, 0.86, 3.1, -0.3, 7, 7];
@@ -491,12 +517,15 @@
     startCamera().catch(report("カメラを開始できません"));
     renderParamSetOptions();
 
-    for (const args of [[visualizeToggle, visualize, shuffleSpectrum], [visualizeToggle2, visualize2, viz2Tone], [visualizeToggle3, visualize3, viz3Tone], [visualizeToggle4, visualize4]]) {
+    for (const args of [[visualizeToggle, visualize, shuffleSpectrum], [visualizeToggle2, visualize2, viz2Tone], [visualizeToggle3, visualize3, viz3Tone], [visualizeToggle4, visualize4], [visualizeToggle5, visualize5]]) {
         args[0].onchange = () => toggleLayer(...args);
     }
     viz4SnapshotInterval.oninput = updateViz4Controls;
     viz4HistoryLifetime.oninput = updateViz4Controls;
+    viz5SnapshotInterval.oninput = updateViz5Controls;
+    viz5HistoryLifetime.oninput = updateViz5Controls;
     updateViz4Controls();
+    updateViz5Controls();
 
     viz2Tone.onclick = () => {
         viz2Monochrome = !viz2Monochrome;
@@ -578,7 +607,7 @@
         layer.hidden = !active;
         if (control) control.hidden = !active;
         if (!active) {
-            if (visualize.hidden && visualize2.hidden && visualize3.hidden && visualize4.hidden) hideCalibrationGuide();
+            if (visualize.hidden && visualize2.hidden && visualize3.hidden && visualize4.hidden && visualize5.hidden) hideCalibrationGuide();
             return;
         }
 
@@ -605,7 +634,7 @@
     }
 
     function visualizing() {
-        return !visualize.hidden || !visualize2.hidden || !visualize3.hidden || !visualize4.hidden;
+        return !visualize.hidden || !visualize2.hidden || !visualize3.hidden || !visualize4.hidden || !visualize5.hidden;
     }
 
     function updateViz4Controls() {
@@ -613,6 +642,13 @@
         viz4HistoryLifetimeMs = Number(viz4HistoryLifetime.value);
         viz4SnapshotIntervalValue.value = `${viz4SnapshotIntervalMs}ms`;
         viz4HistoryLifetimeValue.value = `${(viz4HistoryLifetimeMs / 1000).toFixed(1)}s`;
+    }
+
+    function updateViz5Controls() {
+        viz5SnapshotIntervalMs = Number(viz5SnapshotInterval.value);
+        viz5HistoryLifetimeMs = Number(viz5HistoryLifetime.value);
+        viz5SnapshotIntervalValue.value = `${viz5SnapshotIntervalMs}ms`;
+        viz5HistoryLifetimeValue.value = `${(viz5HistoryLifetimeMs / 1000).toFixed(1)}s`;
     }
 
     function calibrationActive() {
@@ -694,8 +730,10 @@
         draw(faceLandmarks[0]);
         updateShapes(categories);
         const activeCategories = selectedCategories(categories);
+        const spectrumFrame = updateSpectrumFrame(activeCategories);
         const motionValues = updateMotionValues(activeCategories);
-        drawSpectrum(activeCategories);
+        drawSpectrum(spectrumFrame);
+        drawSpectrumTimeline(spectrumFrame);
         drawMotionCircles(motionValues);
         drawMotionCircleLayers(motionValues);
         drawThreeWaveLine(motionValues);
@@ -1056,8 +1094,14 @@
         return `${value >= 0 ? "+" : ""}${value.toFixed(4)}`;
     }
 
-    function drawSpectrum(categories) {
+    function updateSpectrumFrame(categories) {
         const { width, height } = vizCanvas;
+        if (!categories.length) {
+            spectrumHistory = [];
+            spectrumLastSnapshotAt = 0;
+            return { active: false, points: [] };
+        }
+
         const [cx, cy] = [width / 2, height / 2];
         const baseRadius = Math.min(width, height) * 0.28;
         const maxSpike = Math.min(width, height) * 0.18;
@@ -1083,8 +1127,60 @@
             };
         });
 
+        return { active: calibrated, points };
+    }
+
+    function drawSpectrum({ active, points }) {
+        const { width, height } = vizCanvas;
         vizCtx.clearRect(0, 0, width, height);
-        drawSpectrumPath(points, calibrated);
+        drawSpectrumPath(vizCtx, points, active);
+    }
+
+    function drawSpectrumTimeline({ active, points }) {
+        const { width, height } = vizCanvas5;
+        vizCtx5.clearRect(0, 0, width, height);
+        if (!points.length) return;
+
+        updateSpectrumHistory(points, active);
+        drawSpectrumHistory(width, height);
+    }
+
+    function updateSpectrumHistory(points, active) {
+        const now = performance.now();
+
+        if (spectrumHistory[0]?.points.length !== points.length) {
+            spectrumHistory = [];
+            spectrumLastSnapshotAt = 0;
+        }
+        if (!spectrumLastSnapshotAt || now - spectrumLastSnapshotAt >= viz5SnapshotIntervalMs) {
+            spectrumHistory.unshift({
+                points: points.map(point => ({ ...point })),
+                active,
+                createdAt: now
+            });
+            spectrumLastSnapshotAt = now;
+        }
+        spectrumHistory = spectrumHistory.filter(({ createdAt }) => now - createdAt <= viz5HistoryLifetimeMs);
+    }
+
+    function drawSpectrumHistory(width, height) {
+        const now = performance.now();
+
+        for (let i = spectrumHistory.length - 1; i >= 0; i--) {
+            const { points, active, createdAt } = spectrumHistory[i];
+            const age = clamp((now - createdAt) / viz5HistoryLifetimeMs, 0, 1);
+            const scale = 0.82 * (1 - age * 0.18);
+            const dx = age * width * 0.16;
+            const dy = -age * height * 0.22;
+
+            vizCtx5.save();
+            vizCtx5.globalAlpha = 1 - age * 0.72;
+            vizCtx5.translate(width / 2 + dx, height / 2 + dy);
+            vizCtx5.scale(scale, scale);
+            vizCtx5.translate(-width / 2, -height / 2);
+            drawSpectrumPath(vizCtx5, points, active);
+            vizCtx5.restore();
+        }
     }
 
     function orderedSpectrumCategories(categories) {
@@ -1106,19 +1202,19 @@
         return shuffled;
     }
 
-    function drawSpectrumPath(points, active) {
+    function drawSpectrumPath(targetCtx, points, active) {
         if (points.length < 3) return;
 
-        vizCtx.save();
-        vizCtx.lineWidth = 3;
-        vizCtx.lineJoin = "miter";
-        vizCtx.miterLimit = 2.5;
-        vizCtx.lineCap = "round";
-        vizCtx.strokeStyle = active ? "#999" : "#bbb";
-        vizCtx.beginPath();
+        targetCtx.save();
+        targetCtx.lineWidth = 3;
+        targetCtx.lineJoin = "miter";
+        targetCtx.miterLimit = 2.5;
+        targetCtx.lineCap = "round";
+        targetCtx.strokeStyle = active ? "#999" : "#bbb";
+        targetCtx.beginPath();
 
         const start = midpoint(points[points.length - 1], points[0]);
-        vizCtx.moveTo(start.x, start.y);
+        targetCtx.moveTo(start.x, start.y);
 
         for (let i = 0; i < points.length; i++) {
             const previous = points[(i - 1 + points.length) % points.length];
@@ -1129,24 +1225,24 @@
             const sharpness = current.sharpness ?? 0;
 
             if (sharpness > 0.85) {
-                vizCtx.lineTo(current.x, current.y);
-                vizCtx.lineTo(nextMid.x, nextMid.y);
+                targetCtx.lineTo(current.x, current.y);
+                targetCtx.lineTo(nextMid.x, nextMid.y);
             } else if (sharpness > 0.08) {
                 const corner = 0.45 + sharpness * 0.5;
                 const entry = lerpPoint(previousMid, current, corner);
                 const exit = lerpPoint(nextMid, current, corner);
-                vizCtx.quadraticCurveTo(current.x, current.y, entry.x, entry.y);
-                vizCtx.lineTo(current.x, current.y);
-                vizCtx.lineTo(exit.x, exit.y);
-                vizCtx.quadraticCurveTo(current.x, current.y, nextMid.x, nextMid.y);
+                targetCtx.quadraticCurveTo(current.x, current.y, entry.x, entry.y);
+                targetCtx.lineTo(current.x, current.y);
+                targetCtx.lineTo(exit.x, exit.y);
+                targetCtx.quadraticCurveTo(current.x, current.y, nextMid.x, nextMid.y);
             } else {
-                vizCtx.quadraticCurveTo(current.x, current.y, nextMid.x, nextMid.y);
+                targetCtx.quadraticCurveTo(current.x, current.y, nextMid.x, nextMid.y);
             }
         }
 
-        vizCtx.closePath();
-        vizCtx.stroke();
-        vizCtx.restore();
+        targetCtx.closePath();
+        targetCtx.stroke();
+        targetCtx.restore();
     }
 
     function updateMotionValues(categories) {
