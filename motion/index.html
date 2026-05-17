@@ -239,6 +239,12 @@
             gap: 8px;
         }
 
+        #out[hidden],
+        #layerControls[hidden],
+        #sourceControls[hidden] {
+            display: none;
+        }
+
         #sourceControls input {
             position: absolute;
             inline-size: 1px;
@@ -440,14 +446,14 @@
     const $ = id => document.getElementById(id);
     const ids = [
         "stage", "video", "canvas", "vizCanvas", "vizCanvas2", "vizCanvas3", "vizCanvas4", "vizCanvas5", "cameraButton", "fileInput",
-        "calibrate", "clearBaseline", "toggleShapes", "status", "paramSetSelect", "saveParamSet", "shapesPanel",
+        "calibrate", "clearBaseline", "toggleShapes", "status", "paramSetSelect", "saveParamSet", "shapesPanel", "layerControls", "sourceControls", "out",
         "visualizeToggle", "visualizeToggle2", "visualizeToggle3", "visualizeToggle4", "visualizeToggle5", "visualize_01", "visualize_02", "visualize_03", "visualize_04", "visualize_05", "calibrationGuide", "calibrationGuideText", "calibrationPoint", "shuffleSpectrum", "viz2Tone", "viz3Tone",
         "viz4SnapshotInterval", "viz4SnapshotIntervalValue", "viz4HistoryLifetime", "viz4HistoryLifetimeValue",
         "viz5SnapshotInterval", "viz5SnapshotIntervalValue", "viz5HistoryLifetime", "viz5HistoryLifetimeValue"
     ];
     const {
         stage, video, canvas, vizCanvas, vizCanvas2, vizCanvas3, vizCanvas4, vizCanvas5, cameraButton, fileInput,
-        calibrate, clearBaseline, toggleShapes, status, paramSetSelect, saveParamSet, shapesPanel,
+        calibrate, clearBaseline, toggleShapes, status, paramSetSelect, saveParamSet, shapesPanel, layerControls, sourceControls, out,
         visualizeToggle, visualizeToggle2, visualizeToggle3, visualizeToggle4, visualizeToggle5, visualize_01: visualize, visualize_02: visualize2, visualize_03: visualize3, visualize_04: visualize4, visualize_05: visualize5,
         calibrationGuide, calibrationGuideText, calibrationPoint, shuffleSpectrum, viz2Tone, viz3Tone,
         viz4SnapshotInterval, viz4SnapshotIntervalValue, viz4HistoryLifetime, viz4HistoryLifetimeValue,
@@ -514,6 +520,14 @@
 
     startCamera().catch(report("カメラを開始できません"));
     renderParamSetOptions();
+
+    document.addEventListener("keydown", event => {
+        if (event.key !== " " || event.repeat) return;
+        const hidden = !layerControls.hidden;
+        for (const panel of [layerControls, sourceControls, out]) {
+            panel.hidden = hidden;
+        }
+    });
 
     for (const args of [[visualizeToggle, visualize, shuffleSpectrum], [visualizeToggle2, visualize2, viz2Tone], [visualizeToggle3, visualize3, viz3Tone], [visualizeToggle4, visualize4], [visualizeToggle5, visualize5]]) {
         args[0].onchange = () => toggleLayer(...args);
