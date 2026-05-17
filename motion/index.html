@@ -239,6 +239,7 @@
             gap: 8px;
         }
 
+        .timelineControls[hidden],
         #out[hidden],
         #layerControls[hidden],
         #sourceControls[hidden] {
@@ -459,6 +460,7 @@
         viz4SnapshotInterval, viz4SnapshotIntervalValue, viz4HistoryLifetime, viz4HistoryLifetimeValue,
         viz5SnapshotInterval, viz5SnapshotIntervalValue, viz5HistoryLifetime, viz5HistoryLifetimeValue
     } = Object.fromEntries(ids.map(id => [id, $(id)]));
+    const timelineControls = [...document.querySelectorAll(".timelineControls")];
     const ctx = canvas.getContext("2d");
     const vizCtx = vizCanvas.getContext("2d");
     const vizCtx2 = vizCanvas2.getContext("2d");
@@ -524,7 +526,7 @@
     document.addEventListener("keydown", event => {
         if (event.key !== " " || event.repeat) return;
         const hidden = !layerControls.hidden;
-        for (const panel of [layerControls, sourceControls, out]) {
+        for (const panel of [layerControls, sourceControls, out, ...timelineControls]) {
             panel.hidden = hidden;
         }
     });
