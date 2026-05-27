@@ -183,13 +183,16 @@
             margin-left: auto;
         }
 
-        #paramSetControls {
+        #paramSetControls,
+        #gainSetControls {
             display: flex;
+            flex-wrap: wrap;
             gap: 0.5em;
             margin-bottom: 0.6em;
         }
 
-        #paramSetControls select {
+        #paramSetControls select,
+        #gainSetControls select {
             min-width: 9em;
             padding: 0.25em 0.35em;
             font: inherit;
@@ -293,7 +296,7 @@
 
         .shape {
             display: grid;
-            grid-template-columns: 9em 7em 4em;
+            grid-template-columns: 9em 7em 4em 3.4em;
             gap: 0.5em;
             align-items: center;
         }
@@ -340,6 +343,11 @@
         }
 
         .value {
+            text-align: right;
+        }
+
+        .gain {
+            color: #cbd5df;
             text-align: right;
         }
     </style>
@@ -432,15 +440,20 @@
         <div id="out">
             <div id="calibControls">
                 <button id="calibrate">キャリブ</button>
+                <button id="measureMotionGain" type="button">係数測定</button>
                 <button id="clearBaseline">解除</button>
-                <button id="toggleShapes" type="button" aria-expanded="true" aria-controls="shapesPanel">▲</button>
+                <button id="toggleShapes" type="button" aria-expanded="false" aria-controls="shapesPanel">▼</button>
                 <span id="status"></span>
             </div>
             <div id="paramSetControls">
                 <select id="paramSetSelect" aria-label="パラメーターセット"></select>
                 <button id="saveParamSet" type="button">セット保存</button>
             </div>
-            <div id="shapesPanel"></div>
+            <div id="gainSetControls">
+                <select id="motionGainSetSelect" aria-label="係数セット"></select>
+                <button id="saveMotionGainSet" type="button">係数保存</button>
+            </div>
+            <div id="shapesPanel" hidden></div>
         </div>
     </main>
 </body>
@@ -452,14 +465,14 @@
     const $ = id => document.getElementById(id);
     const ids = [
         "stage", "video", "canvas", "vizCanvas", "vizCanvas2", "vizCanvas3", "vizCanvas4", "vizCanvas5", "cameraButton", "fileInput",
-        "calibrate", "clearBaseline", "toggleShapes", "status", "paramSetSelect", "saveParamSet", "shapesPanel", "layerControls", "sourceControls", "out",
+        "calibrate", "measureMotionGain", "clearBaseline", "toggleShapes", "status", "paramSetSelect", "saveParamSet", "motionGainSetSelect", "saveMotionGainSet", "shapesPanel", "layerControls", "sourceControls", "out",
         "visualizeToggle", "visualizeToggle2", "visualizeToggle3", "visualizeToggle4", "visualizeToggle5", "visualize_01", "visualize_02", "visualize_03", "visualize_04", "visualize_05", "calibrationGuide", "calibrationGuideText", "calibrationPoint", "shuffleSpectrum", "viz2Tone", "viz3Tone",
         "viz4SnapshotInterval", "viz4SnapshotIntervalValue", "viz4HistoryLifetime", "viz4HistoryLifetimeValue",
         "viz5SnapshotInterval", "viz5SnapshotIntervalValue", "viz5HistoryLifetime", "viz5HistoryLifetimeValue"
     ];
     const {
         stage, video, canvas, vizCanvas, vizCanvas2, vizCanvas3, vizCanvas4, vizCanvas5, cameraButton, fileInput,
-        calibrate, clearBaseline, toggleShapes, status, paramSetSelect, saveParamSet, shapesPanel, layerControls, sourceControls, out,
+        calibrate, measureMotionGain, clearBaseline, toggleShapes, status, paramSetSelect, saveParamSet, motionGainSetSelect, saveMotionGainSet, shapesPanel, layerControls, sourceControls, out,
         visualizeToggle, visualizeToggle2, visualizeToggle3, visualizeToggle4, visualizeToggle5, visualize_01: visualize, visualize_02: visualize2, visualize_03: visualize3, visualize_04: visualize4, visualize_05: visualize5,
         calibrationGuide, calibrationGuideText, calibrationPoint, shuffleSpectrum, viz2Tone, viz3Tone,
         viz4SnapshotInterval, viz4SnapshotIntervalValue, viz4HistoryLifetime, viz4HistoryLifetimeValue,
@@ -482,10 +495,14 @@
     let viz5SnapshotIntervalMs = Number(viz5SnapshotInterval.value);
     let viz5HistoryLifetimeMs = Number(viz5HistoryLifetime.value);
     const PARAM_SET_DIR = "../parameter";
+    const MOTION_GAIN_SET_DIR = "../parameter";
     const base = new Map();
+    const motionGains = new Map();
     const [WARMUP_FRAMES, CALIBRATION_FRAMES, DEADZONE, SPECTRUM_ZERO_THRESHOLD, VIDEO_BASELINE_SECONDS, VIDEO_BASELINE_PASSES] = [20, 60, 0.005, 0.012, 0.2, 5];
-    const [GUIDE_MESSAGE, WAIT_MESSAGE] = ["この点を見つめてください.", "顔を検出中です..."];
+    const [MOTION_GAIN_SAMPLE_MS, MOTION_GAIN_SET_COUNT, MOTION_GAIN_MIN, MOTION_GAIN_MAX, MOTION_GAIN_EPSILON, MOTION_GAIN_POWER] = [20000, 3, 0, 2, 0.004, 1.5];
+    const [GUIDE_MESSAGE, WAIT_MESSAGE, MOTION_GAIN_MESSAGE] = ["この点を見つめてください.", "顔を検出中です...", "自由に表情を動かしてください."];
     const calibration = { warmup: 0, remaining: 0, samples: 0, stats: new Map() };
+    const motionGainCalibration = { active: false, startedAt: 0, duration: MOTION_GAIN_SAMPLE_MS, setIndex: 0, samples: 0, stats: new Map(), sets: [] };
     const [VW, VH] = [1280, 720];
     let activeMode = "camera";
     let activeObjectUrl = "";
@@ -496,6 +513,8 @@
     let viz3Monochrome = false;
     let paramSets = await loadParamSets();
     let activeParamSetName = "";
+    let motionGainSets = await loadMotionGainSets();
+    let activeMotionGainSetName = "";
 
     Object.assign(canvas, { width: 720, height: 960 });
     for (const target of [vizCanvas, vizCanvas2, vizCanvas3, vizCanvas4, vizCanvas5]) {
@@ -527,6 +546,7 @@
 
     startCamera().catch(report("カメラを開始できません"));
     renderParamSetOptions();
+    renderMotionGainSetOptions();
 
     document.addEventListener("keydown", event => {
         if (event.key !== " " || event.repeat) return;
@@ -562,6 +582,7 @@
         if (activeMode === "video-file") {
             stopLoop();
             calibrate.disabled = true;
+            measureMotionGain.disabled = true;
             try {
                 await calibrateFromVideoStart();
                 await seekVideo(0);
@@ -570,19 +591,27 @@
                 startLoop();
             } catch (error) {
                 calibrate.disabled = false;
+                measureMotionGain.disabled = false;
                 status.textContent = `動画キャリブレーション失敗: ${error.message}`;
             }
             return;
         }
-        resetCalibration(WARMUP_FRAMES, CALIBRATION_FRAMES);
+        resetCalibration({ warmup: WARMUP_FRAMES, frames: CALIBRATION_FRAMES });
         showCalibrationGuide(GUIDE_MESSAGE);
         calibrate.disabled = true;
+        measureMotionGain.disabled = true;
+    };
+
+    measureMotionGain.onclick = () => {
+        startMotionGainCalibration();
     };
 
     clearBaseline.onclick = () => {
-        resetCalibration();
+        resetCalibration({ clearGains: true });
+        resetMotionGainCalibration();
         hideCalibrationGuide();
         calibrate.disabled = false;
+        measureMotionGain.disabled = false;
     };
 
     shuffleSpectrum.onclick = () => {
@@ -615,6 +644,14 @@
         await saveCurrentParamSet();
     };
 
+    motionGainSetSelect.onchange = () => {
+        applyMotionGainSet(motionGainSetSelect.value);
+    };
+
+    saveMotionGainSet.onclick = async () => {
+        await saveCurrentMotionGainSet();
+    };
+
     function setShapesExpanded(expanded) {
         shapesPanel.hidden = !expanded;
         toggleShapes.setAttribute("aria-expanded", expanded);
@@ -636,10 +673,11 @@
 
     function startGuidedCalibration() {
         if (activeMode === "video-file") return;
-        resetCalibration(WARMUP_FRAMES, CALIBRATION_FRAMES);
+        resetCalibration({ warmup: WARMUP_FRAMES, frames: CALIBRATION_FRAMES });
         showCalibrationGuide(GUIDE_MESSAGE);
         updateCalibrationPoint();
         calibrate.disabled = true;
+        measureMotionGain.disabled = true;
     }
 
     function showCalibrationGuide(message) {
@@ -680,11 +718,17 @@
         showCalibrationGuide(WAIT_MESSAGE);
     }
 
-    function resetCalibration(warmup = 0, frames = 0) {
+    function resetCalibration({ warmup = 0, frames = 0, clearGains = false } = {}) {
         [base, spectrum, spectrumSharpness, circles].forEach(map => map.clear());
+        if (clearGains) {
+            motionGains.clear();
+            activeMotionGainSetName = "";
+            renderMotionGainSetOptions();
+        }
         clearViz3CircleLayers();
         Object.assign(calibration, { warmup, remaining: frames, samples: 0 });
         calibration.stats.clear();
+        resetMotionGainCalibration();
         status.textContent = "";
         updateCalibrationPoint();
     }
@@ -747,6 +791,7 @@
         updateAutoCalibration(categories.length > 0);
         drawLandmarks(faceLandmarks[0]);
         updateShapes(categories);
+        updateMotionGainCalibration(categories);
 
         const activeCategories = selectedCategories(categories);
         const spectrumVisible = !visualize.hidden || !visualize5.hidden;
@@ -855,6 +900,7 @@
                 const bar = document.createElement("span");
                 const fill = document.createElement("span");
                 const value = document.createElement("span");
+                const gain = document.createElement("span");
 
                 row.className = "shape";
                 label.className = "param";
@@ -865,6 +911,7 @@
                 bar.className = "bar raw";
                 fill.className = "fill";
                 value.className = "value";
+                gain.className = "gain";
                 input.onchange = () => {
                     setParamEnabled(categoryName, input.checked);
                 };
@@ -872,19 +919,20 @@
                 setParamEnabled(categoryName, input.checked);
                 label.append(input, name);
                 bar.append(fill);
-                row.append(label, bar, value);
+                row.append(label, bar, value, gain);
                 shapesPanel.appendChild(row);
-                shapes.set(categoryName, { input, bar, value });
+                shapes.set(categoryName, { input, bar, value, gain });
             }
-            const { bar, value } = shapes.get(categoryName);
+            const { bar, value, gain } = shapes.get(categoryName);
             const calibrated = base.size > 0;
-            const displayScore = calibrated ? calibratedScore(categoryName, score) : score;
+            const displayScore = calibrated ? adjustedCalibratedScore(categoryName, score) : score;
             const width = calibrated
                 ? Math.min(Math.abs(displayScore) * 100, 50)
                 : Math.min(score * 100, 100);
             bar.className = `bar ${calibrated ? (displayScore < 0 ? "negative" : "positive") : "raw"}`;
             bar.style.setProperty("--v", `${width}%`);
             value.textContent = calibrated ? signed(displayScore) : score.toFixed(4);
+            gain.textContent = calibrated ? `x${motionGain(categoryName).toFixed(2)}` : "";
         }
     }
 
@@ -1014,6 +1062,118 @@
         status.textContent = name ? `${name} を読み込みました` : "";
     }
 
+    async function loadMotionGainSets() {
+        try {
+            const sets = {};
+
+            for (let index = 1; index <= 99; index++) {
+                const name = motionGainSetName(index);
+                const response = await fetch(`${MOTION_GAIN_SET_DIR}/${name}.json`, { cache: "no-store" });
+                if (response.status === 404) break;
+                if (!response.ok) throw new Error(`${name}.json: HTTP ${response.status}`);
+
+                const text = await response.text();
+                if (!text.trim()) continue;
+
+                const gainSet = normalizeMotionGainSet(JSON.parse(text));
+                if (validMotionGainSet(gainSet)) sets[name] = gainSet;
+            }
+
+            return sets;
+        } catch (error) {
+            status.textContent = `係数セットを読み込めません: ${error.message}`;
+            return {};
+        }
+    }
+
+    function validMotionGainSet(value) {
+        return value && typeof value === "object" && !Array.isArray(value)
+            && Object.keys(value).length > 0
+            && Object.values(value).every(gain => Number.isFinite(gain));
+    }
+
+    function renderMotionGainSetOptions(selectedName = activeMotionGainSetName) {
+        const names = Object.keys(motionGainSets).sort((a, b) => a.localeCompare(b, "ja", { numeric: true }));
+        motionGainSetSelect.replaceChildren(new Option("係数なし", ""));
+
+        for (const name of names) {
+            motionGainSetSelect.appendChild(new Option(name, name));
+        }
+
+        activeMotionGainSetName = names.includes(selectedName) ? selectedName : "";
+        motionGainSetSelect.value = activeMotionGainSetName;
+    }
+
+    function applyMotionGainSet(name) {
+        activeMotionGainSetName = name;
+        motionGains.clear();
+
+        const gainSet = motionGainSets[name];
+        if (gainSet) {
+            for (const [categoryName, gain] of Object.entries(gainSet)) {
+                motionGains.set(categoryName, clamp(gain, MOTION_GAIN_MIN, MOTION_GAIN_MAX));
+            }
+        }
+
+        [spectrum, spectrumSharpness, circles].forEach(map => map.clear());
+        clearViz3CircleLayers();
+        status.textContent = name ? `${name} を適用しました` : "係数を解除しました";
+    }
+
+    async function saveCurrentMotionGainSet() {
+        if (!motionGains.size) {
+            status.textContent = "保存できる係数がありません";
+            return;
+        }
+
+        const name = nextMotionGainSetName();
+        const gainSet = Object.fromEntries([...motionGains].map(([categoryName, gain]) => [categoryName, roundGain(gain)]));
+        const payload = {
+            version: 1,
+            type: "motionGainSet",
+            createdAt: new Date().toISOString(),
+            setCount: MOTION_GAIN_SET_COUNT,
+            secondsPerSet: MOTION_GAIN_SAMPLE_MS / 1000,
+            gains: gainSet
+        };
+
+        motionGainSets[name] = gainSet;
+
+        try {
+            await writeParamSetFile(JSON.stringify(payload, null, 2), `${name}.json`);
+            renderMotionGainSetOptions(name);
+            status.textContent = `${name}.json を書き出しました`;
+        } catch (error) {
+            delete motionGainSets[name];
+            status.textContent = `係数を保存できません: ${error.message}`;
+        }
+    }
+
+    function normalizeMotionGainSet(stored) {
+        const source = stored?.gains ?? stored;
+        if (!source || typeof source !== "object" || Array.isArray(source)) return null;
+
+        return Object.fromEntries(Object.entries(source)
+            .map(([categoryName, gain]) => [categoryName, Number(gain)])
+            .filter(([, gain]) => Number.isFinite(gain))
+            .map(([categoryName, gain]) => [categoryName, roundGain(gain)]));
+    }
+
+    function nextMotionGainSetName() {
+        let index = Object.keys(motionGainSets).length + 1;
+        let name = "";
+
+        do {
+            name = motionGainSetName(index++);
+        } while (name in motionGainSets);
+
+        return name;
+    }
+
+    function motionGainSetName(index) {
+        return `motionGainSet${String(index).padStart(2, "0")}`;
+    }
+
     function updateCalibration(categories) {
         if ((!calibration.warmup && !calibration.remaining) || !categories.length) return;
 
@@ -1043,14 +1203,15 @@
             base.set(categoryName, { mean, dead: Math.max(Math.sqrt(variance) * 3, DEADZONE) });
         }
         calibrate.disabled = false;
+        measureMotionGain.disabled = false;
         hideCalibrationGuide();
         status.textContent = `キャリブ済み (${calibration.samples} frames)`;
     }
 
-    function updateCalibrationPoint() {
-        const progress = !calibrationActive() || calibration.warmup
+    function updateCalibrationPoint(progressValue) {
+        const progress = progressValue ?? (!calibrationActive() || calibration.warmup
             ? 0
-            : clamp((CALIBRATION_FRAMES - calibration.remaining) / CALIBRATION_FRAMES * 100, 0, 100);
+            : clamp((CALIBRATION_FRAMES - calibration.remaining) / CALIBRATION_FRAMES * 100, 0, 100));
         calibrationPoint.style.setProperty("--progress", progress);
     }
 
@@ -1099,6 +1260,7 @@
             base.set(categoryName, { mean, min, max, dead });
         }
         calibrate.disabled = false;
+        measureMotionGain.disabled = false;
         hideCalibrationGuide();
         status.textContent = `キャリブ済み (${VIDEO_BASELINE_SECONDS * VIDEO_BASELINE_PASSES}s)`;
     }
@@ -1107,6 +1269,168 @@
         const { mean = 0, dead = 0, min = mean - dead, max = mean + dead } = base.get(categoryName) ?? {};
         if (score >= min - dead && score <= max + dead) return 0;
         return score < mean ? score - (min - dead) : score - (max + dead);
+    }
+
+    function adjustedCalibratedScore(categoryName, score) {
+        return calibratedScore(categoryName, score) * motionGain(categoryName);
+    }
+
+    function motionGain(categoryName) {
+        return motionGains.get(categoryName) ?? 1;
+    }
+
+    function startMotionGainCalibration() {
+        if (!base.size || calibrationActive()) {
+            status.textContent = "先にキャリブレーションしてください";
+            return;
+        }
+        Object.assign(motionGainCalibration, {
+            active: true,
+            startedAt: performance.now(),
+            duration: MOTION_GAIN_SAMPLE_MS,
+            setIndex: 0,
+            samples: 0
+        });
+        motionGainCalibration.stats.clear();
+        motionGainCalibration.sets = [];
+        motionGains.clear();
+        activeMotionGainSetName = "";
+        renderMotionGainSetOptions();
+        [spectrum, spectrumSharpness, circles].forEach(map => map.clear());
+        clearViz3CircleLayers();
+        showCalibrationGuide(`${MOTION_GAIN_MESSAGE}\n1/${MOTION_GAIN_SET_COUNT}`);
+        calibrate.disabled = true;
+        measureMotionGain.disabled = true;
+        updateCalibrationPoint(0);
+    }
+
+    function resetMotionGainCalibration() {
+        Object.assign(motionGainCalibration, {
+            active: false,
+            startedAt: 0,
+            duration: MOTION_GAIN_SAMPLE_MS,
+            setIndex: 0,
+            samples: 0
+        });
+        motionGainCalibration.stats.clear();
+        motionGainCalibration.sets = [];
+    }
+
+    function updateMotionGainCalibration(categories) {
+        if (!motionGainCalibration.active || !base.size) return;
+
+        const elapsed = performance.now() - motionGainCalibration.startedAt;
+        const remaining = Math.max(Math.ceil((motionGainCalibration.duration - elapsed) / 1000), 0);
+
+        if (!categories.length) {
+            status.textContent = `係数測定 ${motionGainCalibration.setIndex + 1}/${MOTION_GAIN_SET_COUNT}: 顔を検出中 ${remaining}s`;
+            updateCalibrationPoint(clamp(elapsed / motionGainCalibration.duration * 100, 0, 100));
+            if (elapsed >= motionGainCalibration.duration) finishMotionGainCalibrationSet();
+            return;
+        }
+
+        for (const { categoryName, score } of categories) {
+            const value = Math.abs(calibratedScore(categoryName, score));
+            const stat = motionGainCalibration.stats.get(categoryName) ?? { max: 0, sum: 0, samples: 0 };
+            stat.max = Math.max(stat.max, value);
+            stat.sum += value;
+            stat.samples++;
+            motionGainCalibration.stats.set(categoryName, stat);
+        }
+
+        motionGainCalibration.samples++;
+        status.textContent = `係数測定 ${motionGainCalibration.setIndex + 1}/${MOTION_GAIN_SET_COUNT}: ${remaining}s`;
+        updateCalibrationPoint(clamp(elapsed / motionGainCalibration.duration * 100, 0, 100));
+
+        if (elapsed < motionGainCalibration.duration) return;
+        finishMotionGainCalibrationSet();
+    }
+
+    function finishMotionGainCalibrationSet() {
+        const amplitudes = [...motionGainCalibration.stats.entries()]
+            .map(([categoryName, stat]) => ({ categoryName, amount: stat.max }))
+            .filter(({ amount }) => amount >= MOTION_GAIN_EPSILON);
+
+        if (!amplitudes.length) {
+            resetMotionGainCalibration();
+            calibrate.disabled = false;
+            measureMotionGain.disabled = false;
+            hideCalibrationGuide();
+            status.textContent = "係数測定: 変動を検出できません";
+            return;
+        }
+
+        const target = median(amplitudes.map(({ amount }) => amount));
+        const setGains = {};
+
+        for (const [categoryName, stat] of motionGainCalibration.stats) {
+            const gain = stat.max < MOTION_GAIN_EPSILON
+                ? MOTION_GAIN_MAX
+                : (target / stat.max) ** MOTION_GAIN_POWER;
+            setGains[categoryName] = roundGain(gain);
+        }
+
+        motionGainCalibration.sets.push(setGains);
+        motionGainCalibration.setIndex++;
+
+        if (motionGainCalibration.setIndex < MOTION_GAIN_SET_COUNT) {
+            motionGainCalibration.startedAt = performance.now();
+            motionGainCalibration.samples = 0;
+            motionGainCalibration.stats.clear();
+            showCalibrationGuide(`${MOTION_GAIN_MESSAGE}\n${motionGainCalibration.setIndex + 1}/${MOTION_GAIN_SET_COUNT}`);
+            updateCalibrationPoint(0);
+            return;
+        }
+
+        finishMotionGainCalibration();
+    }
+
+    function finishMotionGainCalibration() {
+        const averagedGains = averageMotionGainSets(motionGainCalibration.sets);
+        const classifications = { easy: 0, hard: 0 };
+
+        motionGains.clear();
+        for (const [categoryName, gain] of Object.entries(averagedGains)) {
+            motionGains.set(categoryName, gain);
+            if (gain < 0.75) classifications.easy++;
+            if (gain > 1.25) classifications.hard++;
+        }
+
+        resetMotionGainCalibration();
+        calibrate.disabled = false;
+        measureMotionGain.disabled = false;
+        hideCalibrationGuide();
+        status.textContent = `係数測定済み (${MOTION_GAIN_SET_COUNT}セット平均): 動きやすい ${classifications.easy}, 動きにくい ${classifications.hard}`;
+    }
+
+    function averageMotionGainSets(sets) {
+        const valuesByName = new Map();
+
+        for (const set of sets) {
+            for (const [categoryName, gain] of Object.entries(set)) {
+                if (!Number.isFinite(gain)) continue;
+                const values = valuesByName.get(categoryName) ?? [];
+                values.push(gain);
+                valuesByName.set(categoryName, values);
+            }
+        }
+
+        return Object.fromEntries([...valuesByName].map(([categoryName, values]) => [
+            categoryName,
+            roundGain(values.reduce((sum, value) => sum + value, 0) / values.length)
+        ]));
+    }
+
+    function roundGain(value) {
+        return Number(clamp(value, MOTION_GAIN_MIN, MOTION_GAIN_MAX).toFixed(4));
+    }
+
+    function median(values) {
+        const sorted = [...values].sort((a, b) => a - b);
+        const center = Math.floor(sorted.length / 2);
+        return sorted.length % 2
+            ? sorted[center]
+            : (sorted[center - 1] + sorted[center]) / 2;
     }
 
     function signed(value) {
@@ -1127,7 +1451,7 @@
         const calibrated = base.size > 0;
         const ordered = orderedSpectrumCategories(categories);
         const points = ordered.map(({ categoryName, score }, i) => {
-            const rawValue = calibrated ? calibratedScore(categoryName, score) : 0;
+            const rawValue = calibrated ? adjustedCalibratedScore(categoryName, score) : 0;
             const value = Math.abs(rawValue) < SPECTRUM_ZERO_THRESHOLD ? 0 : rawValue;
             const previous = spectrum.get(categoryName) ?? 0;
             const smoothed = previous * 0.82 + value * 0.18;
@@ -1267,7 +1591,7 @@
     function updateMotionValues(categories) {
         const calibrated = base.size > 0;
         const values = categories.map(({ categoryName, score }) => {
-            const target = calibrated ? calibratedScore(categoryName, score) : 0;
+            const target = calibrated ? adjustedCalibratedScore(categoryName, score) : 0;
             const state = circles.get(categoryName) ?? { value: 0, speed: 0, phase: Math.random() * Math.PI * 2 };
             const previous = state.value;
             state.value = previous * 0.78 + target * 0.22;
