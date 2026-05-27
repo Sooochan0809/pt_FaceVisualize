@@ -443,7 +443,6 @@
                 <button id="measureMotionGain" type="button">係数測定</button>
                 <button id="clearBaseline">解除</button>
                 <button id="toggleShapes" type="button" aria-expanded="false" aria-controls="shapesPanel">▼</button>
-                <span id="status"></span>
             </div>
             <div id="paramSetControls">
                 <select id="paramSetSelect" aria-label="パラメーターセット"></select>
@@ -453,6 +452,7 @@
                 <select id="motionGainSetSelect" aria-label="係数セット"></select>
                 <button id="saveMotionGainSet" type="button">係数保存</button>
             </div>
+            <span id="status"></span>
             <div id="shapesPanel" hidden></div>
         </div>
     </main>
@@ -495,14 +495,13 @@
     let viz5SnapshotIntervalMs = Number(viz5SnapshotInterval.value);
     let viz5HistoryLifetimeMs = Number(viz5HistoryLifetime.value);
     const PARAM_SET_DIR = "../parameter";
-    const MOTION_GAIN_SET_DIR = "../parameter";
     const base = new Map();
     const motionGains = new Map();
     const [WARMUP_FRAMES, CALIBRATION_FRAMES, DEADZONE, SPECTRUM_ZERO_THRESHOLD, VIDEO_BASELINE_SECONDS, VIDEO_BASELINE_PASSES] = [20, 60, 0.005, 0.012, 0.2, 5];
     const [MOTION_GAIN_SAMPLE_MS, MOTION_GAIN_SET_COUNT, MOTION_GAIN_MIN, MOTION_GAIN_MAX, MOTION_GAIN_EPSILON, MOTION_GAIN_POWER] = [20000, 3, 0, 2, 0.004, 1.5];
     const [GUIDE_MESSAGE, WAIT_MESSAGE, MOTION_GAIN_MESSAGE] = ["この点を見つめてください.", "顔を検出中です...", "自由に表情を動かしてください."];
     const calibration = { warmup: 0, remaining: 0, samples: 0, stats: new Map() };
-    const motionGainCalibration = { active: false, startedAt: 0, duration: MOTION_GAIN_SAMPLE_MS, setIndex: 0, samples: 0, stats: new Map(), sets: [] };
+    const motionGainCalibration = { active: false, startedAt: 0, duration: MOTION_GAIN_SAMPLE_MS, setIndex: 0, stats: new Map(), sets: [] };
     const [VW, VH] = [1280, 720];
     let activeMode = "camera";
     let activeObjectUrl = "";
@@ -608,7 +607,6 @@
 
     clearBaseline.onclick = () => {
         resetCalibration({ clearGains: true });
-        resetMotionGainCalibration();
         hideCalibrationGuide();
         calibrate.disabled = false;
         measureMotionGain.disabled = false;
@@ -1059,7 +1057,7 @@
             setParamEnabled(categoryName, input.checked);
         }
 
-        status.textContent = name ? `${name} を読み込みました` : "";
+        status.textContent = name ? `${name} を適用しました` : "";
     }
 
     async function loadMotionGainSets() {
@@ -1068,7 +1066,7 @@
 
             for (let index = 1; index <= 99; index++) {
                 const name = motionGainSetName(index);
-                const response = await fetch(`${MOTION_GAIN_SET_DIR}/${name}.json`, { cache: "no-store" });
+                const response = await fetch(`${PARAM_SET_DIR}/${name}.json`, { cache: "no-store" });
                 if (response.status === 404) break;
                 if (!response.ok) throw new Error(`${name}.json: HTTP ${response.status}`);
 
@@ -1288,8 +1286,7 @@
             active: true,
             startedAt: performance.now(),
             duration: MOTION_GAIN_SAMPLE_MS,
-            setIndex: 0,
-            samples: 0
+            setIndex: 0
         });
         motionGainCalibration.stats.clear();
         motionGainCalibration.sets = [];
@@ -1309,8 +1306,7 @@
             active: false,
             startedAt: 0,
             duration: MOTION_GAIN_SAMPLE_MS,
-            setIndex: 0,
-            samples: 0
+            setIndex: 0
         });
         motionGainCalibration.stats.clear();
         motionGainCalibration.sets = [];
@@ -1331,14 +1327,11 @@
 
         for (const { categoryName, score } of categories) {
             const value = Math.abs(calibratedScore(categoryName, score));
-            const stat = motionGainCalibration.stats.get(categoryName) ?? { max: 0, sum: 0, samples: 0 };
+            const stat = motionGainCalibration.stats.get(categoryName) ?? { max: 0 };
             stat.max = Math.max(stat.max, value);
-            stat.sum += value;
-            stat.samples++;
             motionGainCalibration.stats.set(categoryName, stat);
         }
 
-        motionGainCalibration.samples++;
         status.textContent = `係数測定 ${motionGainCalibration.setIndex + 1}/${MOTION_GAIN_SET_COUNT}: ${remaining}s`;
         updateCalibrationPoint(clamp(elapsed / motionGainCalibration.duration * 100, 0, 100));
 
@@ -1375,7 +1368,6 @@
 
         if (motionGainCalibration.setIndex < MOTION_GAIN_SET_COUNT) {
             motionGainCalibration.startedAt = performance.now();
-            motionGainCalibration.samples = 0;
             motionGainCalibration.stats.clear();
             showCalibrationGuide(`${MOTION_GAIN_MESSAGE}\n${motionGainCalibration.setIndex + 1}/${MOTION_GAIN_SET_COUNT}`);
             updateCalibrationPoint(0);
