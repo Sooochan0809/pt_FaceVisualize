@@ -499,10 +499,10 @@
     const motionGains = new Map();
     const [WARMUP_FRAMES, CALIBRATION_FRAMES, DEADZONE, SPECTRUM_ZERO_THRESHOLD, VIDEO_BASELINE_SECONDS, VIDEO_BASELINE_PASSES] = [20, 60, 0.005, 0.012, 0.2, 5];
     const [MOTION_GAIN_SAMPLE_MS, MOTION_GAIN_SET_COUNT, MOTION_GAIN_MIN, MOTION_GAIN_MAX, MOTION_GAIN_EPSILON, MOTION_GAIN_POWER] = [20000, 3, 0, 2, 0.004, 1.5];
-    const [HEAD_YAW_LIMIT, HEAD_PITCH_LIMIT, HEAD_ROLL_LIMIT, HEAD_SHIFT_LIMIT, HEAD_SCALE_LIMIT] = [0.18, 0.16, 0.18, 0.22, 0.18];
+    const [POSE_THRESHOLD, ROLL_THRESHOLD] = [0.26, 0.18];
     const [GUIDE_MESSAGE, WAIT_MESSAGE, MOTION_GAIN_MESSAGE] = ["この点を見つめてください.", "顔を検出中です...", "自由に表情を動かしてください."];
     const calibration = { warmup: 0, remaining: 0, samples: 0, stats: new Map() };
-    const headPoseCalibration = { samples: 0, sum: null };
+    const poseCalibration = { samples: 0, sum: null };
     const motionGainCalibration = { active: false, startedAt: 0, duration: MOTION_GAIN_SAMPLE_MS, setIndex: 0, stats: new Map(), sets: [] };
     const [VW, VH] = [1280, 720];
     let activeMode = "camera";
@@ -516,8 +516,8 @@
     let activeParamSetName = "";
     let motionGainSets = await loadMotionGainSets();
     let activeMotionGainSetName = "";
-    let headPoseBase = null;
-    let currentHeadPoseWeight = 1;
+    let neutralPose = null;
+    let currentPoseStable = true;
 
     Object.assign(canvas, { width: 720, height: 960 });
     for (const target of [vizCanvas, vizCanvas2, vizCanvas3, vizCanvas4, vizCanvas5]) {
@@ -730,7 +730,7 @@
         clearViz3CircleLayers();
         Object.assign(calibration, { warmup, remaining: frames, samples: 0 });
         calibration.stats.clear();
-        resetHeadPoseCalibration();
+        resetPoseCalibration();
         resetMotionGainCalibration();
         status.textContent = "";
         updateCalibrationPoint();
@@ -792,11 +792,10 @@
     function processResults({ faceLandmarks, faceBlendshapes }) {
         const categories = faceBlendshapes[0]?.categories ?? [];
         const landmarks = faceLandmarks[0];
-        const headPose = estimateHeadPose(landmarks);
-        currentHeadPoseWeight = headPoseWeight(headPose);
+        currentPoseStable = isPoseStable(landmarks);
         updateAutoCalibration(categories.length > 0);
         drawLandmarks(landmarks);
-        updateShapes(categories, headPose);
+        updateShapes(categories, landmarks);
         updateMotionGainCalibration(categories);
 
         const activeCategories = selectedCategories(categories);
@@ -894,8 +893,8 @@
         });
     }
 
-    function updateShapes(categories, headPose) {
-        updateCalibration(categories, headPose);
+    function updateShapes(categories, landmarks) {
+        updateCalibration(categories, landmarks);
 
         for (const { categoryName, score } of categories) {
             if (!shapes.has(categoryName)) {
@@ -1180,7 +1179,7 @@
         return `motionGainSet${String(index).padStart(2, "0")}`;
     }
 
-    function updateCalibration(categories, headPose) {
+    function updateCalibration(categories, landmarks) {
         if ((!calibration.warmup && !calibration.remaining) || !categories.length) return;
 
         if (calibration.warmup) {
@@ -1195,8 +1194,7 @@
             stat.sq += score * score;
             calibration.stats.set(categoryName, stat);
         }
-        addHeadPoseCalibrationSample(headPose);
-
+        addPoseCalibrationSample(landmarks);
         calibration.samples++;
         status.textContent = `キャリブレーション中 ${--calibration.remaining}`;
         updateCalibrationPoint();
@@ -1209,7 +1207,7 @@
             const variance = Math.max(sq / calibration.samples - mean * mean, 0);
             base.set(categoryName, { mean, dead: Math.max(Math.sqrt(variance) * 3, DEADZONE) });
         }
-        finishHeadPoseCalibration();
+        finishPoseCalibration();
         calibrate.disabled = false;
         measureMotionGain.disabled = false;
         hideCalibrationGuide();
@@ -1227,8 +1225,8 @@
         const duration = Math.min(VIDEO_BASELINE_SECONDS, video.duration || VIDEO_BASELINE_SECONDS);
         const samplesByName = new Map();
         let sampleCount = 0;
+        resetPoseCalibration();
 
-        resetHeadPoseCalibration();
         calibratingVideoFile = true;
         try {
             for (let pass = 0; pass < VIDEO_BASELINE_PASSES; pass++) {
@@ -1241,7 +1239,7 @@
                     const categories = result.faceBlendshapes[0]?.categories ?? [];
                     if (!categories.length) continue;
                     sampleCount++;
-                    addHeadPoseCalibrationSample(estimateHeadPose(result.faceLandmarks[0]));
+                    addPoseCalibrationSample(result.faceLandmarks[0]);
                     for (const { categoryName, score } of categories) {
                         const values = samplesByName.get(categoryName) ?? [];
                         values.push(score);
@@ -1270,7 +1268,7 @@
             const dead = Math.max((max - min) * 0.1, DEADZONE);
             base.set(categoryName, { mean, min, max, dead });
         }
-        finishHeadPoseCalibration();
+        finishPoseCalibration();
         calibrate.disabled = false;
         measureMotionGain.disabled = false;
         hideCalibrationGuide();
@@ -1283,24 +1281,57 @@
         return score < mean ? score - (min - dead) : score - (max + dead);
     }
 
-    function headStabilizedScore(categoryName, score) {
-        return calibratedScore(categoryName, score) * currentHeadPoseWeight;
+    function poseGatedCalibratedScore(categoryName, score) {
+        return currentPoseStable ? calibratedScore(categoryName, score) : 0;
     }
 
     function adjustedCalibratedScore(categoryName, score) {
-        return headStabilizedScore(categoryName, score) * motionGain(categoryName);
+        return poseGatedCalibratedScore(categoryName, score) * motionGain(categoryName);
     }
 
     function motionGain(categoryName) {
         return motionGains.get(categoryName) ?? 1;
     }
 
-    function estimateHeadPose(landmarks = []) {
+    function resetPoseCalibration() {
+        neutralPose = null;
+        currentPoseStable = true;
+        Object.assign(poseCalibration, { samples: 0, sum: null });
+    }
+
+    function addPoseCalibrationSample(landmarks = []) {
+        const pose = getPose(landmarks);
+        if (!pose) return;
+
+        poseCalibration.sum ??= { scale: 0, yaw: 0, pitch: 0, roll: 0 };
+
+        for (const key of Object.keys(poseCalibration.sum)) {
+            poseCalibration.sum[key] += pose[key];
+        }
+        poseCalibration.samples++;
+    }
+
+    function finishPoseCalibration() {
+        if (!poseCalibration.samples || !poseCalibration.sum) return;
+        neutralPose = Object.fromEntries(Object.entries(poseCalibration.sum)
+            .map(([key, value]) => [key, value / poseCalibration.samples]));
+    }
+
+    function isPoseStable(landmarks = []) {
+        if (!base.size || !neutralPose) return true;
+        const pose = getPose(landmarks);
+        if (!pose) return false;
+
+        const dPose = poseDiff(pose, neutralPose);
+        const dRoll = Math.abs(angleDiff(pose.roll, neutralPose.roll));
+        return dPose < POSE_THRESHOLD && dRoll < ROLL_THRESHOLD;
+    }
+
+    function getPose(landmarks = []) {
         const leftEye = averageLandmarks(landmarks, [33, 133]);
         const rightEye = averageLandmarks(landmarks, [263, 362]);
         const nose = landmarks[1];
-        const mouth = averageLandmarks(landmarks, [13, 14, 61, 291]);
-        if (!leftEye || !rightEye || !nose || !mouth) return null;
+        if (!leftEye || !rightEye || !nose) return null;
 
         const eyeCenter = midpoint(leftEye, rightEye);
         const eyeDistance = Math.hypot(rightEye.x - leftEye.x, rightEye.y - leftEye.y);
@@ -1310,13 +1341,24 @@
         const noseVector = rotatePoint({ x: nose.x - eyeCenter.x, y: nose.y - eyeCenter.y }, -roll);
 
         return {
-            centerX: (eyeCenter.x + mouth.x) / 2,
-            centerY: (eyeCenter.y + mouth.y) / 2,
             scale: eyeDistance,
             yaw: noseVector.x / eyeDistance,
             pitch: noseVector.y / eyeDistance,
             roll
         };
+    }
+
+    function poseDiff(pose, basePose) {
+        const scale = Math.max(basePose.scale, 0.001);
+        return (
+            Math.abs(Math.log(Math.max(pose.scale, 0.001) / scale)) +
+            Math.abs(pose.yaw - basePose.yaw) +
+            Math.abs(pose.pitch - basePose.pitch)
+        );
+    }
+
+    function angleDiff(value, baseValue) {
+        return Math.atan2(Math.sin(value - baseValue), Math.cos(value - baseValue));
     }
 
     function averageLandmarks(landmarks, indices) {
@@ -1334,45 +1376,6 @@
             x: point.x * cos - point.y * sin,
             y: point.x * sin + point.y * cos
         };
-    }
-
-    function resetHeadPoseCalibration() {
-        headPoseBase = null;
-        currentHeadPoseWeight = 1;
-        Object.assign(headPoseCalibration, { samples: 0, sum: null });
-    }
-
-    function addHeadPoseCalibrationSample(pose) {
-        if (!pose) return;
-        headPoseCalibration.sum ??= { centerX: 0, centerY: 0, scale: 0, yaw: 0, pitch: 0, roll: 0 };
-        for (const key of Object.keys(headPoseCalibration.sum)) {
-            headPoseCalibration.sum[key] += pose[key];
-        }
-        headPoseCalibration.samples++;
-    }
-
-    function finishHeadPoseCalibration() {
-        if (!headPoseCalibration.samples || !headPoseCalibration.sum) return;
-        headPoseBase = Object.fromEntries(Object.entries(headPoseCalibration.sum)
-            .map(([key, value]) => [key, value / headPoseCalibration.samples]));
-        currentHeadPoseWeight = 1;
-    }
-
-    function headPoseWeight(pose) {
-        if (!pose || !headPoseBase) return 1;
-
-        const scale = Math.max(headPoseBase.scale, 0.001);
-        const shift = Math.hypot(pose.centerX - headPoseBase.centerX, pose.centerY - headPoseBase.centerY) / scale;
-        const scaleChange = Math.abs(Math.log(Math.max(pose.scale, 0.001) / scale));
-        const amount = Math.max(
-            Math.abs(pose.yaw - headPoseBase.yaw) / HEAD_YAW_LIMIT,
-            Math.abs(pose.pitch - headPoseBase.pitch) / HEAD_PITCH_LIMIT,
-            Math.abs(pose.roll - headPoseBase.roll) / HEAD_ROLL_LIMIT,
-            shift / HEAD_SHIFT_LIMIT,
-            scaleChange / HEAD_SCALE_LIMIT
-        );
-        const suppression = clamp((amount - 0.35) / 0.85, 0, 1);
-        return (1 - suppression) ** 2;
     }
 
     function startMotionGainCalibration() {
@@ -1424,7 +1427,7 @@
         }
 
         for (const { categoryName, score } of categories) {
-            const value = Math.abs(headStabilizedScore(categoryName, score));
+            const value = Math.abs(poseGatedCalibratedScore(categoryName, score));
             const stat = motionGainCalibration.stats.get(categoryName) ?? { max: 0 };
             stat.max = Math.max(stat.max, value);
             motionGainCalibration.stats.set(categoryName, stat);
@@ -2019,6 +2022,8 @@
 
     function drawLandmarks(landmarks = []) {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
+        if (!currentPoseStable) return;
+
         const [sw, sh] = [
             video.videoWidth || VW,
             video.videoHeight || VH
