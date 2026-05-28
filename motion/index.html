@@ -63,7 +63,7 @@
             position: absolute;
             inset: 0;
             z-index: 1;
-            background: #f0f0f0c8;
+            background: #f0f0f0df;
         }
 
         .timelineControls {
@@ -512,6 +512,8 @@
     let calibratingVideoFile = false;
     let viz2Monochrome = false;
     let viz3Monochrome = false;
+    let uiHidden = false;
+    let calibrationGuideActive = false;
     let paramSets = await loadParamSets();
     let activeParamSetName = "";
     let motionGainSets = await loadMotionGainSets();
@@ -553,10 +555,11 @@
 
     document.addEventListener("keydown", event => {
         if (event.key !== " " || event.repeat) return;
-        const hidden = !layerControls.hidden;
+        uiHidden = !uiHidden;
         for (const panel of [layerControls, sourceControls, out, ...timelineControls]) {
-            panel.hidden = hidden;
+            panel.hidden = uiHidden;
         }
+        calibrationGuide.hidden = uiHidden || !calibrationGuideActive;
     });
 
     for (const args of [[visualizeToggle, visualize, shuffleSpectrum], [visualizeToggle2, visualize2, viz2Tone], [visualizeToggle3, visualize3, viz3Tone], [visualizeToggle4, visualize4], [visualizeToggle5, visualize5]]) {
@@ -683,11 +686,13 @@
     }
 
     function showCalibrationGuide(message) {
+        calibrationGuideActive = true;
         calibrationGuideText.textContent = message;
-        calibrationGuide.hidden = false;
+        calibrationGuide.hidden = uiHidden;
     }
 
     function hideCalibrationGuide() {
+        calibrationGuideActive = false;
         calibrationGuide.hidden = true;
         calibrationPoint.style.setProperty("--progress", 0);
     }
@@ -798,7 +803,8 @@
         updateShapes(categories, landmarks);
         updateMotionGainCalibration(categories);
 
-        const activeCategories = selectedCategories(categories);
+        const displayCategories = categories.length ? categories : zeroDisplayCategories();
+        const activeCategories = selectedCategories(displayCategories);
         const spectrumVisible = !visualize.hidden || !visualize5.hidden;
         const motionVisible = !visualize2.hidden || !visualize3.hidden || !visualize4.hidden;
 
@@ -943,6 +949,11 @@
 
     function selectedCategories(categories) {
         return categories.filter(({ categoryName }) => enabledParams.has(categoryName));
+    }
+
+    function zeroDisplayCategories() {
+        const names = enabledParams.size ? [...enabledParams] : [...base.keys()];
+        return names.map(categoryName => ({ categoryName, score: 0 }));
     }
 
     function setParamEnabled(categoryName, enabled) {
@@ -1762,7 +1773,7 @@
         renderer.setSize(vizCanvas4.width, vizCanvas4.height, false);
         renderer.setClearColor(0xf0f0f0, 0);
         camera.position.set(3.6, 3.1, 4.8);
-        camera.lookAt(0, 0.6, 0);
+        camera.lookAt(0, 0, 0);
         group.rotation.set(-0.04, -0.58, 0.02);
         group.add(grid, trail, ridge);
         scene.add(group);
