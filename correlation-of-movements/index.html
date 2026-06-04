@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Correlation of Movements</title>
+    <script defer src="../modules/faceAPI/face-api.min.js"></script>
+    <style>
+        :root {
+            --panel-bg: #1b2026e0;
+            --accent: #42d392;
+        }
+
+        body {
+            margin: 0;
+            min-height: 100dvh;
+            display: grid;
+            place-items: center;
+            background: #f0f0f0;
+            color: #f4f7fb;
+            font-family: "Yu Gothic Medium", "Yu Gothic", sans-serif;
+        }
+
+        main {
+            position: relative;
+            width: min(100dvw, 75dvh);
+            min-height: 100dvh;
+            aspect-ratio: 3 / 4;
+            overflow: hidden;
+            background: #111;
+        }
+
+        video,
+        img {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+        }
+
+        video {
+            transform: scaleX(-1);
+        }
+
+        video[hidden],
+        img[hidden] {
+            display: none;
+        }
+
+        main.file-source video,
+        main.file-source img {
+            object-fit: contain;
+            transform: none;
+        }
+
+        .panel {
+            position: absolute;
+            right: 8px;
+            bottom: 8px;
+            width: min(260px, calc(100% - 16px));
+            padding: 12px;
+            border-radius: 8px;
+            background: var(--panel-bg);
+        }
+
+        #status {
+            display: block;
+            margin-bottom: 10px;
+            font-size: 12px;
+        }
+
+        #dominant {
+            margin-bottom: 10px;
+            font-size: 22px;
+            font-weight: 700;
+        }
+
+        .bar-row {
+            display: grid;
+            grid-template-columns: 62px 1fr 34px;
+            gap: 8px;
+            align-items: center;
+            margin: 7px 0;
+            font-size: 11px;
+        }
+
+        .bar-row span:last-child {
+            text-align: right;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .bar {
+            height: 7px;
+            overflow: hidden;
+            border-radius: 999px;
+            background: #101419;
+        }
+
+        .fill {
+            display: block;
+            height: 100%;
+            width: var(--score, 0%);
+            background: var(--accent);
+            transition: width 120ms linear;
+        }
+
+        .source-controls {
+            position: absolute;
+            top: 8px;
+            left: 8px;
+            z-index: 1;
+            display: grid;
+            gap: 8px;
+        }
+
+        .source-controls button,
+        .source-controls label {
+            padding: 8px 10px;
+            border: 0;
+            border-radius: 8px;
+            background: var(--panel-bg);
+            color: #f4f7fb;
+            font: inherit;
+            font-size: 12px;
+            cursor: pointer;
+        }
+
+        .source-controls input {
+            position: absolute;
+            inline-size: 1px;
+            block-size: 1px;
+            opacity: 0;
+            pointer-events: none;
+        }
+    </style>
+</head>
+
+<body>
+    <main>
+        <video id="video" autoplay muted playsinline></video>
+        <img id="image" alt="読み込んだ画像" hidden>
+        <div class="source-controls">
+            <button id="cameraButton" type="button">WebCam</button>
+            <label for="fileInput">ファイルから
+                <input id="fileInput" type="file"
+                    accept="image/png,image/jpeg,image/jpg,video/mp4,video/quicktime,image/*,video/*">
+            </label>
+        </div>
+        <aside class="panel">
+            <span id="status">モデル読み込み中...</span>
+            <div id="dominant">neutral</div>
+            <div id="bars"></div>
+        </aside>
+    </main>
+
+    <script>
+        window.addEventListener("load", async () => {
+            const MODEL_URL = "../modules/faceAPI/models";
+            const EMOTIONS = ["neutral", "happy", "sad", "angry", "fearful", "disgusted", "surprised"];
+            const HISTORY_LIMIT = 180;
+            const $ = (id) => document.getElementById(id);
+            const clamp = (value) => Math.min(1, Math.max(0, Number(value || 0)));
+            const [stage, video, image, cameraButton, fileInput, status, dominant, bars] = [
+                document.querySelector("main"), "video", "image", "cameraButton", "fileInput", "status", "dominant", "bars"
+            ].map((target) => typeof target === "string" ? $(target) : target);
+            const detectOptions = new faceapi.TinyFaceDetectorOptions();
+            let running = false;
+            let detectToken = 0;
+            let activeMedia = video;
+            let activeMode = "camera";
+            let activeObjectUrl = "";
+            let latestExpressions = {};
+            let expressionHistory = [];
+
+            const stopDetection = () => {
+                running = false;
+                detectToken += 1;
+            };
+
+            const stopCamera = () => {
+                video.srcObject?.getTracks?.().forEach((track) => track.stop());
+                video.srcObject = null;
+            };
+
+            const resetFile = () => {
+                if (activeObjectUrl) URL.revokeObjectURL(activeObjectUrl);
+                activeObjectUrl = "";
+                [image, video].forEach((media) => media.removeAttribute("src"));
+                video.load?.();
+                fileInput.value = "";
+            };
+
+            const setActiveMedia = (media, mode) => {
+                activeMedia = media;
+                activeMode = mode;
+                stage.classList.toggle("file-source", mode !== "camera");
+                [image.hidden, video.hidden] = [media !== image, media !== video];
+                video.controls = mode === "video-file";
+                video.loop = mode === "video-file";
+            };
+
+            const renderExpressions = (expressions = {}) => {
+                const scores = EMOTIONS.map((name) => ({ name, score: clamp(expressions[name]) }));
+                const top = scores.reduce((best, item) => item.score > best.score ? item : best, scores[0]);
+                const formatScore = (score) => (Math.trunc(score * 100) / 100).toFixed(2);
+                dominant.textContent = top.name;
+                bars.innerHTML = scores.map(({ name, score }) => `
+                    <div class="bar-row">
+                        <span>${name}</span>
+                        <span class="bar"><span class="fill" style="--score:${score * 100}%"></span></span>
+                        <span>${formatScore(score)}</span>
+                    </div>
+                `).join("");
+            };
+
+            const pushHistory = (expressions) => {
+                latestExpressions = { ...expressions };
+                expressionHistory.push({ time: performance.now(), expressions: latestExpressions });
+                expressionHistory = expressionHistory.slice(-HISTORY_LIMIT);
+                window.emotionState = { latestExpressions, expressionHistory };
+            };
+
+            const detectOnce = async () => {
+                const result = await faceapi.detectSingleFace(activeMedia, detectOptions).withFaceExpressions();
+                const expressions = result?.expressions || {};
+                renderExpressions(expressions);
+                pushHistory(expressions);
+                status.textContent = result ? "検出中" : "顔が見つかりません";
+            };
+
+            const detect = async (token = detectToken) => {
+                if (!running || token !== detectToken) return;
+                try {
+                    await detectOnce();
+                } catch (error) {
+                    status.textContent = `推定エラー: ${error.message}`;
+                }
+                if (running && token === detectToken) requestAnimationFrame(() => detect(token));
+            };
+
+            const loadMedia = (media, src, eventName) => new Promise((resolve, reject) => {
+                media.addEventListener(eventName, resolve, { once: true });
+                media.addEventListener("error", () => reject(new Error("ファイルを読み込めません")), { once: true });
+                media.src = src;
+                media.load?.();
+            });
+
+            const startDetection = () => {
+                running = true;
+                status.textContent = "検出開始";
+                detect(detectToken);
+            };
+
+            const startCamera = async () => {
+                stopDetection();
+                stopCamera();
+                resetFile();
+                status.textContent = "カメラ起動中...";
+
+                try {
+                    video.srcObject = await navigator.mediaDevices.getUserMedia({
+                        video: { width: { ideal: 1280 }, height: { ideal: 720 } },
+                        audio: false
+                    });
+                    setActiveMedia(video, "camera");
+                    await video.play();
+                    startDetection();
+                } catch (error) {
+                    status.textContent = `カメラを開始できません: ${error.message}`;
+                }
+            };
+
+            const importFile = async (file) => {
+                if (!file) return;
+                stopDetection();
+                stopCamera();
+                resetFile();
+                activeObjectUrl = URL.createObjectURL(file);
+
+                const isImage = file.type.startsWith("image/");
+                const isVideo = file.type.startsWith("video/");
+                if (!isImage && !isVideo) {
+                    resetFile();
+                    status.textContent = "画像または動画ファイルを選択してください";
+                    return;
+                }
+
+                const media = isImage ? image : video;
+                status.textContent = `${isImage ? "画像" : "動画"}ファイル読み込み中...`;
+                await loadMedia(media, activeObjectUrl, isImage ? "load" : "loadedmetadata");
+                setActiveMedia(media, isImage ? "image-file" : "video-file");
+
+                if (isImage) {
+                    await detectOnce();
+                } else {
+                    try {
+                        running = true;
+                        await video.play();
+                        status.textContent = "検出開始";
+                        detect(detectToken);
+                    } catch (error) {
+                        running = false;
+                        status.textContent = "動画を再生すると検出を開始します";
+                    }
+                }
+            };
+
+            cameraButton.addEventListener("click", startCamera);
+            fileInput.addEventListener("change", (event) => {
+                importFile(event.target.files[0]).catch((error) => {
+                    status.textContent = `ファイルを読み込めません: ${error.message}`;
+                });
+            });
+            video.addEventListener("play", () => {
+                if (activeMode === "video-file" && !running) {
+                    detectToken += 1;
+                    startDetection();
+                }
+            });
+            video.addEventListener("pause", () => activeMode === "video-file" && stopDetection());
+            renderExpressions();
+
+            try {
+                await Promise.all([
+                    faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
+                    faceapi.nets.faceExpressionNet.loadFromUri(MODEL_URL)
+                ]);
+                await startCamera();
+            } catch (error) {
+                status.textContent = `モデルを読み込めません: ${error.message}`;
+            }
+        });
+    </script>
+</body>
+
+</html>
