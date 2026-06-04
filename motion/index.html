@@ -29,6 +29,13 @@
             overflow: hidden;
         }
 
+        main.fullscreen-face-source {
+            width: 100dvw;
+            height: 100dvh;
+            min-height: 100dvh;
+            aspect-ratio: auto;
+        }
+
         video,
         canvas {
             position: absolute;
@@ -63,6 +70,11 @@
             position: absolute;
             inset: 0;
             z-index: 1;
+            background: #f0f0f0df;
+        }
+
+        #visualize_06 {
+            position: fixed;
             background: #f0f0f0df;
         }
 
@@ -396,6 +408,9 @@
                 </label>
             </div>
         </section>
+        <section id="visualize_06" class="visualize" hidden>
+            <canvas id="vizCanvas6"></canvas>
+        </section>
         <div id="calibrationGuide" hidden>
             <svg id="calibrationPoint" viewBox="0 0 42 42" aria-hidden="true">
                 <circle id="calibrationPointBase" cx="21" cy="21" r="12"></circle>
@@ -429,6 +444,10 @@
             <label>
                 <input id="visualizeToggle5" type="checkbox">
                 <span>visualize_05</span>
+            </label>
+            <label>
+                <input id="visualizeToggle6" type="checkbox">
+                <span>visualize_06</span>
             </label>
         </div>
         <div id="sourceControls">
@@ -464,16 +483,16 @@
 
     const $ = id => document.getElementById(id);
     const ids = [
-        "stage", "video", "canvas", "vizCanvas", "vizCanvas2", "vizCanvas3", "vizCanvas4", "vizCanvas5", "cameraButton", "fileInput",
+        "stage", "video", "canvas", "vizCanvas", "vizCanvas2", "vizCanvas3", "vizCanvas4", "vizCanvas5", "vizCanvas6", "cameraButton", "fileInput",
         "calibrate", "measureMotionGain", "clearBaseline", "toggleShapes", "status", "paramSetSelect", "saveParamSet", "motionGainSetSelect", "saveMotionGainSet", "shapesPanel", "layerControls", "sourceControls", "out",
-        "visualizeToggle", "visualizeToggle2", "visualizeToggle3", "visualizeToggle4", "visualizeToggle5", "visualize_01", "visualize_02", "visualize_03", "visualize_04", "visualize_05", "calibrationGuide", "calibrationGuideText", "calibrationPoint", "shuffleSpectrum", "viz2Tone", "viz3Tone",
+        "visualizeToggle", "visualizeToggle2", "visualizeToggle3", "visualizeToggle4", "visualizeToggle5", "visualizeToggle6", "visualize_01", "visualize_02", "visualize_03", "visualize_04", "visualize_05", "visualize_06", "calibrationGuide", "calibrationGuideText", "calibrationPoint", "shuffleSpectrum", "viz2Tone", "viz3Tone",
         "viz4SnapshotInterval", "viz4SnapshotIntervalValue", "viz4HistoryLifetime", "viz4HistoryLifetimeValue",
         "viz5SnapshotInterval", "viz5SnapshotIntervalValue", "viz5HistoryLifetime", "viz5HistoryLifetimeValue"
     ];
     const {
-        stage, video, canvas, vizCanvas, vizCanvas2, vizCanvas3, vizCanvas4, vizCanvas5, cameraButton, fileInput,
+        stage, video, canvas, vizCanvas, vizCanvas2, vizCanvas3, vizCanvas4, vizCanvas5, vizCanvas6, cameraButton, fileInput,
         calibrate, measureMotionGain, clearBaseline, toggleShapes, status, paramSetSelect, saveParamSet, motionGainSetSelect, saveMotionGainSet, shapesPanel, layerControls, sourceControls, out,
-        visualizeToggle, visualizeToggle2, visualizeToggle3, visualizeToggle4, visualizeToggle5, visualize_01: visualize, visualize_02: visualize2, visualize_03: visualize3, visualize_04: visualize4, visualize_05: visualize5,
+        visualizeToggle, visualizeToggle2, visualizeToggle3, visualizeToggle4, visualizeToggle5, visualizeToggle6, visualize_01: visualize, visualize_02: visualize2, visualize_03: visualize3, visualize_04: visualize4, visualize_05: visualize5, visualize_06: visualize6,
         calibrationGuide, calibrationGuideText, calibrationPoint, shuffleSpectrum, viz2Tone, viz3Tone,
         viz4SnapshotInterval, viz4SnapshotIntervalValue, viz4HistoryLifetime, viz4HistoryLifetimeValue,
         viz5SnapshotInterval, viz5SnapshotIntervalValue, viz5HistoryLifetime, viz5HistoryLifetimeValue
@@ -483,6 +502,7 @@
     const vizCtx = vizCanvas.getContext("2d");
     const vizCtx2 = vizCanvas2.getContext("2d");
     const vizCtx5 = vizCanvas5.getContext("2d");
+    const vizCtx6 = vizCanvas6.getContext("2d");
     const shapes = new Map();
     const enabledParams = new Set();
     const spectrum = new Map();
@@ -500,9 +520,17 @@
     const [WARMUP_FRAMES, CALIBRATION_FRAMES, DEADZONE, SPECTRUM_ZERO_THRESHOLD, VIDEO_BASELINE_SECONDS, VIDEO_BASELINE_PASSES] = [20, 60, 0.005, 0.012, 0.2, 5];
     const [MOTION_GAIN_SAMPLE_MS, MOTION_GAIN_SET_COUNT, MOTION_GAIN_MIN, MOTION_GAIN_MAX, MOTION_GAIN_EPSILON, MOTION_GAIN_POWER] = [20000, 3, 0, 2, 0.004, 1.5];
     const [POSE_THRESHOLD, ROLL_THRESHOLD] = [0.26, 0.18];
+    const [VIZ6_POSE_THRESHOLD, VIZ6_ROLL_THRESHOLD] = [0.45, 0.32];
+    const [LANDMARK_SMOOTHING, PRIMARY_FACE_MAX_DISTANCE] = [0.78, 0.22];
+    const DEFAULT_FACE_LIMIT = 1;
+    const VIZ6_MAX_FACES = 3;
+    const VIZ6_MODE_KEYS = new Map([
+        ["1", 1], ["2", 2], ["3", 3], ["4", 4], ["5", 5],
+        ["１", 1], ["２", 2], ["３", 3], ["４", 4], ["５", 5]
+    ]);
     const [GUIDE_MESSAGE, WAIT_MESSAGE, MOTION_GAIN_MESSAGE] = ["この点を見つめてください.", "顔を検出中です...", "自由に表情を動かしてください."];
-    const calibration = { warmup: 0, remaining: 0, samples: 0, stats: new Map() };
-    const poseCalibration = { samples: 0, sum: null };
+    const calibration = createCalibrationState();
+    const poseCalibration = createPoseCalibrationState();
     const motionGainCalibration = { active: false, startedAt: 0, duration: MOTION_GAIN_SAMPLE_MS, setIndex: 0, stats: new Map(), sets: [] };
     const [VW, VH] = [1280, 720];
     let activeMode = "camera";
@@ -520,11 +548,18 @@
     let activeMotionGainSetName = "";
     let neutralPose = null;
     let currentPoseStable = true;
+    let primaryFaceCenter = null;
+    let smoothedLandmarks = null;
+    let activeFaceLimit = DEFAULT_FACE_LIMIT;
+    const viz6Faces = Array.from({ length: VIZ6_MAX_FACES }, createViz6FaceState);
+    let viz6Mode = 1;
 
     Object.assign(canvas, { width: 720, height: 960 });
     for (const target of [vizCanvas, vizCanvas2, vizCanvas3, vizCanvas4, vizCanvas5]) {
         Object.assign(target, { width: canvas.width, height: canvas.height });
     }
+    resizeLandmarkCanvas();
+    resizeFullscreenCanvas();
     const [VIZ4_WIDTH, VIZ4_HEIGHT, VIZ4_DEPTH, VIZ4_BASE_Y, VIZ4_ROWS, VIZ4_COLUMNS] = [2.4, 0.86, 3.1, -0.3, 7, 7];
     const viz3 = setupViz3();
     const viz4 = setupViz4();
@@ -540,7 +575,7 @@
                 modelAssetPath: "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/latest/face_landmarker.task"
             },
             runningMode: "VIDEO",
-            numFaces: 1,
+            numFaces: activeFaceLimit,
             outputFaceBlendshapes: true
         }
     );
@@ -554,6 +589,12 @@
     renderMotionGainSetOptions();
 
     document.addEventListener("keydown", event => {
+        const mode = VIZ6_MODE_KEYS.get(event.key);
+        if (mode) {
+            setViz6Mode(mode);
+            return;
+        }
+
         if (event.key !== " " || event.repeat) return;
         uiHidden = !uiHidden;
         for (const panel of [layerControls, sourceControls, out, ...timelineControls]) {
@@ -562,8 +603,22 @@
         calibrationGuide.hidden = uiHidden || !calibrationGuideActive;
     });
 
-    for (const args of [[visualizeToggle, visualize, shuffleSpectrum], [visualizeToggle2, visualize2, viz2Tone], [visualizeToggle3, visualize3, viz3Tone], [visualizeToggle4, visualize4], [visualizeToggle5, visualize5]]) {
-        args[0].onchange = () => toggleLayer(...args);
+    window.addEventListener("resize", () => {
+        resizeLandmarkCanvas();
+        resizeFullscreenCanvas();
+    });
+
+    const layerConfigs = [
+        { toggle: visualizeToggle, layer: visualize, control: shuffleSpectrum },
+        { toggle: visualizeToggle2, layer: visualize2, control: viz2Tone },
+        { toggle: visualizeToggle3, layer: visualize3, control: viz3Tone },
+        { toggle: visualizeToggle4, layer: visualize4 },
+        { toggle: visualizeToggle5, layer: visualize5 },
+        { toggle: visualizeToggle6, layer: visualize6 }
+    ];
+
+    for (const config of layerConfigs) {
+        config.toggle.onchange = () => toggleLayer(config).catch(report("レイヤー切り替え失敗"));
     }
     viz4SnapshotInterval.oninput = updateViz4Controls;
     viz4HistoryLifetime.oninput = updateViz4Controls;
@@ -584,6 +639,12 @@
         viz3Tone.setAttribute("aria-pressed", viz3Monochrome);
     };
 
+    function setViz6Mode(mode) {
+        viz6Mode = mode;
+        resetViz6Faces();
+        if (!visualize6.hidden) status.textContent = `visualize_06: visualize_0${mode}`;
+    }
+
     calibrate.onclick = async () => {
         if (activeMode === "video-file") {
             stopLoop();
@@ -592,7 +653,7 @@
             try {
                 await calibrateFromVideoStart();
                 await seekVideo(0);
-                processResults(faceLandmarker.detectForVideo(video, performance.now()));
+                processResults(detectCurrentFrame());
                 await video.play();
                 startLoop();
             } catch (error) {
@@ -663,17 +724,46 @@
         toggleShapes.textContent = `${expanded ? "▲" : "▼"}`;
     }
 
-    function toggleLayer(toggle, layer, control) {
+    async function toggleLayer({ toggle, layer, control }) {
         const active = toggle.checked;
         layer.hidden = !active;
         if (control) control.hidden = !active;
+        if (layer === visualize6) {
+            await setFaceDetectionLimit(active ? VIZ6_MAX_FACES : DEFAULT_FACE_LIMIT);
+            setFullscreenFaceSource(active);
+        }
         if (!active) {
-            if (visualize.hidden && visualize2.hidden && visualize3.hidden && visualize4.hidden && visualize5.hidden) hideCalibrationGuide();
+            if (layer === visualize6) clearViz6CanvasAndState();
+            if (!visualizing()) hideCalibrationGuide();
             return;
         }
 
+        if (layer === visualize6) resizeFullscreenCanvas();
         setShapesExpanded(false);
         waitForFaceCalibration();
+    }
+
+    async function setFaceDetectionLimit(numFaces) {
+        if (activeFaceLimit === numFaces) return;
+        resetPrimaryFaceTracking();
+        await faceLandmarker.setOptions({ numFaces });
+        activeFaceLimit = numFaces;
+    }
+
+    function setFullscreenFaceSource(active) {
+        stage.classList.toggle("fullscreen-face-source", active);
+        resizeLandmarkCanvas();
+    }
+
+    function resizeLandmarkCanvas() {
+        const fullScreenSource = stage.classList.contains("fullscreen-face-source");
+        const dpr = fullScreenSource ? fullscreenCanvasDpr() : 1;
+        const rect = fullScreenSource ? stage.getBoundingClientRect() : { width: 720, height: 960 };
+        const targetWidth = Math.max(1, Math.round(rect.width * dpr));
+        const targetHeight = Math.max(1, Math.round(rect.height * dpr));
+
+        if (canvas.width === targetWidth && canvas.height === targetHeight) return;
+        Object.assign(canvas, { width: targetWidth, height: targetHeight });
     }
 
     function startGuidedCalibration() {
@@ -698,7 +788,7 @@
     }
 
     function visualizing() {
-        return !visualize.hidden || !visualize2.hidden || !visualize3.hidden || !visualize4.hidden || !visualize5.hidden;
+        return layerConfigs.some(({ layer }) => !layer.hidden);
     }
 
     function updateViz4Controls() {
@@ -726,13 +816,13 @@
     }
 
     function resetCalibration({ warmup = 0, frames = 0, clearGains = false } = {}) {
-        [base, spectrum, spectrumSharpness, circles].forEach(map => map.clear());
+        base.clear();
         if (clearGains) {
             motionGains.clear();
             activeMotionGainSetName = "";
             renderMotionGainSetOptions();
         }
-        clearViz3CircleLayers();
+        resetMotionVisualState();
         Object.assign(calibration, { warmup, remaining: frames, samples: 0 });
         calibration.stats.clear();
         resetPoseCalibration();
@@ -767,7 +857,7 @@
             await seekVideo(0);
             await calibrateFromVideoStart();
             await seekVideo(0);
-            processResults(faceLandmarker.detectForVideo(video, performance.now()));
+            processResults(detectCurrentFrame());
             await video.play();
             startLoop();
             return;
@@ -786,17 +876,24 @@
     function stopLoop() {
         running = false;
         loopToken++;
+        resetPrimaryFaceTracking();
     }
 
     function loop(token) {
         if (!running || token !== loopToken) return;
-        processResults(faceLandmarker.detectForVideo(video, performance.now()));
+        processResults(detectCurrentFrame());
         requestAnimationFrame(() => loop(token));
     }
 
+    function detectCurrentFrame() {
+        return faceLandmarker.detectForVideo(video, performance.now());
+    }
+
     function processResults({ faceLandmarks, faceBlendshapes }) {
-        const categories = faceBlendshapes[0]?.categories ?? [];
-        const landmarks = faceLandmarks[0];
+        const primaryFaceIndex = selectPrimaryFaceIndex(faceLandmarks);
+        const rawLandmarks = primaryFaceIndex >= 0 ? faceLandmarks[primaryFaceIndex] : undefined;
+        const landmarks = smoothLandmarks(rawLandmarks);
+        const categories = primaryFaceIndex >= 0 ? faceBlendshapes[primaryFaceIndex]?.categories ?? [] : [];
         currentPoseStable = isPoseStable(landmarks);
         updateAutoCalibration(categories.length > 0);
         drawLandmarks(landmarks);
@@ -805,13 +902,14 @@
 
         const displayCategories = categories.length ? categories : zeroDisplayCategories();
         const activeCategories = selectedCategories(displayCategories);
-        const spectrumVisible = !visualize.hidden || !visualize5.hidden;
+        const spectrumVisible = !visualize.hidden || !visualize5.hidden || !visualize6.hidden;
         const motionVisible = !visualize2.hidden || !visualize3.hidden || !visualize4.hidden;
 
         if (spectrumVisible) {
-            const spectrumFrame = updateSpectrumFrame(activeCategories);
+            const spectrumFrame = (!visualize.hidden || !visualize5.hidden) ? updateSpectrumFrame(activeCategories) : null;
             if (!visualize.hidden) drawSpectrum(spectrumFrame);
             if (!visualize5.hidden) drawSpectrumTimeline(spectrumFrame);
+            if (!visualize6.hidden) drawFullscreenFaceSpectrums(faceLandmarks, faceBlendshapes);
         }
 
         if (motionVisible) {
@@ -820,6 +918,117 @@
             if (!visualize3.hidden) drawMotionCircleLayers(motionValues);
             if (!visualize4.hidden) drawThreeWaveLine(motionValues);
         }
+    }
+
+    function selectPrimaryFaceIndex(faceLandmarks = []) {
+        if (!faceLandmarks.length) {
+            resetPrimaryFaceTracking();
+            return -1;
+        }
+
+        const centers = faceLandmarks.map(getLandmarkCenter);
+        let selectedIndex = 0;
+
+        if (primaryFaceCenter) {
+            let selectedDistance = Infinity;
+            centers.forEach((center, index) => {
+                const distance = Math.hypot(center.x - primaryFaceCenter.x, center.y - primaryFaceCenter.y);
+                if (distance < selectedDistance) {
+                    selectedDistance = distance;
+                    selectedIndex = index;
+                }
+            });
+
+            if (selectedDistance > PRIMARY_FACE_MAX_DISTANCE) {
+                selectedIndex = largestFaceIndex(faceLandmarks);
+                smoothedLandmarks = null;
+            }
+        } else {
+            selectedIndex = largestFaceIndex(faceLandmarks);
+        }
+
+        primaryFaceCenter = centers[selectedIndex];
+        return selectedIndex;
+    }
+
+    function largestFaceIndex(faceLandmarks = []) {
+        return faceLandmarks.reduce((bestIndex, landmarks, index) => {
+            const currentArea = landmarkBoundsArea(landmarks);
+            const bestArea = landmarkBoundsArea(faceLandmarks[bestIndex]);
+            return currentArea > bestArea ? index : bestIndex;
+        }, 0);
+    }
+
+    function landmarkBoundsArea(landmarks = []) {
+        const bounds = landmarkBounds(landmarks);
+        return bounds ? (bounds.maxX - bounds.minX) * (bounds.maxY - bounds.minY) : 0;
+    }
+
+    function landmarkBounds(landmarks = []) {
+        if (!landmarks.length) return null;
+        const bounds = landmarks.reduce((box, point) => ({
+            minX: Math.min(box.minX, point.x),
+            minY: Math.min(box.minY, point.y),
+            maxX: Math.max(box.maxX, point.x),
+            maxY: Math.max(box.maxY, point.y)
+        }), { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity });
+
+        return Number.isFinite(bounds.minX) && bounds.maxX > bounds.minX && bounds.maxY > bounds.minY
+            ? bounds
+            : null;
+    }
+
+    function getLandmarkCenter(landmarks = []) {
+        if (!landmarks.length) return { x: 0, y: 0 };
+        const sum = landmarks.reduce((total, point) => ({
+            x: total.x + point.x,
+            y: total.y + point.y
+        }), { x: 0, y: 0 });
+
+        return {
+            x: sum.x / landmarks.length,
+            y: sum.y / landmarks.length
+        };
+    }
+
+    function smoothLandmarks(landmarks = []) {
+        if (!landmarks.length) {
+            resetPrimaryFaceTracking();
+            return [];
+        }
+
+        if (!smoothedLandmarks || smoothedLandmarks.length !== landmarks.length) {
+            smoothedLandmarks = landmarks.map(point => ({ ...point }));
+            return smoothedLandmarks;
+        }
+
+        const currentWeight = 1 - LANDMARK_SMOOTHING;
+        smoothedLandmarks = landmarks.map((point, index) => {
+            const previous = smoothedLandmarks[index];
+            return {
+                x: previous.x * LANDMARK_SMOOTHING + point.x * currentWeight,
+                y: previous.y * LANDMARK_SMOOTHING + point.y * currentWeight,
+                z: (previous.z ?? point.z ?? 0) * LANDMARK_SMOOTHING + (point.z ?? previous.z ?? 0) * currentWeight,
+                visibility: point.visibility,
+                presence: point.presence
+            };
+        });
+
+        primaryFaceCenter = getLandmarkCenter(smoothedLandmarks);
+        return smoothedLandmarks;
+    }
+
+    function resetPrimaryFaceTracking() {
+        primaryFaceCenter = null;
+        smoothedLandmarks = null;
+    }
+
+    function resetMotionVisualState() {
+        [spectrum, spectrumSharpness, circles].forEach(map => map.clear());
+        spectrumHistory = [];
+        spectrumLastSnapshotAt = 0;
+        clearViz3CircleLayers();
+        clearViz6CanvasAndState();
     }
 
     function updateAutoCalibration(faceDetected) {
@@ -964,6 +1173,11 @@
 
         enabledParams.delete(categoryName);
         [spectrum, spectrumSharpness, circles].forEach(map => map.delete(categoryName));
+        for (const face of viz6Faces) {
+            face.spectrum.delete(categoryName);
+            face.spectrumSharpness.delete(categoryName);
+            face.circles.delete(categoryName);
+        }
     }
 
     function savedParamEnabled(categoryName) {
@@ -1131,8 +1345,7 @@
             }
         }
 
-        [spectrum, spectrumSharpness, circles].forEach(map => map.clear());
-        clearViz3CircleLayers();
+        resetMotionVisualState();
         status.textContent = name ? `${name} を適用しました` : "係数を解除しました";
     }
 
@@ -1199,12 +1412,7 @@
             return;
         }
 
-        for (const { categoryName, score } of categories) {
-            const stat = calibration.stats.get(categoryName) ?? { sum: 0, sq: 0 };
-            stat.sum += score;
-            stat.sq += score * score;
-            calibration.stats.set(categoryName, stat);
-        }
+        accumulateCategoryStats(calibration.stats, categories);
         addPoseCalibrationSample(landmarks);
         calibration.samples++;
         status.textContent = `キャリブレーション中 ${--calibration.remaining}`;
@@ -1213,11 +1421,7 @@
         if (calibration.remaining) return;
 
         base.clear();
-        for (const [categoryName, { sum, sq }] of calibration.stats) {
-            const mean = sum / calibration.samples;
-            const variance = Math.max(sq / calibration.samples - mean * mean, 0);
-            base.set(categoryName, { mean, dead: Math.max(Math.sqrt(variance) * 3, DEADZONE) });
-        }
+        writeCalibrationBase(base, calibration.stats, calibration.samples);
         finishPoseCalibration();
         calibrate.disabled = false;
         measureMotionGain.disabled = false;
@@ -1246,7 +1450,7 @@
                 await video.play();
                 while (video.currentTime < duration) {
                     await waitVideoFrame();
-                    const result = faceLandmarker.detectForVideo(video, performance.now());
+                    const result = detectCurrentFrame();
                     const categories = result.faceBlendshapes[0]?.categories ?? [];
                     if (!categories.length) continue;
                     sampleCount++;
@@ -1286,18 +1490,37 @@
         status.textContent = `キャリブ済み (${VIDEO_BASELINE_SECONDS * VIDEO_BASELINE_PASSES}s)`;
     }
 
-    function calibratedScore(categoryName, score) {
-        const { mean = 0, dead = 0, min = mean - dead, max = mean + dead } = base.get(categoryName) ?? {};
+    function accumulateCategoryStats(stats, categories) {
+        for (const { categoryName, score } of categories) {
+            const stat = stats.get(categoryName) ?? { sum: 0, sq: 0 };
+            stat.sum += score;
+            stat.sq += score * score;
+            stats.set(categoryName, stat);
+        }
+    }
+
+    function writeCalibrationBase(targetBase, stats, sampleCount) {
+        if (!sampleCount) return;
+
+        for (const [categoryName, { sum, sq }] of stats) {
+            const mean = sum / sampleCount;
+            const variance = Math.max(sq / sampleCount - mean * mean, 0);
+            targetBase.set(categoryName, { mean, dead: Math.max(Math.sqrt(variance) * 3, DEADZONE) });
+        }
+    }
+
+    function calibratedScore(categoryName, score, baseMap = base) {
+        const { mean = 0, dead = 0, min = mean - dead, max = mean + dead } = baseMap.get(categoryName) ?? {};
         if (score >= min - dead && score <= max + dead) return 0;
         return score < mean ? score - (min - dead) : score - (max + dead);
     }
 
-    function poseGatedCalibratedScore(categoryName, score) {
-        return currentPoseStable ? calibratedScore(categoryName, score) : 0;
+    function poseGatedCalibratedScore(categoryName, score, poseStable = currentPoseStable, baseMap = base) {
+        return poseStable ? calibratedScore(categoryName, score, baseMap) : 0;
     }
 
-    function adjustedCalibratedScore(categoryName, score) {
-        return poseGatedCalibratedScore(categoryName, score) * motionGain(categoryName);
+    function adjustedCalibratedScore(categoryName, score, poseStable = currentPoseStable, baseMap = base) {
+        return poseGatedCalibratedScore(categoryName, score, poseStable, baseMap) * motionGain(categoryName);
     }
 
     function motionGain(categoryName) {
@@ -1307,35 +1530,59 @@
     function resetPoseCalibration() {
         neutralPose = null;
         currentPoseStable = true;
-        Object.assign(poseCalibration, { samples: 0, sum: null });
+        resetPoseCalibrationState(poseCalibration);
     }
 
     function addPoseCalibrationSample(landmarks = []) {
-        const pose = getPose(landmarks);
-        if (!pose) return;
-
-        poseCalibration.sum ??= { scale: 0, yaw: 0, pitch: 0, roll: 0 };
-
-        for (const key of Object.keys(poseCalibration.sum)) {
-            poseCalibration.sum[key] += pose[key];
-        }
-        poseCalibration.samples++;
+        addPoseCalibrationSampleToState(poseCalibration, landmarks);
     }
 
     function finishPoseCalibration() {
-        if (!poseCalibration.samples || !poseCalibration.sum) return;
-        neutralPose = Object.fromEntries(Object.entries(poseCalibration.sum)
-            .map(([key, value]) => [key, value / poseCalibration.samples]));
+        neutralPose = finishPoseCalibrationState(poseCalibration);
     }
 
-    function isPoseStable(landmarks = []) {
-        if (!base.size || !neutralPose) return true;
+    function createCalibrationState(warmup = 0, frames = 0) {
+        return { warmup, remaining: frames, samples: 0, stats: new Map() };
+    }
+
+    function createPoseCalibrationState() {
+        return { samples: 0, sum: null };
+    }
+
+    function resetPoseCalibrationState(state) {
+        Object.assign(state, { samples: 0, sum: null });
+    }
+
+    function addPoseCalibrationSampleToState(state, landmarks = []) {
+        const pose = getPose(landmarks);
+        if (!pose) return;
+
+        state.sum ??= { scale: 0, yaw: 0, pitch: 0, roll: 0 };
+
+        for (const key of Object.keys(state.sum)) {
+            state.sum[key] += pose[key];
+        }
+        state.samples++;
+    }
+
+    function finishPoseCalibrationState(state) {
+        if (!state.samples || !state.sum) return null;
+        return Object.fromEntries(Object.entries(state.sum)
+            .map(([key, value]) => [key, value / state.samples]));
+    }
+
+    function isPoseStable(landmarks = [], poseThreshold = POSE_THRESHOLD, rollThreshold = ROLL_THRESHOLD) {
+        return isPoseStableForBase(landmarks, base, neutralPose, poseThreshold, rollThreshold);
+    }
+
+    function isPoseStableForBase(landmarks = [], baseMap = base, basePose = neutralPose, poseThreshold = POSE_THRESHOLD, rollThreshold = ROLL_THRESHOLD) {
+        if (!baseMap.size || !basePose) return true;
         const pose = getPose(landmarks);
         if (!pose) return false;
 
-        const dPose = poseDiff(pose, neutralPose);
-        const dRoll = Math.abs(angleDiff(pose.roll, neutralPose.roll));
-        return dPose < POSE_THRESHOLD && dRoll < ROLL_THRESHOLD;
+        const dPose = poseDiff(pose, basePose);
+        const dRoll = Math.abs(angleDiff(pose.roll, basePose.roll));
+        return dPose < poseThreshold && dRoll < rollThreshold;
     }
 
     function getPose(landmarks = []) {
@@ -1405,8 +1652,7 @@
         motionGains.clear();
         activeMotionGainSetName = "";
         renderMotionGainSetOptions();
-        [spectrum, spectrumSharpness, circles].forEach(map => map.clear());
-        clearViz3CircleLayers();
+        resetMotionVisualState();
         showCalibrationGuide(`${MOTION_GAIN_MESSAGE}\n1/${MOTION_GAIN_SET_COUNT}`);
         calibrate.disabled = true;
         measureMotionGain.disabled = true;
@@ -1541,30 +1787,32 @@
         return `${value >= 0 ? "+" : ""}${value.toFixed(4)}`;
     }
 
-    function updateSpectrumFrame(categories) {
+    function updateSpectrumFrame(categories, { poseStable = currentPoseStable, values = spectrum, sharpnessValues = spectrumSharpness, orderState = null, baseMap = base } = {}) {
         const { width, height } = vizCanvas;
         if (!categories.length) {
-            spectrumHistory = [];
-            spectrumLastSnapshotAt = 0;
+            if (!orderState) {
+                spectrumHistory = [];
+                spectrumLastSnapshotAt = 0;
+            }
             return { active: false, points: [] };
         }
 
         const [cx, cy] = [width / 2, height / 2];
         const baseRadius = Math.min(width, height) * 0.28;
         const maxSpike = Math.min(width, height) * 0.18;
-        const calibrated = base.size > 0;
-        const ordered = orderedSpectrumCategories(categories);
+        const calibrated = baseMap.size > 0;
+        const ordered = orderedSpectrumCategories(categories, orderState);
         const points = ordered.map(({ categoryName, score }, i) => {
-            const rawValue = calibrated ? adjustedCalibratedScore(categoryName, score) : 0;
+            const rawValue = calibrated ? adjustedCalibratedScore(categoryName, score, poseStable, baseMap) : 0;
             const value = Math.abs(rawValue) < SPECTRUM_ZERO_THRESHOLD ? 0 : rawValue;
-            const previous = spectrum.get(categoryName) ?? 0;
+            const previous = values.get(categoryName) ?? 0;
             const smoothed = previous * 0.82 + value * 0.18;
             const rawSpeed = Math.max(Math.abs(smoothed - previous) - 0.002, 0);
-            const previousSharpness = spectrumSharpness.get(categoryName) ?? 0;
+            const previousSharpness = sharpnessValues.get(categoryName) ?? 0;
             const changeSharpness = Math.min(rawSpeed * 180, 1);
             const sharpness = value === 0 ? previousSharpness * 0.82 : Math.max(previousSharpness, changeSharpness);
-            spectrum.set(categoryName, smoothed);
-            spectrumSharpness.set(categoryName, sharpness);
+            values.set(categoryName, smoothed);
+            sharpnessValues.set(categoryName, sharpness);
             const angle = i / ordered.length * Math.PI * 2 - Math.PI / 2;
             const radius = baseRadius + Math.max(-1, Math.min(smoothed * 18, 1)) * maxSpike;
             return {
@@ -1583,61 +1831,630 @@
         drawSpectrumPath(vizCtx, points, active);
     }
 
+    function drawFullscreenFaceSpectrums(faceLandmarks = [], faceBlendshapes = []) {
+        resizeFullscreenCanvas();
+        vizCtx6.setTransform(1, 0, 0, 1, 0, 0);
+        vizCtx6.clearRect(0, 0, vizCanvas6.width, vizCanvas6.height);
+        const assignments = assignViz6Faces(faceLandmarks, faceBlendshapes);
+        const visibleFaces = assignments.length;
+        let calibratingFaces = 0;
+        const activeStates = new Set(assignments.map(({ faceState }) => faceState));
+
+        for (const faceState of viz6Faces) {
+            if (!activeStates.has(faceState)) {
+                resetViz6VisualState(faceState);
+            }
+        }
+
+        for (const { landmarks, blendshapes, faceState } of assignments) {
+            const displayCategories = blendshapes?.categories?.length
+                ? blendshapes.categories
+                : zeroDisplayCategories();
+            const activeCategories = selectedCategories(displayCategories);
+            updateViz6FaceCalibration(faceState, displayCategories, landmarks);
+            if (viz6FaceCalibrationActive(faceState)) calibratingFaces++;
+            drawFullscreenFaceVisual(activeCategories, landmarks, faceState);
+        }
+
+        updateViz6CalibrationStatus(calibratingFaces, visibleFaces);
+    }
+
+    function assignViz6Faces(faceLandmarks = [], faceBlendshapes = []) {
+        const detections = faceLandmarks
+            .map((landmarks, index) => ({
+                landmarks,
+                blendshapes: faceBlendshapes[index],
+                center: getLandmarkCenter(landmarks),
+                area: landmarkBoundsArea(landmarks)
+            }))
+            .filter(({ landmarks }) => landmarks?.length)
+            .sort((a, b) => b.area - a.area)
+            .slice(0, VIZ6_MAX_FACES);
+        const availableStates = new Set(viz6Faces);
+        const assignments = [];
+
+        for (const detection of detections) {
+            const nearest = nearestViz6FaceState(detection, availableStates);
+            let faceState = nearest.distance <= PRIMARY_FACE_MAX_DISTANCE
+                ? nearest.faceState
+                : null;
+
+            if (!faceState) {
+                faceState = reusableViz6FaceState(availableStates);
+                resetViz6Face(faceState);
+            }
+
+            availableStates.delete(faceState);
+            faceState.center = detection.center;
+            assignments.push({ ...detection, faceState });
+        }
+
+        return assignments;
+    }
+
+    function nearestViz6FaceState(detection, availableStates) {
+        let faceState = null;
+        let distance = Infinity;
+
+        for (const candidate of availableStates) {
+            if (!candidate.center) continue;
+
+            const candidateDistance = Math.hypot(
+                detection.center.x - candidate.center.x,
+                detection.center.y - candidate.center.y
+            );
+            if (candidateDistance < distance) {
+                distance = candidateDistance;
+                faceState = candidate;
+            }
+        }
+
+        return { faceState, distance };
+    }
+
+    function reusableViz6FaceState(availableStates) {
+        for (const faceState of availableStates) {
+            if (!faceState.base.size && !viz6FaceCalibrationActive(faceState)) return faceState;
+        }
+
+        return availableStates.values().next().value;
+    }
+
+    function drawFullscreenFaceVisual(categories, landmarks, faceState) {
+        const anchor = getFullscreenHeadCornerAnchor(landmarks);
+        if (!anchor) return;
+
+        faceState.anchor = faceState.anchor
+            ? {
+                x: faceState.anchor.x * 0.72 + anchor.x * 0.28,
+                y: faceState.anchor.y * 0.72 + anchor.y * 0.28,
+                radius: faceState.anchor.radius * 0.72 + anchor.radius * 0.28,
+                bubbleX: (faceState.anchor.bubbleX ?? anchor.bubbleX) * 0.72 + anchor.bubbleX * 0.28,
+                bubbleY: (faceState.anchor.bubbleY ?? anchor.bubbleY) * 0.72 + anchor.bubbleY * 0.28
+            }
+            : anchor;
+
+        const sourceRadius = Math.min(vizCanvas.width, vizCanvas.height) * 0.28;
+        const scale = faceState.anchor.radius / sourceRadius;
+        const poseStable = isPoseStableForBase(landmarks, faceState.base, faceState.neutralPose, VIZ6_POSE_THRESHOLD, VIZ6_ROLL_THRESHOLD);
+
+        const dpr = fullscreenCanvasDpr();
+        vizCtx6.setTransform(dpr, 0, 0, dpr, 0, 0);
+        drawForeheadBubbleTrail(vizCtx6, faceState.anchor);
+        vizCtx6.save();
+        vizCtx6.translate(faceState.anchor.x, faceState.anchor.y);
+        vizCtx6.scale(scale, scale);
+        vizCtx6.translate(-vizCanvas.width / 2, -vizCanvas.height / 2);
+        drawViz6Mode(vizCtx6, categories, faceState, poseStable);
+        vizCtx6.restore();
+    }
+
+    function drawViz6Mode(targetCtx, categories, faceState, poseStable) {
+        if (viz6Mode === 1 || viz6Mode === 5) {
+            const frame = updateViz6SpectrumFrame(categories, faceState, poseStable);
+            if (viz6Mode === 1) {
+                drawSpectrumPath(targetCtx, frame.points, frame.active);
+            } else {
+                drawViz6SpectrumTimeline(targetCtx, faceState, frame);
+            }
+            return;
+        }
+
+        const motionValues = updateMotionValuesForState(categories, {
+            poseStable,
+            values: faceState.circles,
+            baseMap: faceState.base
+        });
+
+        if (viz6Mode === 2) {
+            drawMotionCirclesOnContext(targetCtx, motionValues, { monochrome: viz2Monochrome });
+        } else if (viz6Mode === 3) {
+            drawViz6MotionLayers(targetCtx, motionValues);
+        } else if (viz6Mode === 4) {
+            drawViz6WaveLine(targetCtx, faceState, motionValues);
+        }
+    }
+
+    function updateViz6SpectrumFrame(categories, faceState, poseStable) {
+        return updateSpectrumFrame(categories, {
+            poseStable,
+            values: faceState.spectrum,
+            sharpnessValues: faceState.spectrumSharpness,
+            orderState: faceState,
+            baseMap: faceState.base
+        });
+    }
+
+    function updateViz6FaceCalibration(faceState, categories, landmarks) {
+        if (!categories.length || faceState.base.size) return;
+        faceState.calibration ??= createCalibrationState(WARMUP_FRAMES, CALIBRATION_FRAMES);
+
+        if (faceState.calibration.warmup) {
+            faceState.calibration.warmup--;
+            return;
+        }
+
+        accumulateCategoryStats(faceState.calibration.stats, categories);
+
+        addPoseCalibrationSampleToState(faceState.poseCalibration, landmarks);
+        faceState.calibration.samples++;
+        faceState.calibration.remaining--;
+
+        if (faceState.calibration.remaining > 0) return;
+
+        faceState.base.clear();
+        writeCalibrationBase(faceState.base, faceState.calibration.stats, faceState.calibration.samples);
+        faceState.neutralPose = finishPoseCalibrationState(faceState.poseCalibration);
+        faceState.calibration = null;
+    }
+
+    function viz6FaceCalibrationActive(faceState) {
+        return Boolean(faceState.calibration?.warmup || faceState.calibration?.remaining);
+    }
+
+    function updateViz6CalibrationStatus(calibratingFaces, visibleFaces) {
+        if (!visualizing() || visualize6.hidden || !visibleFaces) return;
+
+        if (calibratingFaces) {
+            status.textContent = `visualize_06 キャリブレーション中 ${calibratingFaces}/${visibleFaces}`;
+            return;
+        }
+
+        const calibratedFaces = viz6Faces.filter(face => face.base.size).length;
+        if (calibratedFaces) {
+            status.textContent = `visualize_06 キャリブ済み ${calibratedFaces}/${visibleFaces}`;
+        }
+    }
+
+    function updateMotionValuesForState(categories, { poseStable = currentPoseStable, values = circles, baseMap = base } = {}) {
+        const calibrated = baseMap.size > 0;
+        const motionValues = categories.map(({ categoryName, score }) => {
+            const target = calibrated ? adjustedCalibratedScore(categoryName, score, poseStable, baseMap) : 0;
+            const state = values.get(categoryName) ?? { value: 0, speed: 0, phase: Math.random() * Math.PI * 2 };
+            const previous = state.value;
+            state.value = previous * 0.78 + target * 0.22;
+            state.speed = state.speed * 0.72 + Math.abs(state.value - previous) * 0.28;
+            state.phase += 0.02 + Math.abs(state.value) * 0.16;
+            values.set(categoryName, state);
+            return { ...state, categoryName, amount: Math.abs(state.value) };
+        });
+
+        return { calibrated, values: motionValues, maxAmount: Math.max(...motionValues.map(({ amount }) => amount), calibrated ? 0.08 : 0.25) };
+    }
+
+    function drawViz6SpectrumTimeline(targetCtx, faceState, { active, points }) {
+        if (!points.length) {
+            faceState.spectrumHistory = [];
+            faceState.spectrumLastSnapshotAt = 0;
+            return;
+        }
+
+        updateSpectrumHistoryState(faceState, points, active);
+        drawSpectrumHistoryOnContext(targetCtx, faceState.spectrumHistory, vizCanvas.width, vizCanvas.height);
+    }
+
+    function drawMotionCirclesOnContext(targetCtx, { calibrated, values, maxAmount }, { monochrome = false } = {}) {
+        if (!values.length) return;
+
+        const [cx, cy] = [vizCanvas.width / 2, vizCanvas.height / 2];
+        const minStage = Math.min(vizCanvas.width, vizCanvas.height);
+
+        targetCtx.save();
+        targetCtx.lineWidth = 1.8;
+        targetCtx.lineCap = "round";
+        targetCtx.lineJoin = "round";
+
+        values.forEach(({ value, speed, phase, amount }, i) => {
+            const normalized = clamp(amount / maxAmount, 0, 1);
+            const radius = minStage * (0.12 + normalized * 0.28);
+            const amplitude = minStage * normalized * 0.08;
+            const sharpness = clamp(speed * (calibrated ? 220 : 42), 0, 1) ** 0.65;
+            const waves = Math.round(3 + normalized * 10);
+            const hue = (i * 41 + 165) % 360;
+            const alpha = 0.36 + normalized * 0.55;
+
+            [targetCtx.strokeStyle, targetCtx.fillStyle] = monochrome
+                ? [`rgba(40, 40, 40, ${alpha})`, `rgba(40, 40, 40, ${0.025 + normalized * 0.075})`]
+                : [`hsla(${hue}, 55%, ${value >= 0 ? 42 : 55}%, ${alpha})`, `hsla(${hue}, 62%, 58%, ${0.035 + normalized * 0.09})`];
+            drawWavyCircle(targetCtx, cx, cy, radius, amplitude, waves, phase, sharpness);
+        });
+
+        targetCtx.restore();
+    }
+
+    function drawViz6MotionLayers(targetCtx, { calibrated, values, maxAmount }) {
+        if (!values.length) return;
+
+        const [cx, cy] = [vizCanvas.width / 2, vizCanvas.height / 2];
+        const minStage = Math.min(vizCanvas.width, vizCanvas.height);
+        const centerOffset = (values.length - 1) * minStage * 0.015 * 0.5;
+
+        targetCtx.save();
+        targetCtx.lineWidth = 1.5;
+        targetCtx.lineCap = "round";
+        targetCtx.lineJoin = "round";
+
+        values.forEach(({ value, speed, phase, amount }, i) => {
+            const normalized = clamp(amount / maxAmount, 0, 1);
+            const radius = minStage * (0.14 + normalized * 0.27);
+            const amplitude = minStage * normalized * 0.055;
+            const sharpness = clamp(speed * (calibrated ? 220 : 42), 0, 1) ** 0.65;
+            const waves = Math.round(3 + normalized * 10);
+            const depthOffset = i * minStage * 0.015 - centerOffset;
+            const hue = (i * 41 + 165) % 360;
+            const alpha = 0.36 + normalized * 0.45;
+
+            [targetCtx.strokeStyle, targetCtx.fillStyle] = viz3Monochrome
+                ? [`rgba(46, 46, 46, ${alpha})`, `rgba(46, 46, 46, ${0.03 + normalized * 0.08})`]
+                : [`hsla(${hue}, 58%, ${value >= 0 ? 42 : 55}%, ${alpha})`, `hsla(${hue}, 62%, 58%, ${0.04 + normalized * 0.1})`];
+            drawWavyCircle(targetCtx, cx + depthOffset, cy - depthOffset * 0.35, radius, amplitude, waves, phase, sharpness);
+        });
+
+        targetCtx.restore();
+    }
+
+    function drawViz6WaveLine(targetCtx, faceState, { values, maxAmount }) {
+        if (!values.length) {
+            faceState.waveHistory = [];
+            faceState.waveLastSnapshotAt = 0;
+            return;
+        }
+
+        const now = performance.now();
+        const currentValues = values.map(({ amount }) => clamp(amount / maxAmount, 0, 1));
+        if (faceState.waveHistory[0]?.values.length !== currentValues.length) {
+            faceState.waveHistory = [];
+            faceState.waveLastSnapshotAt = 0;
+        }
+        if (!faceState.waveLastSnapshotAt || now - faceState.waveLastSnapshotAt >= viz4SnapshotIntervalMs) {
+            faceState.waveHistory.unshift({
+                values: currentValues,
+                createdAt: now
+            });
+            faceState.waveLastSnapshotAt = now;
+        }
+        faceState.waveHistory = faceState.waveHistory.filter(({ createdAt }) => now - createdAt <= viz4HistoryLifetimeMs);
+
+        drawViz6WaveGrid(targetCtx);
+        for (let i = faceState.waveHistory.length - 1; i >= 0; i--) {
+            const { values: historyValues, createdAt } = faceState.waveHistory[i];
+            const age = clamp((now - createdAt) / viz4HistoryLifetimeMs, 0, 1);
+            drawViz6WaveRow(targetCtx, historyValues, age, i === 0);
+        }
+    }
+
+    function drawViz6WaveGrid(targetCtx) {
+        const { centerX, frontHalf, backHalf, frontY, backY } = viz6WavePerspective();
+
+        targetCtx.save();
+        targetCtx.strokeStyle = "rgba(69, 72, 79, 0.18)";
+        targetCtx.lineWidth = 1;
+
+        for (let row = 0; row < VIZ4_ROWS; row++) {
+            const t = row / (VIZ4_ROWS - 1);
+            const y = frontY + (backY - frontY) * t;
+            const halfWidth = frontHalf + (backHalf - frontHalf) * t;
+            targetCtx.beginPath();
+            targetCtx.moveTo(centerX - halfWidth, y);
+            targetCtx.lineTo(centerX + halfWidth, y);
+            targetCtx.stroke();
+        }
+        for (let col = 0; col < VIZ4_COLUMNS; col++) {
+            const t = col / (VIZ4_COLUMNS - 1);
+            const frontX = centerX - frontHalf + frontHalf * 2 * t;
+            const backX = centerX - backHalf + backHalf * 2 * t;
+            targetCtx.beginPath();
+            targetCtx.moveTo(frontX, frontY);
+            targetCtx.lineTo(backX, backY);
+            targetCtx.stroke();
+        }
+
+        targetCtx.restore();
+    }
+
+    function drawViz6WaveRow(targetCtx, values, age, active) {
+        const { height, centerX, frontHalf, backHalf, frontY, backY } = viz6WavePerspective();
+        const waveHeight = height * 0.24;
+        const rowY = frontY + (backY - frontY) * age;
+        const halfWidth = frontHalf + (backHalf - frontHalf) * age;
+        const lastIndex = Math.max(values.length - 1, 1);
+
+        targetCtx.save();
+        targetCtx.globalAlpha = active ? 0.96 : 0.78 * (1 - age * 0.55);
+        targetCtx.strokeStyle = "rgba(22, 126, 112, 0.92)";
+        targetCtx.lineWidth = active ? 2.5 : 1.3;
+        targetCtx.lineJoin = "round";
+        targetCtx.lineCap = "round";
+        targetCtx.beginPath();
+        values.forEach((normalized, i) => {
+            const t = i / lastIndex;
+            const x = centerX - halfWidth + halfWidth * 2 * t;
+            const y = rowY - normalized * waveHeight * (1 - age * 0.24);
+            if (i === 0) {
+                targetCtx.moveTo(x, y);
+            } else {
+                targetCtx.lineTo(x, y);
+            }
+        });
+        targetCtx.stroke();
+        targetCtx.restore();
+    }
+
+    function viz6WavePerspective() {
+        const { width, height } = vizCanvas;
+        return {
+            width,
+            height,
+            centerX: width * 0.48,
+            frontHalf: width * 0.36,
+            backHalf: width * 0.18,
+            frontY: height * 0.69,
+            backY: height * 0.3
+        };
+    }
+
+    function getFullscreenHeadCornerAnchor(landmarks) {
+        const mediaRect = getMediaRectInViewport();
+        if (!mediaRect) return null;
+
+        const bounds = landmarkBounds(landmarks);
+        if (!bounds) return null;
+
+        const topRight = normalizedToViewportPoint({ x: bounds.minX, y: bounds.minY }, mediaRect);
+        const forehead = normalizedToViewportPoint(landmarks[10] ?? {
+            x: (bounds.minX + bounds.maxX) / 2,
+            y: bounds.minY
+        }, mediaRect);
+        const faceWidth = (bounds.maxX - bounds.minX) * mediaRect.width;
+        const faceHeight = (bounds.maxY - bounds.minY) * mediaRect.height;
+        const radius = clamp(Math.max(faceWidth, faceHeight) * 0.3, 52, Math.max(window.innerWidth, window.innerHeight) * 0.27);
+        const margin = radius * 1.75;
+        const angle = -Math.PI / 3;
+        const distance = radius * 1.5;
+        const x = clamp(topRight.x + Math.cos(angle) * distance, margin, window.innerWidth - margin);
+        const y = clamp(topRight.y + Math.sin(angle) * distance, margin, window.innerHeight - margin);
+
+        return { x, y, radius, bubbleX: forehead.x, bubbleY: forehead.y };
+    }
+
+    function drawForeheadBubbleTrail(targetCtx, { x, y, radius, bubbleX, bubbleY }) {
+        const dx = bubbleX - x;
+        const dy = bubbleY - y;
+        const distance = Math.hypot(dx, dy);
+        if (!distance) return;
+
+        const [ux, uy] = [dx / distance, dy / distance];
+        const startDistance = Math.min(radius * 1.52, distance * 0.46);
+        const start = {
+            x: x + ux * startDistance,
+            y: y + uy * startDistance
+        };
+        const end = {
+            x: x + dx * 0.92,
+            y: y + dy * 0.92
+        };
+        const bend = Math.min(radius * 0.46, distance * 0.24);
+        const control = {
+            x: (start.x + end.x) / 2 + uy * bend,
+            y: (start.y + end.y) / 2 - ux * bend
+        };
+
+        targetCtx.save();
+        targetCtx.strokeStyle = "rgba(153, 153, 153, 0.82)";
+        targetCtx.lineWidth = Math.max(0.9, radius * 0.015);
+
+        for (const { t, size } of [
+            { t: 0.2, size: 0.2 },
+            { t: 0.52, size: 0.13 },
+            { t: 0.84, size: 0.074 }
+        ]) {
+            const point = quadraticPoint(start, control, end, t);
+            targetCtx.beginPath();
+            targetCtx.arc(point.x, point.y, radius * size, 0, Math.PI * 2);
+            targetCtx.stroke();
+        }
+
+        targetCtx.restore();
+    }
+
+    function quadraticPoint(start, control, end, t) {
+        const mt = 1 - t;
+        return {
+            x: mt * mt * start.x + 2 * mt * t * control.x + t * t * end.x,
+            y: mt * mt * start.y + 2 * mt * t * control.y + t * t * end.y
+        };
+    }
+
+    function normalizedToViewportPoint(point, mediaRect) {
+        return {
+            x: mediaRect.left + (1 - point.x) * mediaRect.width,
+            y: mediaRect.top + point.y * mediaRect.height
+        };
+    }
+
+    function getMediaRectInViewport() {
+        const stageRect = stage.getBoundingClientRect();
+        const [sw, sh] = [video.videoWidth || VW, video.videoHeight || VH];
+        if (!stageRect.width || !stageRect.height || !sw || !sh) return null;
+
+        const fitContain = activeMode === "video-file";
+        const scale = fitContain
+            ? Math.min(stageRect.width / sw, stageRect.height / sh)
+            : Math.max(stageRect.width / sw, stageRect.height / sh);
+        const width = sw * scale;
+        const height = sh * scale;
+
+        return {
+            left: stageRect.left + (stageRect.width - width) / 2,
+            top: stageRect.top + (stageRect.height - height) / 2,
+            width,
+            height
+        };
+    }
+
+    function resizeFullscreenCanvas() {
+        const { width, height } = fullscreenCanvasSize();
+        const dpr = fullscreenCanvasDpr();
+        const targetWidth = Math.round(width * dpr);
+        const targetHeight = Math.round(height * dpr);
+        if (vizCanvas6.width === targetWidth && vizCanvas6.height === targetHeight) return;
+
+        Object.assign(vizCanvas6, { width: targetWidth, height: targetHeight });
+    }
+
+    function fullscreenCanvasSize() {
+        return {
+            width: window.innerWidth || document.documentElement.clientWidth || 1,
+            height: window.innerHeight || document.documentElement.clientHeight || 1
+        };
+    }
+
+    function fullscreenCanvasDpr() {
+        return Math.min(window.devicePixelRatio || 1, 2);
+    }
+
+    function createViz6FaceState() {
+        return {
+            base: new Map(),
+            calibration: null,
+            poseCalibration: createPoseCalibrationState(),
+            neutralPose: null,
+            spectrum: new Map(),
+            spectrumSharpness: new Map(),
+            spectrumOrder: [],
+            circles: new Map(),
+            spectrumHistory: [],
+            spectrumLastSnapshotAt: 0,
+            waveHistory: [],
+            waveLastSnapshotAt: 0,
+            center: null,
+            anchor: null
+        };
+    }
+
+    function clearViz6CanvasAndState() {
+        resetViz6Faces();
+        vizCtx6.setTransform(1, 0, 0, 1, 0, 0);
+        vizCtx6.clearRect(0, 0, vizCanvas6.width, vizCanvas6.height);
+    }
+
+    function resetViz6Faces() {
+        for (const face of viz6Faces) {
+            resetViz6Face(face);
+        }
+    }
+
+    function resetViz6Face(face) {
+        face.base.clear();
+        face.calibration = null;
+        resetPoseCalibrationState(face.poseCalibration);
+        face.neutralPose = null;
+        face.center = null;
+        resetViz6VisualState(face);
+    }
+
+    function resetViz6VisualState(face) {
+        face.spectrum.clear();
+        face.spectrumSharpness.clear();
+        face.spectrumOrder = [];
+        face.circles.clear();
+        face.spectrumHistory = [];
+        face.spectrumLastSnapshotAt = 0;
+        face.waveHistory = [];
+        face.waveLastSnapshotAt = 0;
+        face.anchor = null;
+    }
+
     function drawSpectrumTimeline({ active, points }) {
         const { width, height } = vizCanvas5;
         vizCtx5.clearRect(0, 0, width, height);
         if (!points.length) return;
 
         updateSpectrumHistory(points, active);
-        drawSpectrumHistory(width, height);
+        drawSpectrumHistoryOnContext(vizCtx5, spectrumHistory, width, height);
     }
 
     function updateSpectrumHistory(points, active) {
+        const state = { spectrumHistory, spectrumLastSnapshotAt };
+        updateSpectrumHistoryState(state, points, active);
+        spectrumHistory = state.spectrumHistory;
+        spectrumLastSnapshotAt = state.spectrumLastSnapshotAt;
+    }
+
+    function updateSpectrumHistoryState(state, points, active) {
         const now = performance.now();
 
-        if (spectrumHistory[0]?.points.length !== points.length) {
-            spectrumHistory = [];
-            spectrumLastSnapshotAt = 0;
+        if (state.spectrumHistory[0]?.points.length !== points.length) {
+            state.spectrumHistory = [];
+            state.spectrumLastSnapshotAt = 0;
         }
-        if (!spectrumLastSnapshotAt || now - spectrumLastSnapshotAt >= viz5SnapshotIntervalMs) {
-            spectrumHistory.unshift({
+        if (!state.spectrumLastSnapshotAt || now - state.spectrumLastSnapshotAt >= viz5SnapshotIntervalMs) {
+            state.spectrumHistory.unshift({
                 points: points.map(point => ({ ...point })),
                 active,
                 createdAt: now
             });
-            spectrumLastSnapshotAt = now;
+            state.spectrumLastSnapshotAt = now;
         }
-        spectrumHistory = spectrumHistory.filter(({ createdAt }) => now - createdAt <= viz5HistoryLifetimeMs);
+        state.spectrumHistory = state.spectrumHistory.filter(({ createdAt }) => now - createdAt <= viz5HistoryLifetimeMs);
     }
 
-    function drawSpectrumHistory(width, height) {
+    function drawSpectrumHistoryOnContext(targetCtx, history, width, height) {
         const now = performance.now();
 
-        for (let i = spectrumHistory.length - 1; i >= 0; i--) {
-            const { points, active, createdAt } = spectrumHistory[i];
+        for (let i = history.length - 1; i >= 0; i--) {
+            const { points, active, createdAt } = history[i];
             const age = clamp((now - createdAt) / viz5HistoryLifetimeMs, 0, 1);
             const scale = 0.82 * (1 - age * 0.18);
             const dx = age * width * 0.16;
             const dy = -age * height * 0.22;
 
-            vizCtx5.save();
-            vizCtx5.globalAlpha = 1 - age * 0.72;
-            vizCtx5.translate(width / 2 + dx, height / 2 + dy);
-            vizCtx5.scale(scale, scale);
-            vizCtx5.translate(-width / 2, -height / 2);
-            drawSpectrumPath(vizCtx5, points, active);
-            vizCtx5.restore();
+            targetCtx.save();
+            targetCtx.globalAlpha = 1 - age * 0.72;
+            targetCtx.translate(width / 2 + dx, height / 2 + dy);
+            targetCtx.scale(scale, scale);
+            targetCtx.translate(-width / 2, -height / 2);
+            drawSpectrumPath(targetCtx, points, active);
+            targetCtx.restore();
         }
     }
 
-    function orderedSpectrumCategories(categories) {
+    function orderedSpectrumCategories(categories, orderState = null) {
         const byName = new Map(categories.map(category => [category.categoryName, category]));
-        const known = spectrumOrder.filter(categoryName => byName.has(categoryName));
+        const sourceOrder = orderState?.spectrumOrder ?? spectrumOrder;
+        const known = sourceOrder.filter(categoryName => byName.has(categoryName));
         const added = categories
             .map(({ categoryName }) => categoryName)
             .filter(categoryName => !known.includes(categoryName));
-        spectrumOrder = known.length ? [...known, ...shuffle(added)] : shuffle(categories.map(({ categoryName }) => categoryName));
-        return spectrumOrder.map(categoryName => byName.get(categoryName)).filter(Boolean);
+        const nextOrder = known.length ? [...known, ...shuffle(added)] : shuffle(categories.map(({ categoryName }) => categoryName));
+
+        if (orderState) {
+            orderState.spectrumOrder = nextOrder;
+        } else {
+            spectrumOrder = nextOrder;
+        }
+
+        return nextOrder.map(categoryName => byName.get(categoryName)).filter(Boolean);
     }
 
     function shuffle(items) {
@@ -1693,50 +2510,13 @@
     }
 
     function updateMotionValues(categories) {
-        const calibrated = base.size > 0;
-        const values = categories.map(({ categoryName, score }) => {
-            const target = calibrated ? adjustedCalibratedScore(categoryName, score) : 0;
-            const state = circles.get(categoryName) ?? { value: 0, speed: 0, phase: Math.random() * Math.PI * 2 };
-            const previous = state.value;
-            state.value = previous * 0.78 + target * 0.22;
-            state.speed = state.speed * 0.72 + Math.abs(state.value - previous) * 0.28;
-            state.phase += 0.02 + Math.abs(state.value) * 0.16;
-            circles.set(categoryName, state);
-            return { ...state, categoryName, amount: Math.abs(state.value) };
-        });
-
-        return { calibrated, values, maxAmount: Math.max(...values.map(({ amount }) => amount), calibrated ? 0.08 : 0.25) };
+        return updateMotionValuesForState(categories, { values: circles });
     }
 
-    function drawMotionCircles({ calibrated, values, maxAmount }) {
+    function drawMotionCircles(motionValues) {
         const { width, height } = vizCanvas2;
         vizCtx2.clearRect(0, 0, width, height);
-        if (!values.length) return;
-
-        const [cx, cy] = [width / 2, height / 2];
-        const minStage = Math.min(width, height);
-
-        vizCtx2.save();
-        vizCtx2.lineWidth = 1.8;
-        vizCtx2.lineCap = "round";
-        vizCtx2.lineJoin = "round";
-
-        values.forEach(({ value, speed, phase, amount }, i) => {
-            const normalized = clamp(amount / maxAmount, 0, 1);
-            const radius = minStage * (0.12 + normalized * 0.28);
-            const amplitude = minStage * normalized * 0.08;
-            const sharpness = clamp(speed * (calibrated ? 220 : 42), 0, 1) ** 0.65;
-            const waves = Math.round(3 + normalized * 10);
-            const hue = (i * 41 + 165) % 360;
-            const alpha = 0.36 + normalized * 0.55;
-
-            [vizCtx2.strokeStyle, vizCtx2.fillStyle] = viz2Monochrome
-                ? [`rgba(40, 40, 40, ${alpha})`, `rgba(40, 40, 40, ${0.025 + normalized * 0.075})`]
-                : [`hsla(${hue}, 55%, ${value >= 0 ? 42 : 55}%, ${alpha})`, `hsla(${hue}, 62%, 58%, ${0.035 + normalized * 0.09})`];
-            drawWavyCircle(cx, cy, radius, amplitude, waves, phase, sharpness);
-        });
-
-        vizCtx2.restore();
+        drawMotionCirclesOnContext(vizCtx2, motionValues, { monochrome: viz2Monochrome });
     }
 
     function setupViz3() {
@@ -1983,9 +2763,9 @@
         });
     }
 
-    function drawWavyCircle(cx, cy, radius, amplitude, waves, phase, sharpness) {
+    function drawWavyCircle(targetCtx, cx, cy, radius, amplitude, waves, phase, sharpness) {
         const steps = 96;
-        vizCtx2.beginPath();
+        targetCtx.beginPath();
 
         for (let i = 0; i <= steps; i++) {
             const angle = i / steps * Math.PI * 2;
@@ -1994,15 +2774,15 @@
             const x = cx + Math.cos(angle) * r;
             const y = cy + Math.sin(angle) * r;
             if (i === 0) {
-                vizCtx2.moveTo(x, y);
+                targetCtx.moveTo(x, y);
             } else {
-                vizCtx2.lineTo(x, y);
+                targetCtx.lineTo(x, y);
             }
         }
 
-        vizCtx2.closePath();
-        vizCtx2.fill();
-        vizCtx2.stroke();
+        targetCtx.closePath();
+        targetCtx.fill();
+        targetCtx.stroke();
     }
 
     function shapedWave(angle, sharpness) {
