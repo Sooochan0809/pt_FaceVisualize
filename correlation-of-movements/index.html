@@ -273,7 +273,7 @@
     <main>
         <section class="media-stage">
             <div class="media-view">
-                <video id="video" autoplay muted playsinline></video>
+                <video id="video" muted playsinline></video>
                 <img id="image" alt="読み込んだ画像" hidden>
             </div>
             <div class="source-controls">
@@ -312,9 +312,13 @@
             const HISTORY_LIMIT = 180;
             const BLENDSHAPE_HISTORY_LIMIT = 600;
             const STD_EPSILON = 0.0005;
-            const HEATMAP_RATIO = Math.min((window.devicePixelRatio || 1) * 2, 4);
+            const TIE_EPSILON = 1e-12;
+            const HEATMAP_RATIO = Math.min((window.devicePixelRatio || 1) * 3, 6);
             const [HEATMAP_WIDTH, HEATMAP_HEIGHT, HEATMAP_FONT] = [560, 420, "11px Yu Gothic, sans-serif"];
+            const HEATMAP_MIN_FRAMES = 3;
+            const VIDEO_ANALYSIS_RUNS = 3;
             const VIDEO_FILE_CALIBRATION_FRAMES = 3;
+            const VIDEO_CALIBRATION_WARMUP_READS = 6;
             const [WARMUP_FRAMES, CALIBRATION_FRAMES, DEADZONE] = [20, 60, 0.005];
             const $ = (id) => document.getElementById(id);
             const clamp = (value) => Math.min(1, Math.max(0, Number(value || 0)));
@@ -341,11 +345,14 @@
             let activeObjectUrl = "";
             let faceLandmarker;
             let landmarkerMode = "VIDEO";
+            let landmarkerTimestamp = 0;
             let expressionHistory = [];
             let latestBlendshapes = {};
             let blendshapeHistory = [];
-            let videoHeatmapDone = false;
+            let videoRuns = [];
+            let videoRunFrames = [];
             let lastVideoTime = 0;
+            let waitingNextVideoRun = false;
             const rowKeys = new WeakMap();
             const rowControls = new WeakMap();
 
@@ -370,12 +377,11 @@
             const setActiveMedia = (media, mode) => {
                 activeMedia = media;
                 activeMode = mode;
-                videoHeatmapDone = false;
-                lastVideoTime = 0;
+                resetVideoRuns();
                 stage.classList.toggle("file-source", mode !== "camera");
                 [image.hidden, video.hidden] = [media !== image, media !== video];
                 video.controls = mode === "video-file";
-                video.loop = mode === "video-file";
+                video.loop = false;
             };
 
             const updateRows = (container, rows) => {
@@ -417,11 +423,15 @@
                 updateRows(bars, scores);
             };
 
+            const syncState = (latestExpressions = window.emotionState?.latestExpressions || {}) => {
+                window.emotionState = { latestExpressions, expressionHistory, latestBlendshapes, blendshapeHistory };
+            };
+
             const pushHistory = (expressions) => {
                 const latestExpressions = { ...expressions };
                 expressionHistory.push({ time: performance.now(), expressions: latestExpressions });
                 expressionHistory = expressionHistory.slice(-HISTORY_LIMIT);
-                window.emotionState = { latestExpressions, expressionHistory, latestBlendshapes, blendshapeHistory };
+                syncState(latestExpressions);
             };
 
             const mean = (values) => values.reduce((sum, value) => sum + value, 0) / values.length;
@@ -437,7 +447,7 @@
                 return clampRange(cov / (stdA * stdB), -1, 1);
             };
 
-            const clusterOrder = (matrix) => {
+            const clusterOrder = (matrix, names) => {
                 let clusters = matrix.map((_, index) => [index]);
                 const distance = (a, b) => {
                     let total = 0;
@@ -454,10 +464,13 @@
                     for (let i = 0; i < clusters.length; i++) {
                         for (let j = i + 1; j < clusters.length; j++) {
                             const d = distance(clusters[i], clusters[j]);
-                            if (d < best.d) best = { i, j, d };
+                            const key = (cluster) => cluster.map((index) => names[index]).join("|");
+                            if (d < best.d - TIE_EPSILON || (Math.abs(d - best.d) <= TIE_EPSILON && `${key(clusters[i])}|${key(clusters[j])}` < `${key(clusters[best.i])}|${key(clusters[best.j])}`)) {
+                                best = { i, j, d };
+                            }
                         }
                     }
-                    const merged = [...clusters[best.i], ...clusters[best.j]];
+                    const merged = [...clusters[best.i], ...clusters[best.j]].sort((a, b) => names[a].localeCompare(names[b]));
                     clusters = clusters.filter((_, index) => index !== best.i && index !== best.j);
                     clusters.push(merged);
                 }
@@ -495,8 +508,8 @@
                 ctx.fillStyle = "#f4f7fb";
                 ctx.fillRect(0, 0, HEATMAP_WIDTH, HEATMAP_HEIGHT);
 
-                if (blendshapeHistory.length < 6) {
-                    heatmapStatus.textContent = `変動値を収集中... ${blendshapeHistory.length}/6`;
+                if (blendshapeHistory.length < HEATMAP_MIN_FRAMES) {
+                    heatmapStatus.textContent = `変動値を収集中... ${blendshapeHistory.length}/${HEATMAP_MIN_FRAMES}`;
                     return;
                 }
 
@@ -511,7 +524,7 @@
                 const keptNames = variable.map(({ index }) => names[index]);
                 const keptColumns = variable.map(({ index }) => columns[index]);
                 const matrix = keptColumns.map((a) => keptColumns.map((b) => pearson(a, b)));
-                const order = clusterOrder(matrix);
+                const order = clusterOrder(matrix, keptNames);
                 const orderedNames = order.map((index) => keptNames[index]);
                 const orderedMatrix = order.map((i) => order.map((j) => matrix[i][j]));
                 const n = orderedNames.length;
@@ -536,8 +549,23 @@
                 const top = (canvasHeight - blockHeight) / 2;
 
                 orderedMatrix.forEach((row, y) => row.forEach((value, x) => {
-                    ctx.fillStyle = colorForCorrelation(value);
+                    ctx.fillStyle = x === y ? "#f4f7fb" : colorForCorrelation(value);
                     ctx.fillRect(left + x * cell, top + y * cell, cell, cell);
+                    if (x === y) {
+                        ctx.strokeStyle = "#6d7782";
+                        ctx.beginPath();
+                        ctx.moveTo(left + x * cell, top + y * cell);
+                        ctx.lineTo(left + (x + 1) * cell, top + (y + 1) * cell);
+                        ctx.stroke();
+                    }
+                }));
+                ctx.font = `${Math.max(5, Math.min(8, cell * 0.34))}px Yu Gothic, sans-serif`;
+                ctx.textAlign = "center";
+                ctx.textBaseline = "middle";
+                orderedMatrix.forEach((row, y) => row.forEach((value, x) => {
+                    if (x === y) return;
+                    ctx.fillStyle = Math.abs(value) > 0.65 ? "#f4f7fb" : "#1b2026";
+                    ctx.fillText(value.toFixed(2), left + x * cell + cell / 2, top + y * cell + cell / 2);
                 }));
                 ctx.strokeStyle = "#d0d6de";
                 ctx.strokeRect(left, top, size, size);
@@ -582,17 +610,76 @@
             const recordBlendshapeFrame = (rows) => {
                 if (!base.size || !rows.length) return;
                 if (activeMode === "video-file") {
+                    if (waitingNextVideoRun || videoRunsComplete()) return;
                     const time = video.currentTime;
-                    if (videoHeatmapDone || time + 0.05 < lastVideoTime) {
-                        videoHeatmapDone = true;
-                        return;
+                    if (time + 0.05 < lastVideoTime) {
+                        finishVideoRun();
+                        lastVideoTime = 0;
+                        if (videoRunsComplete()) {
+                            drawHeatmap();
+                            return;
+                        }
                     }
+                    videoRunFrames.push(blendshapeFrame(rows));
                     lastVideoTime = time;
-                    if (Number.isFinite(video.duration) && time >= video.duration - 0.05) videoHeatmapDone = true;
+                    heatmapStatus.textContent = `動画記録中... ${videoRuns.length + 1}/${VIDEO_ANALYSIS_RUNS}回`;
+                    if (Number.isFinite(video.duration) && time >= video.duration - 0.05) finishVideoRun();
+                    if (videoRunsComplete()) drawHeatmap();
+                    return;
                 }
-                blendshapeHistory.push(Object.fromEntries(rows.map(({ name, score }) => [name, score])));
+                blendshapeHistory.push(blendshapeFrame(rows));
                 blendshapeHistory = blendshapeHistory.slice(-BLENDSHAPE_HISTORY_LIMIT);
                 drawHeatmap();
+            };
+
+            const blendshapeFrame = (rows) => Object.fromEntries(rows.map(({ name, score }) => [name, score]));
+
+            const averageFrames = (runs, index) => {
+                const totals = new Map();
+                const counts = new Map();
+                runs.forEach((frames) => Object.entries(frames[index] || {}).forEach(([name, score]) => {
+                    totals.set(name, (totals.get(name) || 0) + score);
+                    counts.set(name, (counts.get(name) || 0) + 1);
+                }));
+                return Object.fromEntries([...totals].map(([name, total]) => [name, total / counts.get(name)]));
+            };
+
+            const resetVideoRuns = () => {
+                videoRuns = [];
+                videoRunFrames = [];
+                lastVideoTime = 0;
+                waitingNextVideoRun = false;
+            };
+
+            const videoRunsComplete = () => videoRuns.length >= VIDEO_ANALYSIS_RUNS;
+
+            const finishVideoRun = () => {
+                if (videoRunsComplete() || !videoRunFrames.length) return;
+                videoRuns.push(videoRunFrames);
+                videoRunFrames = [];
+                waitingNextVideoRun = true;
+                if (videoRuns.length < VIDEO_ANALYSIS_RUNS) {
+                    heatmapStatus.textContent = `動画記録済み... ${videoRuns.length}/${VIDEO_ANALYSIS_RUNS}回`;
+                    return;
+                }
+                const frameCount = Math.min(BLENDSHAPE_HISTORY_LIMIT, Math.min(...videoRuns.map((frames) => frames.length)));
+                blendshapeHistory = Array.from({ length: frameCount }, (_, index) => averageFrames(videoRuns, index));
+                syncState();
+                status.textContent = `動画解析済み (${blendshapeHistory.length} frames x ${VIDEO_ANALYSIS_RUNS} runs)`;
+            };
+
+            const playNextVideoRun = async () => {
+                if (activeMode !== "video-file" || videoRunsComplete()) return;
+                stopDetection();
+                lastVideoTime = 0;
+                await seekVideo(0);
+                waitingNextVideoRun = false;
+                status.textContent = `動画記録済み... ${videoRuns.length}/${VIDEO_ANALYSIS_RUNS}回`;
+                try {
+                    await video.play();
+                } catch (error) {
+                    status.textContent = "再生すると次の動画記録を開始します";
+                }
             };
 
             const calibrationActive = () => calibration.warmup || calibration.remaining;
@@ -602,8 +689,7 @@
                 Object.assign(calibration, { warmup, remaining: frames, samples: 0 });
                 calibration.stats.clear();
                 blendshapeHistory = [];
-                videoHeatmapDone = false;
-                lastVideoTime = 0;
+                resetVideoRuns();
                 drawHeatmap();
                 calibrateButton.disabled = false;
             };
@@ -617,13 +703,13 @@
                 });
             };
 
-            const writeCalibrationBase = () => {
+            const writeCalibrationBase = ({ fixedDeadzone = false } = {}) => {
                 if (!calibration.samples) return;
                 base.clear();
                 calibration.stats.forEach(({ sum, sq }, name) => {
                     const mean = sum / calibration.samples;
                     const variance = Math.max(sq / calibration.samples - mean * mean, 0);
-                    base.set(name, { mean, dead: Math.max(Math.sqrt(variance) * 3, DEADZONE) });
+                    base.set(name, { mean, dead: fixedDeadzone ? DEADZONE : Math.max(Math.sqrt(variance) * 3, DEADZONE) });
                 });
             };
 
@@ -655,7 +741,9 @@
                 return score < mean ? score - (min - dead) : score - (max + dead);
             };
 
-            const detectBlendshapes = async () => {
+            const nextLandmarkerTimestamp = () => landmarkerTimestamp += 34;
+
+            const readBlendshapes = async () => {
                 const mode = activeMode === "image-file" ? "IMAGE" : "VIDEO";
                 if (landmarkerMode !== mode) {
                     await faceLandmarker.setOptions({ runningMode: mode });
@@ -663,25 +751,52 @@
                 }
                 const result = mode === "IMAGE"
                     ? faceLandmarker.detect(activeMedia)
-                    : faceLandmarker.detectForVideo(activeMedia, performance.now());
-                const rows = (result.faceBlendshapes[0]?.categories || [])
+                    : faceLandmarker.detectForVideo(activeMedia, nextLandmarkerTimestamp());
+                return (result.faceBlendshapes[0]?.categories || [])
                     .map(({ categoryName, score }) => ({ name: categoryName, score: clamp(score) }));
-                const statusLocked = updateCalibration(rows);
+            };
+
+            const renderBlendshapes = (rows) => {
                 const displayRows = base.size
                     ? rows.map(({ name, score }) => ({ name, score: calibratedScore(name, score), calibrated: true }))
                     : rows;
                 latestBlendshapes = Object.fromEntries(displayRows.map(({ name, score }) => [name, score]));
                 updateRows(blendshapes, displayRows);
+                return displayRows;
+            };
+
+            const detectBlendshapes = async () => {
+                const rows = await readBlendshapes();
+                const statusLocked = updateCalibration(rows);
+                const displayRows = renderBlendshapes(rows);
                 recordBlendshapeFrame(displayRows);
                 return statusLocked;
             };
 
-            const calibrateCurrentFrame = async (frames = VIDEO_FILE_CALIBRATION_FRAMES) => {
+            const calibrateCurrentFrame = async (frames = VIDEO_FILE_CALIBRATION_FRAMES, startTime = null) => {
+                if (startTime !== null) {
+                    stopDetection();
+                    video.pause();
+                    await seekVideo(startTime);
+                    await waitForStableFrame(video);
+                    await calibrateBlendshapesAtCurrentFrame(frames);
+                    return;
+                }
                 resetCalibration({ frames });
                 calibrateButton.disabled = true;
                 for (let i = 0; i < frames; i++) await detectOnce();
                 await detectOnce();
             };
+
+            const seekVideo = (time) => new Promise((resolve, reject) => {
+                if (Math.abs(video.currentTime - time) < 0.001) {
+                    requestAnimationFrame(resolve);
+                    return;
+                }
+                video.addEventListener("seeked", resolve, { once: true });
+                video.addEventListener("error", () => reject(new Error("動画シークに失敗しました")), { once: true });
+                video.currentTime = time;
+            });
 
             const detectOnce = async () => {
                 const result = await faceapi.detectSingleFace(activeMedia, detectOptions).withFaceExpressions();
@@ -708,6 +823,40 @@
                 media.src = src;
                 media.load?.();
             });
+
+            const waitForMediaFrame = (media) => media.readyState >= 2
+                ? Promise.resolve()
+                : new Promise((resolve, reject) => {
+                    media.addEventListener("loadeddata", resolve, { once: true });
+                    media.addEventListener("error", () => reject(new Error("動画フレームを読み込めません")), { once: true });
+                });
+
+            const waitForStableFrame = async (media) => {
+                await waitForMediaFrame(media);
+                await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+            };
+
+            const calibrateBlendshapesAtCurrentFrame = async (frames) => {
+                resetCalibration();
+                calibrateButton.disabled = true;
+                for (let i = 0; i < VIDEO_CALIBRATION_WARMUP_READS; i++) {
+                    await readBlendshapes();
+                    await waitForStableFrame(activeMedia);
+                }
+                for (let i = 0; i < frames; i++) {
+                    const rows = await readBlendshapes();
+                    if (rows.length) {
+                        accumulateCategoryStats(calibration.stats, rows);
+                        calibration.samples++;
+                        status.textContent = `キャリブレーション中 ${frames - i - 1}`;
+                    }
+                    await waitForStableFrame(activeMedia);
+                }
+                writeCalibrationBase({ fixedDeadzone: true });
+                renderBlendshapes(await readBlendshapes());
+                calibrateButton.disabled = false;
+                status.textContent = calibration.samples ? `キャリブ済み (${calibration.samples} frames)` : "顔を検出できません";
+            };
 
             const startDetection = () => {
                 running = true;
@@ -757,25 +906,21 @@
                 if (isImage) {
                     await detectOnce();
                 } else {
-                    video.currentTime = 0;
-                    await calibrateCurrentFrame();
-                    try {
-                        running = true;
-                        await video.play();
-                        status.textContent = "検出開始";
-                        detect(detectToken);
-                    } catch (error) {
-                        running = false;
-                        status.textContent = "動画を再生すると検出を開始します";
-                    }
+                    await waitForMediaFrame(video);
+                    await seekVideo(0);
+                    video.pause();
+                    blendshapeHistory = [];
+                    drawHeatmap();
+                    status.textContent = "動画を再生すると検出を開始します";
                 }
             };
 
             cameraButton.addEventListener("click", startCamera);
             calibrateButton.addEventListener("click", () => {
-                const frames = activeMode === "image-file" ? 1 : activeMode === "video-file" && video.paused ? VIDEO_FILE_CALIBRATION_FRAMES : CALIBRATION_FRAMES;
-                if (activeMode !== "camera" && video.paused) {
-                    calibrateCurrentFrame(frames).catch((error) => {
+                const videoFile = activeMode === "video-file";
+                const frames = activeMode === "image-file" ? 1 : videoFile ? VIDEO_FILE_CALIBRATION_FRAMES : CALIBRATION_FRAMES;
+                if (activeMode !== "camera" && (video.paused || videoFile)) {
+                    calibrateCurrentFrame(frames, videoFile ? 0 : null).catch((error) => {
                         calibrateButton.disabled = false;
                         status.textContent = `キャリブレーション失敗: ${error.message}`;
                     });
@@ -805,6 +950,17 @@
                 }
             });
             video.addEventListener("pause", () => activeMode === "video-file" && stopDetection());
+            video.addEventListener("ended", () => {
+                if (activeMode !== "video-file") return;
+                finishVideoRun();
+                if (videoRunsComplete()) {
+                    drawHeatmap();
+                    return;
+                }
+                playNextVideoRun().catch((error) => {
+                    status.textContent = `次の動画記録を開始できません: ${error.message}`;
+                });
+            });
             window.addEventListener("resize", drawHeatmap);
             renderExpressions();
             updateRows(blendshapes, []);
