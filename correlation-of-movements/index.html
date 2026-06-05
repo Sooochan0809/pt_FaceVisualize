@@ -59,32 +59,33 @@
         .panel {
             position: absolute;
             right: 8px;
-            bottom: 8px;
-            width: min(260px, calc(100% - 16px));
-            padding: 12px;
+            top: 8px;
+            width: max-content;
+            max-width: calc(100% - 112px);
+            padding: 7px;
             border-radius: 8px;
             background: var(--panel-bg);
         }
 
         #status {
             display: block;
-            margin-bottom: 10px;
-            font-size: 12px;
+            margin-bottom: 6px;
+            font-size: 10px;
         }
 
         #dominant {
-            margin-bottom: 10px;
-            font-size: 22px;
+            margin-bottom: 6px;
+            font-size: 16px;
             font-weight: 700;
         }
 
         .bar-row {
             display: grid;
-            grid-template-columns: 62px 1fr 34px;
-            gap: 8px;
+            grid-template-columns: var(--label-width, max-content) 48px 24px;
+            gap: 5px;
             align-items: center;
-            margin: 7px 0;
-            font-size: 11px;
+            margin: 4px 0;
+            font-size: 10px;
         }
 
         .bar-row span:last-child {
@@ -92,8 +93,12 @@
             font-variant-numeric: tabular-nums;
         }
 
+        .bar-row span:first-child {
+            white-space: nowrap;
+        }
+
         .bar {
-            height: 7px;
+            height: 5px;
             overflow: hidden;
             border-radius: 999px;
             background: #101419;
@@ -102,7 +107,7 @@
         .fill {
             display: block;
             height: 100%;
-            width: var(--score, 0%);
+            width: 0;
             background: var(--accent);
             transition: width 120ms linear;
         }
@@ -135,6 +140,25 @@
             opacity: 0;
             pointer-events: none;
         }
+
+        .blendshape-panel {
+            position: absolute;
+            right: 8px;
+            bottom: 8px;
+            width: max-content;
+            max-width: calc(100% - 16px);
+            max-height: 52dvh;
+            overflow: auto;
+            padding: 7px;
+            border-radius: 8px;
+            background: var(--panel-bg);
+        }
+
+        .blendshape-panel summary {
+            cursor: pointer;
+            font-size: 11px;
+            color: #cbd5df;
+        }
     </style>
 </head>
 
@@ -154,26 +178,40 @@
             <div id="dominant">neutral</div>
             <div id="bars"></div>
         </aside>
+        <details class="blendshape-panel">
+            <summary>blendshape</summary>
+            <div id="blendshapes"></div>
+        </details>
     </main>
 
-    <script>
+    <script type="module">
+        import { FaceLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.34";
+
         window.addEventListener("load", async () => {
             const MODEL_URL = "../modules/faceAPI/models";
             const EMOTIONS = ["neutral", "happy", "sad", "angry", "fearful", "disgusted", "surprised"];
             const HISTORY_LIMIT = 180;
             const $ = (id) => document.getElementById(id);
             const clamp = (value) => Math.min(1, Math.max(0, Number(value || 0)));
-            const [stage, video, image, cameraButton, fileInput, status, dominant, bars] = [
-                document.querySelector("main"), "video", "image", "cameraButton", "fileInput", "status", "dominant", "bars"
-            ].map((target) => typeof target === "string" ? $(target) : target);
+            const formatScore = (score) => (Math.trunc(score * 100) / 100).toFixed(2);
+            const stage = document.querySelector("main");
+            const {
+                video, image, cameraButton, fileInput, status, dominant, bars, blendshapes
+            } = Object.fromEntries([
+                "video", "image", "cameraButton", "fileInput", "status", "dominant", "bars", "blendshapes"
+            ].map((id) => [id, $(id)]));
             const detectOptions = new faceapi.TinyFaceDetectorOptions();
             let running = false;
             let detectToken = 0;
             let activeMedia = video;
             let activeMode = "camera";
             let activeObjectUrl = "";
-            let latestExpressions = {};
+            let faceLandmarker;
+            let landmarkerMode = "VIDEO";
             let expressionHistory = [];
+            let latestBlendshapes = {};
+            const rowKeys = new WeakMap();
+            const rowControls = new WeakMap();
 
             const stopDetection = () => {
                 running = false;
@@ -202,30 +240,67 @@
                 video.loop = mode === "video-file";
             };
 
+            const updateRows = (container, rows) => {
+                const key = rows.map(({ name }) => name).join("|");
+                if (key !== rowKeys.get(container)) {
+                    rowKeys.set(container, key);
+                    container.innerHTML = rows.map(({ name }) => `
+                        <div class="bar-row">
+                            <span>${name}</span>
+                            <span class="bar"><span class="fill"></span></span>
+                            <span class="value"></span>
+                        </div>
+                    `).join("");
+                    rowControls.set(container, [...container.querySelectorAll(".bar-row")].map((row) => ({
+                        fill: row.querySelector(".fill"),
+                        value: row.querySelector(".value")
+                    })));
+                    const labels = [...container.querySelectorAll(".bar-row span:first-child")];
+                    if (labels.length) {
+                        const labelWidth = Math.ceil(Math.max(...labels.map((label) => label.scrollWidth)));
+                        container.style.setProperty("--label-width", `${labelWidth}px`);
+                    }
+                }
+                rowControls.get(container).forEach(({ fill, value }, index) => {
+                    const score = rows[index]?.score || 0;
+                    fill.style.width = `${score * 100}%`;
+                    value.textContent = formatScore(score);
+                });
+            };
+
             const renderExpressions = (expressions = {}) => {
                 const scores = EMOTIONS.map((name) => ({ name, score: clamp(expressions[name]) }));
                 const top = scores.reduce((best, item) => item.score > best.score ? item : best, scores[0]);
-                const formatScore = (score) => (Math.trunc(score * 100) / 100).toFixed(2);
                 dominant.textContent = top.name;
-                bars.innerHTML = scores.map(({ name, score }) => `
-                    <div class="bar-row">
-                        <span>${name}</span>
-                        <span class="bar"><span class="fill" style="--score:${score * 100}%"></span></span>
-                        <span>${formatScore(score)}</span>
-                    </div>
-                `).join("");
+                updateRows(bars, scores);
             };
 
             const pushHistory = (expressions) => {
-                latestExpressions = { ...expressions };
+                const latestExpressions = { ...expressions };
                 expressionHistory.push({ time: performance.now(), expressions: latestExpressions });
                 expressionHistory = expressionHistory.slice(-HISTORY_LIMIT);
-                window.emotionState = { latestExpressions, expressionHistory };
+                window.emotionState = { latestExpressions, expressionHistory, latestBlendshapes };
+            };
+
+            const detectBlendshapes = async () => {
+                const mode = activeMode === "image-file" ? "IMAGE" : "VIDEO";
+                if (landmarkerMode !== mode) {
+                    await faceLandmarker.setOptions({ runningMode: mode });
+                    landmarkerMode = mode;
+                }
+                const result = mode === "IMAGE"
+                    ? faceLandmarker.detect(activeMedia)
+                    : faceLandmarker.detectForVideo(activeMedia, performance.now());
+                const rows = (result.faceBlendshapes[0]?.categories || [])
+                    .map(({ categoryName, score }) => ({ name: categoryName, score: clamp(score) }));
+                latestBlendshapes = Object.fromEntries(rows.map(({ name, score }) => [name, score]));
+                updateRows(blendshapes, rows);
             };
 
             const detectOnce = async () => {
                 const result = await faceapi.detectSingleFace(activeMedia, detectOptions).withFaceExpressions();
                 const expressions = result?.expressions || {};
+                await detectBlendshapes();
                 renderExpressions(expressions);
                 pushHistory(expressions);
                 status.textContent = result ? "検出中" : "顔が見つかりません";
@@ -322,8 +397,17 @@
             });
             video.addEventListener("pause", () => activeMode === "video-file" && stopDetection());
             renderExpressions();
+            updateRows(blendshapes, []);
 
             try {
+                const vision = await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.34/wasm");
+                faceLandmarker = await FaceLandmarker.createFromOptions(vision, {
+                    baseOptions: {
+                        modelAssetPath: "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/latest/face_landmarker.task"
+                    },
+                    runningMode: landmarkerMode,
+                    outputFaceBlendshapes: true
+                });
                 await Promise.all([
                     faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
                     faceapi.nets.faceExpressionNet.loadFromUri(MODEL_URL)
