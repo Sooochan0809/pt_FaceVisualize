@@ -14,9 +14,10 @@
 
         body {
             margin: 0;
-            min-height: 100dvh;
+            height: 100dvh;
             display: grid;
             place-items: center;
+            overflow: hidden;
             background: #f0f0f0;
             color: #f4f7fb;
             font-family: "Yu Gothic Medium", "Yu Gothic", sans-serif;
@@ -24,15 +25,35 @@
 
         main {
             position: relative;
-            width: min(100dvw, 75dvh);
-            min-height: 100dvh;
-            aspect-ratio: 3 / 4;
+            width: min(100dvw, 900px);
+            height: 100dvh;
+            display: grid;
+            grid-template-rows: minmax(260px, 48dvh) minmax(0, 1fr);
             overflow: hidden;
             background: #111;
         }
 
-        video,
-        img {
+        .media-stage {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background: #111;
+        }
+
+        .media-view {
+            position: absolute;
+            inset-block: 0;
+            left: 50%;
+            height: 100%;
+            aspect-ratio: 3 / 4;
+            max-width: 100%;
+            overflow: hidden;
+            transform: translateX(-50%);
+        }
+
+        .media-view video,
+        .media-view img {
             position: absolute;
             inset: 0;
             width: 100%;
@@ -50,8 +71,8 @@
             display: none;
         }
 
-        main.file-source video,
-        main.file-source img {
+        main.file-source .media-view video,
+        main.file-source .media-view img {
             object-fit: contain;
             transform: none;
         }
@@ -67,22 +88,43 @@
         .panel,
         .blendshape-panel {
             position: absolute;
-            right: 8px;
             width: max-content;
             padding: 7px;
             border-radius: 8px;
         }
 
         .panel {
-            top: 8px;
-            max-width: calc(100% - 112px);
+            left: 8px;
+            top: 96px;
+            max-width: min(220px, max(110px, calc(50% - 142px)));
         }
 
         .blendshape-panel {
-            bottom: 8px;
-            max-width: calc(100% - 16px);
-            max-height: 52dvh;
+            right: 8px;
+            top: 8px;
+            max-width: min(260px, max(120px, calc(50% - 142px)));
+            max-height: 45dvh;
             overflow: auto;
+        }
+
+        .heatmap-panel {
+            width: 100%;
+            min-height: 0;
+            box-sizing: border-box;
+            padding: 7px;
+            border-radius: 0;
+            background: var(--panel-bg);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .heatmap-panel canvas {
+            display: block;
+            max-width: 100%;
+            max-height: 100%;
         }
 
         #status {
@@ -200,6 +242,12 @@
             color: #cbd5df;
         }
 
+        #heatmapStatus {
+            display: block;
+            margin-bottom: 6px;
+            font-size: 10px;
+        }
+
         .blendshape-actions {
             display: flex;
             gap: 6px;
@@ -223,28 +271,36 @@
 
 <body>
     <main>
-        <video id="video" autoplay muted playsinline></video>
-        <img id="image" alt="読み込んだ画像" hidden>
-        <div class="source-controls">
-            <button id="cameraButton" type="button">WebCam</button>
-            <label for="fileInput">ファイルから
-                <input id="fileInput" type="file"
-                    accept="image/png,image/jpeg,image/jpg,video/mp4,video/quicktime,image/*,video/*">
-            </label>
-        </div>
-        <aside class="panel">
-            <span id="status">モデル読み込み中...</span>
-            <div id="dominant">neutral</div>
-            <div id="bars"></div>
-        </aside>
-        <details class="blendshape-panel">
-            <summary>blendshape</summary>
-            <div class="blendshape-actions">
-                <button id="calibrateButton" type="button">キャリブ</button>
-                <button id="clearCalibrationButton" type="button">解除</button>
+        <section class="media-stage">
+            <div class="media-view">
+                <video id="video" autoplay muted playsinline></video>
+                <img id="image" alt="読み込んだ画像" hidden>
             </div>
-            <div id="blendshapes"></div>
-        </details>
+            <div class="source-controls">
+                <button id="cameraButton" type="button">WebCam</button>
+                <label for="fileInput">ファイルから
+                    <input id="fileInput" type="file"
+                        accept="image/png,image/jpeg,image/jpg,video/mp4,video/quicktime,image/*,video/*">
+                </label>
+            </div>
+            <aside class="panel">
+                <span id="status">モデル読み込み中...</span>
+                <div id="dominant">neutral</div>
+                <div id="bars"></div>
+            </aside>
+            <details class="blendshape-panel" open>
+                <summary>blendshape</summary>
+                <div class="blendshape-actions">
+                    <button id="calibrateButton" type="button">キャリブ</button>
+                    <button id="clearCalibrationButton" type="button">解除</button>
+                </div>
+                <div id="blendshapes"></div>
+            </details>
+        </section>
+        <section class="heatmap-panel">
+            <span id="heatmapStatus">キャリブ後の変動値を収集中...</span>
+            <canvas id="heatmapCanvas"></canvas>
+        </section>
     </main>
 
     <script type="module">
@@ -254,18 +310,26 @@
             const MODEL_URL = "../modules/faceAPI/models";
             const EMOTIONS = ["neutral", "happy", "sad", "angry", "fearful", "disgusted", "surprised"];
             const HISTORY_LIMIT = 180;
+            const BLENDSHAPE_HISTORY_LIMIT = 600;
+            const STD_EPSILON = 0.0005;
+            const HEATMAP_RATIO = Math.min((window.devicePixelRatio || 1) * 2, 4);
+            const [HEATMAP_WIDTH, HEATMAP_HEIGHT, HEATMAP_FONT] = [560, 420, "11px Yu Gothic, sans-serif"];
             const [WARMUP_FRAMES, CALIBRATION_FRAMES, DEADZONE] = [20, 60, 0.005];
             const $ = (id) => document.getElementById(id);
             const clamp = (value) => Math.min(1, Math.max(0, Number(value || 0)));
+            const clampRange = (value, min, max) => Math.min(max, Math.max(min, Number(value || 0)));
             const formatScore = (score) => (Math.trunc(score * 100) / 100).toFixed(2);
             const signedScore = (score) => `${score < 0 ? "" : "+"}${formatScore(score)}`;
             const stage = document.querySelector("main");
+            const heatmapPanel = document.querySelector(".heatmap-panel");
             const {
-                video, image, cameraButton, fileInput, status, dominant, bars, blendshapes, calibrateButton, clearCalibrationButton
+                video, image, cameraButton, fileInput, status, dominant, bars, blendshapes, calibrateButton,
+                clearCalibrationButton, heatmapCanvas, heatmapStatus
             } = Object.fromEntries([
                 "video", "image", "cameraButton", "fileInput", "status", "dominant", "bars", "blendshapes", "calibrateButton",
-                "clearCalibrationButton"
+                "clearCalibrationButton", "heatmapCanvas", "heatmapStatus"
             ].map((id) => [id, $(id)]));
+            const heatmapContext = heatmapCanvas.getContext("2d");
             const detectOptions = new faceapi.TinyFaceDetectorOptions();
             const base = new Map();
             const calibration = { warmup: 0, remaining: 0, samples: 0, stats: new Map() };
@@ -278,6 +342,7 @@
             let landmarkerMode = "VIDEO";
             let expressionHistory = [];
             let latestBlendshapes = {};
+            let blendshapeHistory = [];
             const rowKeys = new WeakMap();
             const rowControls = new WeakMap();
 
@@ -351,7 +416,169 @@
                 const latestExpressions = { ...expressions };
                 expressionHistory.push({ time: performance.now(), expressions: latestExpressions });
                 expressionHistory = expressionHistory.slice(-HISTORY_LIMIT);
-                window.emotionState = { latestExpressions, expressionHistory, latestBlendshapes };
+                window.emotionState = { latestExpressions, expressionHistory, latestBlendshapes, blendshapeHistory };
+            };
+
+            const mean = (values) => values.reduce((sum, value) => sum + value, 0) / values.length;
+            const std = (values, valueMean = mean(values)) => Math.sqrt(values.reduce((sum, value) => sum + (value - valueMean) ** 2, 0) / values.length);
+
+            const pearson = (a, b) => {
+                const meanA = mean(a);
+                const meanB = mean(b);
+                const stdA = std(a, meanA);
+                const stdB = std(b, meanB);
+                if (stdA < STD_EPSILON || stdB < STD_EPSILON) return NaN;
+                const cov = a.reduce((sum, value, index) => sum + (value - meanA) * (b[index] - meanB), 0) / a.length;
+                return clampRange(cov / (stdA * stdB), -1, 1);
+            };
+
+            const clusterOrder = (matrix) => {
+                let clusters = matrix.map((_, index) => [index]);
+                const distance = (a, b) => {
+                    let total = 0;
+                    let count = 0;
+                    a.forEach((i) => b.forEach((j) => {
+                        total += 1 - Math.abs(matrix[i][j]);
+                        count++;
+                    }));
+                    return count ? total / count : 1;
+                };
+
+                while (clusters.length > 1) {
+                    let best = { i: 0, j: 1, d: distance(clusters[0], clusters[1]) };
+                    for (let i = 0; i < clusters.length; i++) {
+                        for (let j = i + 1; j < clusters.length; j++) {
+                            const d = distance(clusters[i], clusters[j]);
+                            if (d < best.d) best = { i, j, d };
+                        }
+                    }
+                    const merged = [...clusters[best.i], ...clusters[best.j]];
+                    clusters = clusters.filter((_, index) => index !== best.i && index !== best.j);
+                    clusters.push(merged);
+                }
+                return clusters[0];
+            };
+
+            const colorForCorrelation = (value) => {
+                const v = clampRange(value, -1, 1);
+                const t = Math.abs(v);
+                const end = v >= 0 ? [190, 38, 51] : [42, 96, 180];
+                return `rgb(${end.map((channel) => Math.round(255 + (channel - 255) * t)).join(",")})`;
+            };
+
+            const resizeHeatmap = (width, height) => {
+                const pixelWidth = Math.round(width * HEATMAP_RATIO);
+                const pixelHeight = Math.round(height * HEATMAP_RATIO);
+                if (heatmapCanvas.width !== pixelWidth || heatmapCanvas.height !== pixelHeight) {
+                    heatmapCanvas.width = pixelWidth;
+                    heatmapCanvas.height = pixelHeight;
+                }
+                const style = getComputedStyle(heatmapPanel);
+                const maxWidth = heatmapPanel.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+                const maxHeight = heatmapPanel.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom)
+                    - heatmapStatus.offsetHeight - parseFloat(getComputedStyle(heatmapStatus).marginBottom);
+                const scale = Math.max(0.01, Math.min(1, maxWidth / width, maxHeight / height));
+                heatmapCanvas.style.width = `${Math.max(1, Math.floor(width * scale))}px`;
+                heatmapCanvas.style.height = `${Math.max(1, Math.floor(height * scale))}px`;
+                heatmapContext.setTransform(HEATMAP_RATIO, 0, 0, HEATMAP_RATIO, 0, 0);
+            };
+
+            const drawHeatmap = () => {
+                const ctx = heatmapContext;
+                resizeHeatmap(HEATMAP_WIDTH, HEATMAP_HEIGHT);
+                ctx.clearRect(0, 0, HEATMAP_WIDTH, HEATMAP_HEIGHT);
+                ctx.fillStyle = "#f4f7fb";
+                ctx.fillRect(0, 0, HEATMAP_WIDTH, HEATMAP_HEIGHT);
+
+                if (blendshapeHistory.length < 6) {
+                    heatmapStatus.textContent = `変動値を収集中... ${blendshapeHistory.length}/6`;
+                    return;
+                }
+
+                const names = Object.keys(blendshapeHistory.at(-1) || {});
+                const columns = names.map((name) => blendshapeHistory.map((frame) => Number(frame[name] || 0)));
+                const variable = columns.map((values, index) => ({ index, std: std(values) })).filter(({ std }) => std >= STD_EPSILON);
+                if (variable.length < 2) {
+                    heatmapStatus.textContent = "相関に十分な変動がありません";
+                    return;
+                }
+
+                const keptNames = variable.map(({ index }) => names[index]);
+                const keptColumns = variable.map(({ index }) => columns[index]);
+                const matrix = keptColumns.map((a) => keptColumns.map((b) => pearson(a, b)));
+                const order = clusterOrder(matrix);
+                const orderedNames = order.map((index) => keptNames[index]);
+                const orderedMatrix = order.map((i) => order.map((j) => matrix[i][j]));
+                const n = orderedNames.length;
+                const cell = Math.max(12, Math.min(24, Math.floor(520 / n)));
+                ctx.font = HEATMAP_FONT;
+                const longestLabel = Math.ceil(Math.max(...orderedNames.map((name) => ctx.measureText(name).width)));
+                const labelWidth = Math.min(220, Math.max(136, longestLabel + 14));
+                const size = cell * n;
+                const colorbarWidth = 98;
+                const bottomLabelHeight = longestLabel + 18;
+                const blockWidth = labelWidth + size + colorbarWidth;
+                const blockHeight = Math.max(size + bottomLabelHeight, Math.max(120, size));
+                const canvasWidth = Math.max(820, blockWidth + 32);
+                const canvasHeight = Math.max(540, blockHeight + 32);
+                resizeHeatmap(canvasWidth, canvasHeight);
+                ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+                ctx.fillStyle = "#f4f7fb";
+                ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+
+                heatmapStatus.textContent = `${blendshapeHistory.length} frames / ${n} variables / excluded ${names.length - n}`;
+                const left = (canvasWidth - blockWidth) / 2 + labelWidth;
+                const top = (canvasHeight - blockHeight) / 2;
+
+                orderedMatrix.forEach((row, y) => row.forEach((value, x) => {
+                    ctx.fillStyle = colorForCorrelation(value);
+                    ctx.fillRect(left + x * cell, top + y * cell, cell, cell);
+                }));
+                ctx.strokeStyle = "#d0d6de";
+                ctx.strokeRect(left, top, size, size);
+
+                ctx.fillStyle = "#1b2026";
+                ctx.font = HEATMAP_FONT;
+                ctx.textAlign = "right";
+                ctx.textBaseline = "middle";
+                orderedNames.forEach((name, index) => {
+                    const y = top + index * cell + cell / 2;
+                    ctx.fillText(name, left - 6, y);
+                });
+                orderedNames.forEach((name, index) => {
+                    ctx.save();
+                    ctx.translate(left + index * cell + cell / 2, top + size + 6);
+                    ctx.rotate(Math.PI / 2);
+                    ctx.textAlign = "left";
+                    ctx.textBaseline = "middle";
+                    ctx.fillText(name, 0, 0);
+                    ctx.restore();
+                });
+
+                const barX = left + size + 24;
+                const barY = top;
+                const barH = Math.max(120, size);
+                for (let y = 0; y < barH; y++) {
+                    const value = 1 - (y / (barH - 1)) * 2;
+                    ctx.fillStyle = colorForCorrelation(value);
+                    ctx.fillRect(barX, barY + y, 16, 1);
+                }
+                ctx.strokeStyle = "#4d5662";
+                ctx.strokeRect(barX, barY, 16, barH);
+                ctx.fillStyle = "#1b2026";
+                ctx.font = HEATMAP_FONT;
+                ctx.textAlign = "left";
+                [-1, 0, 1].forEach((value) => {
+                    const y = barY + (1 - value) / 2 * barH;
+                    ctx.fillText(value.toFixed(1), barX + 22, y);
+                });
+            };
+
+            const recordBlendshapeFrame = (rows) => {
+                if (!base.size || !rows.length) return;
+                blendshapeHistory.push(Object.fromEntries(rows.map(({ name, score }) => [name, score])));
+                blendshapeHistory = blendshapeHistory.slice(-BLENDSHAPE_HISTORY_LIMIT);
+                drawHeatmap();
             };
 
             const calibrationActive = () => calibration.warmup || calibration.remaining;
@@ -360,6 +587,8 @@
                 base.clear();
                 Object.assign(calibration, { warmup, remaining: frames, samples: 0 });
                 calibration.stats.clear();
+                blendshapeHistory = [];
+                drawHeatmap();
                 calibrateButton.disabled = false;
             };
 
@@ -427,6 +656,7 @@
                     : rows;
                 latestBlendshapes = Object.fromEntries(displayRows.map(({ name, score }) => [name, score]));
                 updateRows(blendshapes, displayRows);
+                recordBlendshapeFrame(displayRows);
                 return statusLocked;
             };
 
@@ -548,8 +778,10 @@
                 }
             });
             video.addEventListener("pause", () => activeMode === "video-file" && stopDetection());
+            window.addEventListener("resize", drawHeatmap);
             renderExpressions();
             updateRows(blendshapes, []);
+            drawHeatmap();
 
             try {
                 const vision = await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.34/wasm");
