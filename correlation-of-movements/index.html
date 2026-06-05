@@ -56,15 +56,33 @@
             transform: none;
         }
 
-        .panel {
+        .panel,
+        .blendshape-panel,
+        .source-controls button,
+        .source-controls label {
+            background: var(--panel-bg);
+            color: #f4f7fb;
+        }
+
+        .panel,
+        .blendshape-panel {
             position: absolute;
             right: 8px;
-            top: 8px;
             width: max-content;
-            max-width: calc(100% - 112px);
             padding: 7px;
             border-radius: 8px;
-            background: var(--panel-bg);
+        }
+
+        .panel {
+            top: 8px;
+            max-width: calc(100% - 112px);
+        }
+
+        .blendshape-panel {
+            bottom: 8px;
+            max-width: calc(100% - 16px);
+            max-height: 52dvh;
+            overflow: auto;
         }
 
         #status {
@@ -98,18 +116,58 @@
         }
 
         .bar {
+            position: relative;
             height: 5px;
             overflow: hidden;
             border-radius: 999px;
             background: #101419;
         }
 
+        .bar::before {
+            content: "";
+            position: absolute;
+            inset: 0 auto 0 50%;
+            width: 1px;
+            background: #6d7782;
+        }
+
+        .fill,
+        .bar.negative .fill,
+        .bar.calibrated.positive .fill {
+            position: absolute;
+        }
+
         .fill {
+            inset-block: 0;
             display: block;
-            height: 100%;
             width: 0;
             background: var(--accent);
             transition: width 120ms linear;
+        }
+
+        .bar.raw::before {
+            display: none;
+        }
+
+        .bar.raw .fill,
+        .bar.positive .fill {
+            left: 0;
+        }
+
+        .bar.negative .fill {
+            right: 50%;
+            background: #d85b67;
+        }
+
+        .bar.calibrated.positive .fill {
+            left: 50%;
+        }
+
+        button,
+        .source-controls label {
+            border: 0;
+            font: inherit;
+            cursor: pointer;
         }
 
         .source-controls {
@@ -124,13 +182,8 @@
         .source-controls button,
         .source-controls label {
             padding: 8px 10px;
-            border: 0;
             border-radius: 8px;
-            background: var(--panel-bg);
-            color: #f4f7fb;
-            font: inherit;
             font-size: 12px;
-            cursor: pointer;
         }
 
         .source-controls input {
@@ -141,23 +194,29 @@
             pointer-events: none;
         }
 
-        .blendshape-panel {
-            position: absolute;
-            right: 8px;
-            bottom: 8px;
-            width: max-content;
-            max-width: calc(100% - 16px);
-            max-height: 52dvh;
-            overflow: auto;
-            padding: 7px;
-            border-radius: 8px;
-            background: var(--panel-bg);
-        }
-
         .blendshape-panel summary {
             cursor: pointer;
             font-size: 11px;
             color: #cbd5df;
+        }
+
+        .blendshape-actions {
+            display: flex;
+            gap: 6px;
+            margin: 6px 0;
+        }
+
+        .blendshape-actions button {
+            padding: 4px 6px;
+            border-radius: 6px;
+            background: #101419;
+            color: #f4f7fb;
+            font-size: 10px;
+        }
+
+        .blendshape-actions button:disabled {
+            opacity: 0.55;
+            cursor: wait;
         }
     </style>
 </head>
@@ -180,6 +239,10 @@
         </aside>
         <details class="blendshape-panel">
             <summary>blendshape</summary>
+            <div class="blendshape-actions">
+                <button id="calibrateButton" type="button">キャリブ</button>
+                <button id="clearCalibrationButton" type="button">解除</button>
+            </div>
             <div id="blendshapes"></div>
         </details>
     </main>
@@ -191,16 +254,21 @@
             const MODEL_URL = "../modules/faceAPI/models";
             const EMOTIONS = ["neutral", "happy", "sad", "angry", "fearful", "disgusted", "surprised"];
             const HISTORY_LIMIT = 180;
+            const [WARMUP_FRAMES, CALIBRATION_FRAMES, DEADZONE] = [20, 60, 0.005];
             const $ = (id) => document.getElementById(id);
             const clamp = (value) => Math.min(1, Math.max(0, Number(value || 0)));
             const formatScore = (score) => (Math.trunc(score * 100) / 100).toFixed(2);
+            const signedScore = (score) => `${score < 0 ? "" : "+"}${formatScore(score)}`;
             const stage = document.querySelector("main");
             const {
-                video, image, cameraButton, fileInput, status, dominant, bars, blendshapes
+                video, image, cameraButton, fileInput, status, dominant, bars, blendshapes, calibrateButton, clearCalibrationButton
             } = Object.fromEntries([
-                "video", "image", "cameraButton", "fileInput", "status", "dominant", "bars", "blendshapes"
+                "video", "image", "cameraButton", "fileInput", "status", "dominant", "bars", "blendshapes", "calibrateButton",
+                "clearCalibrationButton"
             ].map((id) => [id, $(id)]));
             const detectOptions = new faceapi.TinyFaceDetectorOptions();
+            const base = new Map();
+            const calibration = { warmup: 0, remaining: 0, samples: 0, stats: new Map() };
             let running = false;
             let detectToken = 0;
             let activeMedia = video;
@@ -252,6 +320,7 @@
                         </div>
                     `).join("");
                     rowControls.set(container, [...container.querySelectorAll(".bar-row")].map((row) => ({
+                        bar: row.querySelector(".bar"),
                         fill: row.querySelector(".fill"),
                         value: row.querySelector(".value")
                     })));
@@ -261,10 +330,13 @@
                         container.style.setProperty("--label-width", `${labelWidth}px`);
                     }
                 }
-                rowControls.get(container).forEach(({ fill, value }, index) => {
+                rowControls.get(container).forEach(({ bar, fill, value }, index) => {
                     const score = rows[index]?.score || 0;
-                    fill.style.width = `${score * 100}%`;
-                    value.textContent = formatScore(score);
+                    const calibrated = rows[index]?.calibrated;
+                    const width = calibrated ? Math.min(Math.abs(score) * 100, 50) : Math.min(score * 100, 100);
+                    bar.className = `bar ${calibrated ? `calibrated ${score < 0 ? "negative" : "positive"}` : "raw"}`;
+                    fill.style.width = `${width}%`;
+                    value.textContent = calibrated ? signedScore(score) : formatScore(score);
                 });
             };
 
@@ -282,6 +354,62 @@
                 window.emotionState = { latestExpressions, expressionHistory, latestBlendshapes };
             };
 
+            const calibrationActive = () => calibration.warmup || calibration.remaining;
+
+            const resetCalibration = ({ warmup = 0, frames = 0 } = {}) => {
+                base.clear();
+                Object.assign(calibration, { warmup, remaining: frames, samples: 0 });
+                calibration.stats.clear();
+                calibrateButton.disabled = false;
+            };
+
+            const accumulateCategoryStats = (stats, rows) => {
+                rows.forEach(({ name, score }) => {
+                    const stat = stats.get(name) || { sum: 0, sq: 0 };
+                    stat.sum += score;
+                    stat.sq += score * score;
+                    stats.set(name, stat);
+                });
+            };
+
+            const writeCalibrationBase = () => {
+                if (!calibration.samples) return;
+                base.clear();
+                calibration.stats.forEach(({ sum, sq }, name) => {
+                    const mean = sum / calibration.samples;
+                    const variance = Math.max(sq / calibration.samples - mean * mean, 0);
+                    base.set(name, { mean, dead: Math.max(Math.sqrt(variance) * 3, DEADZONE) });
+                });
+            };
+
+            const updateCalibration = (rows) => {
+                if (!calibrationActive()) return false;
+                if (calibration.warmup) {
+                    status.textContent = `準備中 ${--calibration.warmup}`;
+                    return true;
+                }
+                if (!rows.length) {
+                    status.textContent = "顔を検出中です...";
+                    return true;
+                }
+                accumulateCategoryStats(calibration.stats, rows);
+                calibration.samples++;
+                status.textContent = `キャリブレーション中 ${--calibration.remaining}`;
+                if (calibration.remaining) return true;
+                writeCalibrationBase();
+                calibrateButton.disabled = false;
+                status.textContent = `キャリブ済み (${calibration.samples} frames)`;
+                return true;
+            };
+
+            const calibratedScore = (name, score) => {
+                const { mean = 0, dead = 0 } = base.get(name) || {};
+                const min = mean - dead;
+                const max = mean + dead;
+                if (score >= min - dead && score <= max + dead) return 0;
+                return score < mean ? score - (min - dead) : score - (max + dead);
+            };
+
             const detectBlendshapes = async () => {
                 const mode = activeMode === "image-file" ? "IMAGE" : "VIDEO";
                 if (landmarkerMode !== mode) {
@@ -293,17 +421,22 @@
                     : faceLandmarker.detectForVideo(activeMedia, performance.now());
                 const rows = (result.faceBlendshapes[0]?.categories || [])
                     .map(({ categoryName, score }) => ({ name: categoryName, score: clamp(score) }));
-                latestBlendshapes = Object.fromEntries(rows.map(({ name, score }) => [name, score]));
-                updateRows(blendshapes, rows);
+                const statusLocked = updateCalibration(rows);
+                const displayRows = base.size
+                    ? rows.map(({ name, score }) => ({ name, score: calibratedScore(name, score), calibrated: true }))
+                    : rows;
+                latestBlendshapes = Object.fromEntries(displayRows.map(({ name, score }) => [name, score]));
+                updateRows(blendshapes, displayRows);
+                return statusLocked;
             };
 
             const detectOnce = async () => {
                 const result = await faceapi.detectSingleFace(activeMedia, detectOptions).withFaceExpressions();
                 const expressions = result?.expressions || {};
-                await detectBlendshapes();
+                const statusLocked = await detectBlendshapes();
                 renderExpressions(expressions);
                 pushHistory(expressions);
-                status.textContent = result ? "検出中" : "顔が見つかりません";
+                if (!statusLocked) status.textContent = result ? "検出中" : "顔が見つかりません";
             };
 
             const detect = async (token = detectToken) => {
@@ -384,6 +517,25 @@
             };
 
             cameraButton.addEventListener("click", startCamera);
+            calibrateButton.addEventListener("click", () => {
+                resetCalibration({ warmup: activeMode === "image-file" ? 0 : WARMUP_FRAMES, frames: activeMode === "image-file" ? 1 : CALIBRATION_FRAMES });
+                calibrateButton.disabled = true;
+                if (activeMode === "image-file") {
+                    detectOnce().catch((error) => {
+                        calibrateButton.disabled = false;
+                        status.textContent = `キャリブレーション失敗: ${error.message}`;
+                    });
+                }
+            });
+            clearCalibrationButton.addEventListener("click", () => {
+                resetCalibration();
+                status.textContent = "キャリブ解除";
+                if (activeMode === "image-file") {
+                    detectOnce().catch((error) => {
+                        status.textContent = `解除後の再検出失敗: ${error.message}`;
+                    });
+                }
+            });
             fileInput.addEventListener("change", (event) => {
                 importFile(event.target.files[0]).catch((error) => {
                     status.textContent = `ファイルを読み込めません: ${error.message}`;
