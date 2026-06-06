@@ -331,7 +331,6 @@
         window.addEventListener("load", async () => {
             const MODEL_URL = "../modules/faceAPI/models";
             const EMOTIONS = ["neutral", "happy", "sad", "angry", "fearful", "disgusted", "surprised"];
-            const HISTORY_LIMIT = 180;
             const BLENDSHAPE_HISTORY_LIMIT = 600;
             const STD_EPSILON = 0.0005;
             const TIE_EPSILON = 1e-12;
@@ -402,7 +401,7 @@
             const clampRange = (value, min, max) => Math.min(max, Math.max(min, Number(value || 0)));
             const formatScore = (score) => (Math.trunc(score * 100) / 100).toFixed(2);
             const signedScore = (score) => `${score < 0 ? "" : "+"}${formatScore(score)}`;
-            const blendshapeLabel = (name) => BLENDSHAPE_LABELS_JA[name] || name;
+            const displayBlendshapeName = (name) => heatmapLabelToggle.checked ? BLENDSHAPE_LABELS_JA[name] || name : name;
             const stage = document.querySelector("main");
             const heatmapPanel = document.querySelector(".heatmap-panel");
             const {
@@ -424,8 +423,6 @@
             let faceLandmarker;
             let landmarkerMode = "VIDEO";
             let landmarkerTimestamp = 0;
-            let expressionHistory = [];
-            let latestBlendshapes = {};
             let blendshapeHistory = [];
             let videoRuns = [];
             let videoRunFrames = [];
@@ -499,17 +496,6 @@
                 const top = scores.reduce((best, item) => item.score > best.score ? item : best, scores[0]);
                 dominant.textContent = top.name;
                 updateRows(bars, scores);
-            };
-
-            const syncState = (latestExpressions = window.emotionState?.latestExpressions || {}) => {
-                window.emotionState = { latestExpressions, expressionHistory, latestBlendshapes, blendshapeHistory };
-            };
-
-            const pushHistory = (expressions) => {
-                const latestExpressions = { ...expressions };
-                expressionHistory.push({ time: performance.now(), expressions: latestExpressions });
-                expressionHistory = expressionHistory.slice(-HISTORY_LIMIT);
-                syncState(latestExpressions);
             };
 
             const mean = (values) => values.reduce((sum, value) => sum + value, 0) / values.length;
@@ -604,7 +590,7 @@
                 const matrix = keptColumns.map((a) => keptColumns.map((b) => pearson(a, b)));
                 const order = clusterOrder(matrix, keptNames);
                 const orderedNames = order.map((index) => keptNames[index]);
-                const orderedLabels = heatmapLabelToggle.checked ? orderedNames.map(blendshapeLabel) : orderedNames;
+                const orderedLabels = orderedNames.map(displayBlendshapeName);
                 const orderedMatrix = order.map((i) => order.map((j) => matrix[i][j]));
                 const n = orderedNames.length;
                 const cell = Math.max(12, Math.min(24, Math.floor(520 / n)));
@@ -743,7 +729,6 @@
                 }
                 const frameCount = Math.min(BLENDSHAPE_HISTORY_LIMIT, Math.min(...videoRuns.map((frames) => frames.length)));
                 blendshapeHistory = Array.from({ length: frameCount }, (_, index) => averageFrames(videoRuns, index));
-                syncState();
                 status.textContent = `動画解析済み (${blendshapeHistory.length} frames x ${VIDEO_ANALYSIS_RUNS} runs)`;
             };
 
@@ -839,7 +824,6 @@
                 const displayRows = base.size
                     ? rows.map(({ name, score }) => ({ name, score: calibratedScore(name, score), calibrated: true }))
                     : rows;
-                latestBlendshapes = Object.fromEntries(displayRows.map(({ name, score }) => [name, score]));
                 updateRows(blendshapes, displayRows);
                 return displayRows;
             };
@@ -882,7 +866,6 @@
                 const expressions = result?.expressions || {};
                 const statusLocked = await detectBlendshapes();
                 renderExpressions(expressions);
-                pushHistory(expressions);
                 if (!statusLocked) status.textContent = result ? "検出中" : "顔が見つかりません";
             };
 
