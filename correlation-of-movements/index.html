@@ -242,12 +242,6 @@
             color: #cbd5df;
         }
 
-        #heatmapStatus {
-            display: block;
-            margin-bottom: 6px;
-            font-size: 10px;
-        }
-
         .blendshape-actions {
             display: flex;
             gap: 6px;
@@ -265,6 +259,28 @@
         .blendshape-actions button:disabled {
             opacity: 0.55;
             cursor: wait;
+        }
+
+        .heatmap-toolbar {
+            width: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            margin-bottom: 6px;
+            font-size: 10px;
+        }
+
+        .heatmap-toolbar label {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            color: #cbd5df;
+            white-space: nowrap;
+        }
+
+        .heatmap-toolbar input {
+            accent-color: var(--accent);
         }
     </style>
 </head>
@@ -298,7 +314,13 @@
             </details>
         </section>
         <section class="heatmap-panel">
-            <span id="heatmapStatus">キャリブ後の変動値を収集中...</span>
+            <div id="heatmapToolbar" class="heatmap-toolbar">
+                <span id="heatmapStatus">キャリブ後の変動値を収集中...</span>
+                <label for="heatmapLabelToggle">
+                    <input id="heatmapLabelToggle" type="checkbox">
+                    翻訳
+                </label>
+            </div>
             <canvas id="heatmapCanvas"></canvas>
         </section>
     </main>
@@ -320,19 +342,75 @@
             const VIDEO_FILE_CALIBRATION_FRAMES = 3;
             const VIDEO_CALIBRATION_WARMUP_READS = 6;
             const [WARMUP_FRAMES, CALIBRATION_FRAMES, DEADZONE] = [20, 60, 0.005];
+            const BLENDSHAPE_LABELS_JA = {
+                _neutral: "ニュートラル",
+                browDownLeft: "左眉下げ",
+                browDownRight: "右眉下げ",
+                browInnerUp: "眉内側上げ",
+                browOuterUpLeft: "左眉外側上げ",
+                browOuterUpRight: "右眉外側上げ",
+                cheekPuff: "頬ふくらみ",
+                cheekSquintLeft: "左頬上げ",
+                cheekSquintRight: "右頬上げ",
+                eyeBlinkLeft: "左まばたき",
+                eyeBlinkRight: "右まばたき",
+                eyeLookDownLeft: "左目下向き",
+                eyeLookDownRight: "右目下向き",
+                eyeLookInLeft: "左目内向き",
+                eyeLookInRight: "右目内向き",
+                eyeLookOutLeft: "左目外向き",
+                eyeLookOutRight: "右目外向き",
+                eyeLookUpLeft: "左目上向き",
+                eyeLookUpRight: "右目上向き",
+                eyeSquintLeft: "左目細め",
+                eyeSquintRight: "右目細め",
+                eyeWideLeft: "左目見開き",
+                eyeWideRight: "右目見開き",
+                jawForward: "あご前出し",
+                jawLeft: "あご左",
+                jawOpen: "口開き",
+                jawRight: "あご右",
+                mouthClose: "口閉じ",
+                mouthDimpleLeft: "左えくぼ",
+                mouthDimpleRight: "右えくぼ",
+                mouthFrownLeft: "左口角下げ",
+                mouthFrownRight: "右口角下げ",
+                mouthFunnel: "口すぼめ縦",
+                mouthLeft: "口左寄せ",
+                mouthLowerDownLeft: "左下唇下げ",
+                mouthLowerDownRight: "右下唇下げ",
+                mouthPressLeft: "左唇押さえ",
+                mouthPressRight: "右唇押さえ",
+                mouthPucker: "口すぼめ",
+                mouthRight: "口右寄せ",
+                mouthRollLower: "下唇巻き込み",
+                mouthRollUpper: "上唇巻き込み",
+                mouthShrugLower: "下唇すくめ",
+                mouthShrugUpper: "上唇すくめ",
+                mouthSmileLeft: "左口角上げ",
+                mouthSmileRight: "右口角上げ",
+                mouthStretchLeft: "左口横伸ばし",
+                mouthStretchRight: "右口横伸ばし",
+                mouthUpperUpLeft: "左上唇上げ",
+                mouthUpperUpRight: "右上唇上げ",
+                noseSneerLeft: "左鼻しわ",
+                noseSneerRight: "右鼻しわ",
+                tongueOut: "舌出し"
+            };
             const $ = (id) => document.getElementById(id);
             const clamp = (value) => Math.min(1, Math.max(0, Number(value || 0)));
             const clampRange = (value, min, max) => Math.min(max, Math.max(min, Number(value || 0)));
             const formatScore = (score) => (Math.trunc(score * 100) / 100).toFixed(2);
             const signedScore = (score) => `${score < 0 ? "" : "+"}${formatScore(score)}`;
+            const blendshapeLabel = (name) => BLENDSHAPE_LABELS_JA[name] || name;
             const stage = document.querySelector("main");
             const heatmapPanel = document.querySelector(".heatmap-panel");
             const {
                 video, image, cameraButton, fileInput, status, dominant, bars, blendshapes, calibrateButton,
-                clearCalibrationButton, heatmapCanvas, heatmapStatus
+                clearCalibrationButton, heatmapCanvas, heatmapStatus, heatmapToolbar, heatmapLabelToggle
             } = Object.fromEntries([
                 "video", "image", "cameraButton", "fileInput", "status", "dominant", "bars", "blendshapes", "calibrateButton",
-                "clearCalibrationButton", "heatmapCanvas", "heatmapStatus"
+                "clearCalibrationButton", "heatmapCanvas", "heatmapStatus", "heatmapToolbar", "heatmapLabelToggle"
             ].map((id) => [id, $(id)]));
             const heatmapContext = heatmapCanvas.getContext("2d");
             const detectOptions = new faceapi.TinyFaceDetectorOptions();
@@ -494,7 +572,7 @@
                 const style = getComputedStyle(heatmapPanel);
                 const maxWidth = heatmapPanel.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
                 const maxHeight = heatmapPanel.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom)
-                    - heatmapStatus.offsetHeight - parseFloat(getComputedStyle(heatmapStatus).marginBottom);
+                    - heatmapToolbar.offsetHeight - parseFloat(getComputedStyle(heatmapToolbar).marginBottom);
                 const scale = Math.max(0.01, Math.min(1, maxWidth / width, maxHeight / height));
                 heatmapCanvas.style.width = `${Math.max(1, Math.floor(width * scale))}px`;
                 heatmapCanvas.style.height = `${Math.max(1, Math.floor(height * scale))}px`;
@@ -526,11 +604,12 @@
                 const matrix = keptColumns.map((a) => keptColumns.map((b) => pearson(a, b)));
                 const order = clusterOrder(matrix, keptNames);
                 const orderedNames = order.map((index) => keptNames[index]);
+                const orderedLabels = heatmapLabelToggle.checked ? orderedNames.map(blendshapeLabel) : orderedNames;
                 const orderedMatrix = order.map((i) => order.map((j) => matrix[i][j]));
                 const n = orderedNames.length;
                 const cell = Math.max(12, Math.min(24, Math.floor(520 / n)));
                 ctx.font = HEATMAP_FONT;
-                const longestLabel = Math.ceil(Math.max(...orderedNames.map((name) => ctx.measureText(name).width)));
+                const longestLabel = Math.ceil(Math.max(...orderedLabels.map((label) => ctx.measureText(label).width)));
                 const labelWidth = Math.min(220, Math.max(136, longestLabel + 14));
                 const size = cell * n;
                 const colorbarWidth = 98;
@@ -574,17 +653,17 @@
                 ctx.font = HEATMAP_FONT;
                 ctx.textAlign = "right";
                 ctx.textBaseline = "middle";
-                orderedNames.forEach((name, index) => {
+                orderedLabels.forEach((label, index) => {
                     const y = top + index * cell + cell / 2;
-                    ctx.fillText(name, left - 6, y);
+                    ctx.fillText(label, left - 6, y);
                 });
-                orderedNames.forEach((name, index) => {
+                orderedLabels.forEach((label, index) => {
                     ctx.save();
                     ctx.translate(left + index * cell + cell / 2, top + size + 6);
                     ctx.rotate(Math.PI / 2);
                     ctx.textAlign = "left";
                     ctx.textBaseline = "middle";
-                    ctx.fillText(name, 0, 0);
+                    ctx.fillText(label, 0, 0);
                     ctx.restore();
                 });
 
@@ -961,6 +1040,7 @@
                     status.textContent = `次の動画記録を開始できません: ${error.message}`;
                 });
             });
+            heatmapLabelToggle.addEventListener("change", drawHeatmap);
             window.addEventListener("resize", drawHeatmap);
             renderExpressions();
             updateRows(blendshapes, []);
