@@ -282,6 +282,21 @@
         .heatmap-toolbar input {
             accent-color: var(--accent);
         }
+
+        .heatmap-toolbar button {
+            padding: 3px 6px;
+            border: 0;
+            border-radius: 6px;
+            background: #101419;
+            color: #f4f7fb;
+            font: inherit;
+            cursor: pointer;
+        }
+
+        .heatmap-toolbar button:disabled {
+            opacity: 0.55;
+            cursor: wait;
+        }
     </style>
 </head>
 
@@ -320,6 +335,7 @@
                     <input id="heatmapLabelToggle" type="checkbox">
                     翻訳
                 </label>
+                <button id="exportHeatmapButton" type="button">Sheets出力</button>
             </div>
             <canvas id="heatmapCanvas"></canvas>
         </section>
@@ -332,6 +348,8 @@
             const MODEL_URL = "../modules/faceAPI/models";
             const EMOTIONS = ["neutral", "happy", "sad", "angry", "fearful", "disgusted", "surprised"];
             const BLENDSHAPE_HISTORY_LIMIT = 600;
+            const HEATMAP_EXPORT_ENDPOINT_KEY = "correlationHeatmapExportEndpoint";
+            const HEATMAP_EXPORT_SPREADSHEET_URL = "https://docs.google.com/spreadsheets/d/1Fv-YGBgFj2W0OcB8acxQ797VIbtDIqoprwCjCHi6azI/edit?gid=0#gid=0";
             const STD_EPSILON = 0.0005;
             const TIE_EPSILON = 1e-12;
             const HEATMAP_RATIO = Math.min((window.devicePixelRatio || 1) * 3, 6);
@@ -406,10 +424,10 @@
             const heatmapPanel = document.querySelector(".heatmap-panel");
             const {
                 video, image, cameraButton, fileInput, status, dominant, bars, blendshapes, calibrateButton,
-                clearCalibrationButton, heatmapCanvas, heatmapStatus, heatmapToolbar, heatmapLabelToggle
+                clearCalibrationButton, heatmapCanvas, heatmapStatus, heatmapToolbar, heatmapLabelToggle, exportHeatmapButton
             } = Object.fromEntries([
                 "video", "image", "cameraButton", "fileInput", "status", "dominant", "bars", "blendshapes", "calibrateButton",
-                "clearCalibrationButton", "heatmapCanvas", "heatmapStatus", "heatmapToolbar", "heatmapLabelToggle"
+                "clearCalibrationButton", "heatmapCanvas", "heatmapStatus", "heatmapToolbar", "heatmapLabelToggle", "exportHeatmapButton"
             ].map((id) => [id, $(id)]));
             const heatmapContext = heatmapCanvas.getContext("2d");
             const detectOptions = new faceapi.TinyFaceDetectorOptions();
@@ -565,24 +583,19 @@
                 heatmapContext.setTransform(HEATMAP_RATIO, 0, 0, HEATMAP_RATIO, 0, 0);
             };
 
-            const drawHeatmap = () => {
-                const ctx = heatmapContext;
-                resizeHeatmap(HEATMAP_WIDTH, HEATMAP_HEIGHT);
-                ctx.clearRect(0, 0, HEATMAP_WIDTH, HEATMAP_HEIGHT);
-                ctx.fillStyle = "#f4f7fb";
-                ctx.fillRect(0, 0, HEATMAP_WIDTH, HEATMAP_HEIGHT);
-
+            const buildHeatmapData = () => {
                 if (blendshapeHistory.length < HEATMAP_MIN_FRAMES) {
-                    heatmapStatus.textContent = `変動値を収集中... ${blendshapeHistory.length}/${HEATMAP_MIN_FRAMES}`;
-                    return;
+                    return {
+                        ok: false,
+                        message: `変動値を収集中... ${blendshapeHistory.length}/${HEATMAP_MIN_FRAMES}`
+                    };
                 }
 
                 const names = Object.keys(blendshapeHistory.at(-1) || {});
                 const columns = names.map((name) => blendshapeHistory.map((frame) => Number(frame[name] || 0)));
                 const variable = columns.map((values, index) => ({ index, std: std(values) })).filter(({ std }) => std >= STD_EPSILON);
                 if (variable.length < 2) {
-                    heatmapStatus.textContent = "相関に十分な変動がありません";
-                    return;
+                    return { ok: false, message: "相関に十分な変動がありません" };
                 }
 
                 const keptNames = variable.map(({ index }) => names[index]);
@@ -590,12 +603,34 @@
                 const matrix = keptColumns.map((a) => keptColumns.map((b) => pearson(a, b)));
                 const order = clusterOrder(matrix, keptNames);
                 const orderedNames = order.map((index) => keptNames[index]);
-                const orderedLabels = orderedNames.map(displayBlendshapeName);
-                const orderedMatrix = order.map((i) => order.map((j) => matrix[i][j]));
-                const n = orderedNames.length;
+                return {
+                    ok: true,
+                    frames: blendshapeHistory.length,
+                    excluded: names.length - orderedNames.length,
+                    names: orderedNames,
+                    labels: orderedNames.map(displayBlendshapeName),
+                    matrix: order.map((i) => order.map((j) => matrix[i][j]))
+                };
+            };
+
+            const drawHeatmap = () => {
+                const ctx = heatmapContext;
+                resizeHeatmap(HEATMAP_WIDTH, HEATMAP_HEIGHT);
+                ctx.clearRect(0, 0, HEATMAP_WIDTH, HEATMAP_HEIGHT);
+                ctx.fillStyle = "#f4f7fb";
+                ctx.fillRect(0, 0, HEATMAP_WIDTH, HEATMAP_HEIGHT);
+
+                const heatmap = buildHeatmapData();
+                if (!heatmap.ok) {
+                    heatmapStatus.textContent = heatmap.message;
+                    return;
+                }
+
+                const { labels, matrix } = heatmap;
+                const n = labels.length;
                 const cell = Math.max(12, Math.min(24, Math.floor(520 / n)));
                 ctx.font = HEATMAP_FONT;
-                const longestLabel = Math.ceil(Math.max(...orderedLabels.map((label) => ctx.measureText(label).width)));
+                const longestLabel = Math.ceil(Math.max(...labels.map((label) => ctx.measureText(label).width)));
                 const labelWidth = Math.min(220, Math.max(136, longestLabel + 14));
                 const size = cell * n;
                 const colorbarWidth = 98;
@@ -609,11 +644,11 @@
                 ctx.fillStyle = "#f4f7fb";
                 ctx.fillRect(0, 0, canvasWidth, canvasHeight);
 
-                heatmapStatus.textContent = `${blendshapeHistory.length} frames / ${n} variables / excluded ${names.length - n}`;
+                heatmapStatus.textContent = `${heatmap.frames} frames / ${n} variables / excluded ${heatmap.excluded}`;
                 const left = (canvasWidth - blockWidth) / 2 + labelWidth;
                 const top = (canvasHeight - blockHeight) / 2;
 
-                orderedMatrix.forEach((row, y) => row.forEach((value, x) => {
+                matrix.forEach((row, y) => row.forEach((value, x) => {
                     ctx.fillStyle = x === y ? "#f4f7fb" : colorForCorrelation(value);
                     ctx.fillRect(left + x * cell, top + y * cell, cell, cell);
                     if (x === y) {
@@ -627,7 +662,7 @@
                 ctx.font = `${Math.max(5, Math.min(8, cell * 0.34))}px Yu Gothic, sans-serif`;
                 ctx.textAlign = "center";
                 ctx.textBaseline = "middle";
-                orderedMatrix.forEach((row, y) => row.forEach((value, x) => {
+                matrix.forEach((row, y) => row.forEach((value, x) => {
                     if (x === y) return;
                     ctx.fillStyle = Math.abs(value) > 0.65 ? "#f4f7fb" : "#1b2026";
                     ctx.fillText(value.toFixed(2), left + x * cell + cell / 2, top + y * cell + cell / 2);
@@ -639,11 +674,11 @@
                 ctx.font = HEATMAP_FONT;
                 ctx.textAlign = "right";
                 ctx.textBaseline = "middle";
-                orderedLabels.forEach((label, index) => {
+                labels.forEach((label, index) => {
                     const y = top + index * cell + cell / 2;
                     ctx.fillText(label, left - 6, y);
                 });
-                orderedLabels.forEach((label, index) => {
+                labels.forEach((label, index) => {
                     ctx.save();
                     ctx.translate(left + index * cell + cell / 2, top + size + 6);
                     ctx.rotate(Math.PI / 2);
@@ -670,6 +705,57 @@
                     const y = barY + (1 - value) / 2 * barH;
                     ctx.fillText(value.toFixed(1), barX + 22, y);
                 });
+            };
+
+            const heatmapExportEndpoint = () => localStorage.getItem(HEATMAP_EXPORT_ENDPOINT_KEY) || "";
+
+            const promptHeatmapExportEndpoint = () => {
+                const endpoint = prompt("Apps Script WebアプリURLを入力してください", heatmapExportEndpoint());
+                if (!endpoint) return "";
+                localStorage.setItem(HEATMAP_EXPORT_ENDPOINT_KEY, endpoint.trim());
+                return endpoint.trim();
+            };
+
+            const exportHeatmap = async () => {
+                const heatmap = buildHeatmapData();
+                if (!heatmap.ok) {
+                    heatmapStatus.textContent = heatmap.message;
+                    return;
+                }
+
+                const endpoint = heatmapExportEndpoint() || promptHeatmapExportEndpoint();
+                if (!endpoint) {
+                    heatmapStatus.textContent = "Sheets出力にはApps Script WebアプリURLが必要です";
+                    return;
+                }
+
+                exportHeatmapButton.disabled = true;
+                heatmapStatus.textContent = "Sheetsへ送信中...";
+                const payload = {
+                    spreadsheetUrl: HEATMAP_EXPORT_SPREADSHEET_URL,
+                    exportedAt: new Date().toISOString(),
+                    translated: heatmapLabelToggle.checked,
+                    frames: heatmap.frames,
+                    excluded: heatmap.excluded,
+                    names: heatmap.names,
+                    labels: heatmap.labels,
+                    matrix: heatmap.matrix
+                };
+
+                try {
+                    await fetch(endpoint, {
+                        method: "POST",
+                        mode: "no-cors",
+                        headers: { "Content-Type": "text/plain;charset=utf-8" },
+                        body: JSON.stringify(payload)
+                    });
+                    heatmapStatus.textContent = "Sheetsへ送信しました";
+                } catch (error) {
+                    localStorage.removeItem(HEATMAP_EXPORT_ENDPOINT_KEY);
+                    heatmapStatus.textContent = `Sheets出力失敗: ${error.message}`;
+                } finally {
+                    exportHeatmapButton.disabled = false;
+                }
             };
 
             const recordBlendshapeFrame = (rows) => {
@@ -1024,6 +1110,7 @@
                 });
             });
             heatmapLabelToggle.addEventListener("change", drawHeatmap);
+            exportHeatmapButton.addEventListener("click", exportHeatmap);
             window.addEventListener("resize", drawHeatmap);
             renderExpressions();
             updateRows(blendshapes, []);
