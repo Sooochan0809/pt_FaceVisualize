@@ -9,7 +9,7 @@ function doPost(e) {
   try {
     const payload = parsePayload(e);
     const spreadsheet = SpreadsheetApp.openById(SPREADSHEET_ID);
-    const sheet = createHeatmapSheet(spreadsheet, payload);
+    const sheet = createHeatmapSheet(spreadsheet);
 
     writeHeatmap(sheet, payload);
     return jsonResponse({ ok: true, sheetName: sheet.getName(), writtenAt: new Date().toISOString() });
@@ -32,7 +32,7 @@ function parsePayload(e) {
   return payload;
 }
 
-function createHeatmapSheet(spreadsheet, payload) {
+function createHeatmapSheet(spreadsheet) {
   const nameRoot = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyyMMdd_HHmmss");
   let sheetName = nameRoot;
   let suffix = 2;
@@ -51,7 +51,6 @@ function writeHeatmap(sheet, payload) {
   const size = labels.length;
   const exportedAt = payload.exportedAt ? new Date(payload.exportedAt) : new Date();
 
-  sheet.clear();
   ensureSheetSize(sheet, size + 6, size + 4);
   sheet.getRange(1, 1, 4, 2).setValues([
     ["Correlation heatmap", ""],
