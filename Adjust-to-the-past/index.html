@@ -1,0 +1,1122 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>adjust to the past</title>
+  <style>
+    :root {
+      --panel-bg: #1b2026dc;
+      --text: #111;
+      --feedback-bg: #f0f0f0;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100dvh;
+      overflow: hidden;
+      background: var(--feedback-bg);
+      color: var(--text);
+      transition: background 0.18s linear;
+      font-family: "Yu Gothic Medium", "Yu Gothic", system-ui, sans-serif;
+    }
+
+    main {
+      position: relative;
+      width: 100dvw;
+      height: 100dvh;
+      overflow: hidden;
+      background: var(--feedback-bg);
+      transition: background 0.18s linear;
+    }
+
+    video {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      opacity: 0;
+      transform: scaleX(-1);
+      pointer-events: none;
+      transition: opacity 0.35s ease;
+      z-index: 0;
+    }
+
+    main.show-webcam video {
+      opacity: 0.16;
+    }
+
+    canvas {
+      position: absolute;
+      inset: 0;
+      z-index: 2;
+      width: 100%;
+      height: 100%;
+      display: block;
+      pointer-events: none;
+    }
+
+    #hud {
+      position: absolute;
+      left: 16px;
+      top: 16px;
+      z-index: 10;
+      display: grid;
+      gap: 10px;
+      width: min(390px, calc(100dvw - 32px));
+      color: #f4f7fb;
+    }
+
+    .panel {
+      padding: 12px 14px;
+      border-radius: 10px;
+      background: var(--panel-bg);
+    }
+
+    .row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+    }
+
+    button {
+      border: 1px solid #aaa;
+      border-radius: 6px;
+      padding: 7px 10px;
+      background: #fff;
+      color: #111;
+      font: inherit;
+      font-size: 13px;
+      cursor: pointer;
+    }
+
+    label.control {
+      display: grid;
+      grid-template-columns: 6.5em 1fr 4.5em;
+      gap: 8px;
+      align-items: center;
+      margin-top: 8px;
+      font-size: 13px;
+    }
+
+    input[type="range"] {
+      width: 100%;
+      accent-color: #fff;
+    }
+
+    output {
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+    }
+
+    #status {
+      min-height: 1.6em;
+      margin-top: 8px;
+      color: #f4f7fb;
+      font-size: 13px;
+      line-height: 1.5;
+      white-space: pre-line;
+    }
+
+    #params {
+      max-height: min(42dvh, 360px);
+      overflow: auto;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+      gap: 5px 10px;
+      margin-top: 8px;
+      padding-top: 8px;
+      border-top: 1px solid #ffffff38;
+      font-size: 12px;
+    }
+
+    #params label {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      min-width: 0;
+    }
+
+    #params span {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    #feedbackText {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      z-index: 1;
+      pointer-events: none;
+      transform: translate(-50%, -50%);
+      color: #111;
+      font-size: clamp(52px, 13vw, 180px);
+      font-weight: 900;
+      letter-spacing: 0.04em;
+      line-height: 1;
+      opacity: 0.32;
+      text-align: center;
+      white-space: nowrap;
+      text-shadow: 0 10px 36px #ffffff70;
+      transition: color 0.18s linear, opacity 0.18s linear, transform 0.18s linear;
+    }
+
+    .hidden {
+      display: none !important;
+    }
+  </style>
+</head>
+
+<body>
+  <main>
+    <video id="video" autoplay playsinline muted></video>
+    <canvas id="vizCanvas"></canvas>
+    <div id="feedbackText">Standby</div>
+
+    <section id="hud">
+      <div class="panel">
+        <div class="row">
+          <button id="resetButton" type="button">リセット</button>
+          <button id="paramToggleButton" type="button">パラメータ</button>
+        </div>
+
+        <label class="control">
+          <span>遅延時間</span>
+          <input id="delayRange" type="range" min="1000" max="15000" step="500" value="10000" />
+          <output id="delayOutput">10.0s</output>
+        </label>
+
+        <label class="control">
+          <span>ズレ感度</span>
+          <input id="gainRange" type="range" min="2" max="20" step="1" value="8" />
+          <output id="gainOutput">8</output>
+        </label>
+
+        <label class="control">
+          <span>揺れ幅</span>
+          <input id="jitterRange" type="range" min="0" max="60" step="1" value="26" />
+          <output id="jitterOutput">26px</output>
+        </label>
+
+        <div id="status">WebCamを準備中...</div>
+        <div id="params" class="hidden"></div>
+      </div>
+    </section>
+  </main>
+
+  <script type="module">
+    import { FaceLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.34";
+
+    const $ = id => document.getElementById(id);
+    const stage = document.querySelector("main");
+    const video = $("video");
+    const canvas = $("vizCanvas");
+    const ctx = canvas.getContext("2d");
+    const resetButton = $("resetButton");
+    const paramToggleButton = $("paramToggleButton");
+    const delayRange = $("delayRange");
+    const delayOutput = $("delayOutput");
+    const gainRange = $("gainRange");
+    const gainOutput = $("gainOutput");
+    const jitterRange = $("jitterRange");
+    const jitterOutput = $("jitterOutput");
+    const status = $("status");
+    const params = $("params");
+    const feedbackText = $("feedbackText");
+
+    const WARMUP_FRAMES = 20;
+    const CALIBRATION_FRAMES = 60;
+    const DEADZONE = 0.005;
+    const SPECTRUM_ZERO_THRESHOLD = 0.012;
+    const HISTORY_MARGIN_MS = 2500;
+    const POSE_THRESHOLD = 0.26;
+    const ROLL_THRESHOLD = 0.18;
+    const LANDMARK_SMOOTHING = 0.78;
+    const RECORDING_TEXT = "Let's Moving!";
+
+    const PARAM_LABELS = new Map([
+      ["browInnerUp", "眉上げ"],
+      ["browDownLeft", "左眉下げ"],
+      ["browDownRight", "右眉下げ"],
+      ["browOuterUpLeft", "左眉外上げ"],
+      ["browOuterUpRight", "右眉外上げ"],
+      ["eyeBlinkLeft", "左まばたき"],
+      ["eyeBlinkRight", "右まばたき"],
+      ["eyeSquintLeft", "左目細め"],
+      ["eyeSquintRight", "右目細め"],
+      ["eyeWideLeft", "左目開き"],
+      ["eyeWideRight", "右目開き"],
+      ["cheekPuff", "頬ふくらみ"],
+      ["cheekSquintLeft", "左頬"],
+      ["cheekSquintRight", "右頬"],
+      ["jawOpen", "口を開く"],
+      ["jawLeft", "顎左"],
+      ["jawRight", "顎右"],
+      ["mouthPucker", "口すぼめ"],
+      ["mouthFunnel", "口丸め"],
+      ["mouthSmileLeft", "左口角上げ"],
+      ["mouthSmileRight", "右口角上げ"],
+      ["mouthFrownLeft", "左口角下げ"],
+      ["mouthFrownRight", "右口角下げ"],
+      ["mouthLeft", "口を左へ"],
+      ["mouthRight", "口を右へ"],
+      ["mouthShrugUpper", "上唇上げ"],
+      ["mouthShrugLower", "下唇下げ"],
+      ["mouthUpperUpLeft", "左上唇"],
+      ["mouthUpperUpRight", "右上唇"],
+      ["mouthLowerDownLeft", "左下唇"],
+      ["mouthLowerDownRight", "右下唇"],
+      ["noseSneerLeft", "左鼻"],
+      ["noseSneerRight", "右鼻"]
+    ]);
+
+    const PARAM_ORDER = [
+      "browInnerUp",
+      "browOuterUpLeft",
+      "browDownLeft",
+      "eyeWideLeft",
+      "eyeBlinkLeft",
+      "eyeSquintLeft",
+      "cheekSquintLeft",
+      "mouthSmileLeft",
+      "mouthFrownLeft",
+      "mouthLeft",
+      "mouthLowerDownLeft",
+      "jawOpen",
+      "mouthPucker",
+      "mouthFunnel",
+      "mouthShrugUpper",
+      "mouthShrugLower",
+      "mouthLowerDownRight",
+      "mouthRight",
+      "mouthFrownRight",
+      "mouthSmileRight",
+      "cheekSquintRight",
+      "eyeSquintRight",
+      "eyeBlinkRight",
+      "eyeWideRight",
+      "browDownRight",
+      "browOuterUpRight"
+    ];
+
+    const DEFAULT_PARAM_NAMES = new Set([
+      "browInnerUp",
+      "browDownLeft",
+      "browDownRight",
+      "eyeBlinkLeft",
+      "eyeBlinkRight",
+      "cheekPuff",
+      "cheekSquintLeft",
+      "cheekSquintRight",
+      "jawOpen",
+      "mouthPucker",
+      "mouthSmileLeft",
+      "mouthSmileRight",
+      "mouthFrownLeft",
+      "mouthFrownRight",
+      "mouthShrugUpper",
+      "mouthShrugLower"
+    ]);
+
+    let faceLandmarker = null;
+    let running = false;
+    let loopToken = 0;
+
+    const base = new Map();
+    const enabledParams = new Set();
+    const detectedParamNames = new Set();
+
+    const calibration = createCalibrationState();
+    const poseCalibration = createPoseCalibrationState();
+    let neutralPose = null;
+    let currentPoseStable = true;
+    let smoothedLandmarks = null;
+
+    const targetSpectrum = new Map();
+    const targetSharpness = new Map();
+    const currentSpectrum = new Map();
+    const currentSharpness = new Map();
+    const previewSpectrum = new Map();
+    const previewSharpness = new Map();
+    let delayedHistory = [];
+
+    resizeCanvas();
+    updateControlOutputs();
+    setWebcamPreviewVisible(true);
+
+    window.addEventListener("resize", resizeCanvas);
+    delayRange.addEventListener("input", updateControlOutputs);
+    gainRange.addEventListener("input", updateControlOutputs);
+    jitterRange.addEventListener("input", updateControlOutputs);
+
+    resetButton.addEventListener("click", () => {
+      resetAll();
+    });
+
+    paramToggleButton.addEventListener("click", () => {
+      params.classList.toggle("hidden");
+    });
+
+    startCamera().catch(error => {
+      status.textContent = `カメラを開始できません: ${error.message}\nHTTPSまたはlocalhost上で実行してください。`;
+      setWebcamPreviewVisible(false);
+    });
+
+    async function setupFaceLandmarker() {
+      if (faceLandmarker) return faceLandmarker;
+
+      status.textContent = "MediaPipeを読み込み中...";
+      const fileset = await FilesetResolver.forVisionTasks(
+        "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.34/wasm"
+      );
+
+      faceLandmarker = await FaceLandmarker.createFromOptions(fileset, {
+        baseOptions: {
+          modelAssetPath: "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/latest/face_landmarker.task"
+        },
+        runningMode: "VIDEO",
+        numFaces: 1,
+        outputFaceBlendshapes: true
+      });
+
+      return faceLandmarker;
+    }
+
+    async function startCamera() {
+      stopLoop();
+      stopCamera();
+      await setupFaceLandmarker();
+
+      video.srcObject = await navigator.mediaDevices.getUserMedia({
+        video: {
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+          aspectRatio: { ideal: 16 / 9 }
+        },
+        audio: false
+      });
+
+      await video.play();
+
+      waitForFaceCalibration();
+      startLoop();
+    }
+
+    function stopCamera() {
+      const cameraStream = video.srcObject instanceof MediaStream ? video.srcObject : null;
+      if (cameraStream) cameraStream.getTracks().forEach(track => track.stop());
+      video.srcObject = null;
+    }
+
+    function startLoop() {
+      if (running) return;
+      running = true;
+      requestAnimationFrame(() => loop(++loopToken));
+    }
+
+    function stopLoop() {
+      running = false;
+      loopToken++;
+    }
+
+    function loop(token) {
+      if (!running || token !== loopToken) return;
+      detectAndRender();
+      requestAnimationFrame(() => loop(token));
+    }
+
+    function detectAndRender() {
+      if (!faceLandmarker || video.readyState < 2) return;
+
+      const result = faceLandmarker.detectForVideo(video, performance.now());
+      const landmarks = smoothLandmarks(result.faceLandmarks?.[0] ?? []);
+      const categories = normalizeCategories(result.faceBlendshapes?.[0]?.categories ?? []);
+      currentPoseStable = isPoseStable(landmarks);
+
+      if (!categories.length) {
+        updateAutoCalibration(false);
+        drawNoFace();
+        status.textContent = "顔を検出中...";
+        return;
+      }
+
+      updateParamCheckboxes(categories);
+      updateAutoCalibration(true);
+      updateCalibration(categories, landmarks);
+
+      const activeCategories = selectedCategories(categories);
+
+      if (!base.size || calibrationActive()) {
+        const preview = updateSpectrumFrame(activeCategories, {
+          poseStable: true,
+          values: previewSpectrum,
+          sharpnessValues: previewSharpness,
+          baseMap: base
+        });
+        drawCalibrationPreview(preview);
+        return;
+      }
+
+      pushDelayedHistory(activeCategories, currentPoseStable);
+      renderDelayedFollow(activeCategories);
+    }
+
+    function paramLabel(categoryName) {
+      return PARAM_LABELS.get(categoryName) ?? categoryName;
+    }
+
+    function normalizeCategories(categories) {
+      return categories
+        .filter(category => category.categoryName && category.categoryName !== "_neutral")
+        .map(({ categoryName, score }) => ({ categoryName, score }));
+    }
+
+    function selectedCategories(categories) {
+      return categories.filter(({ categoryName }) => enabledParams.has(categoryName));
+    }
+
+    function updateParamCheckboxes(categories) {
+      for (const { categoryName } of categories) {
+        if (detectedParamNames.has(categoryName)) continue;
+
+        const defaultEnabled = DEFAULT_PARAM_NAMES.has(categoryName);
+        if (defaultEnabled) enabledParams.add(categoryName);
+        detectedParamNames.add(categoryName);
+
+        const label = document.createElement("label");
+        const input = document.createElement("input");
+        const span = document.createElement("span");
+
+        input.type = "checkbox";
+        input.checked = defaultEnabled;
+        span.textContent = paramLabel(categoryName);
+        span.title = categoryName;
+        input.addEventListener("change", () => {
+          if (input.checked) {
+            enabledParams.add(categoryName);
+          } else {
+            enabledParams.delete(categoryName);
+            targetSpectrum.delete(categoryName);
+            targetSharpness.delete(categoryName);
+            currentSpectrum.delete(categoryName);
+            currentSharpness.delete(categoryName);
+            previewSpectrum.delete(categoryName);
+            previewSharpness.delete(categoryName);
+          }
+        });
+
+        label.append(input, span);
+        params.append(label);
+      }
+    }
+
+    function startCalibration() {
+      resetVisualState();
+      base.clear();
+      resetPoseCalibration();
+      Object.assign(calibration, {
+        warmup: WARMUP_FRAMES,
+        remaining: CALIBRATION_FRAMES,
+        samples: 0
+      });
+      calibration.stats.clear();
+      setWebcamPreviewVisible(true);
+      status.textContent = "正面を向いて、なるべく無表情で待ってください。";
+    }
+
+    function waitForFaceCalibration() {
+      resetCalibrationState();
+      status.textContent = "顔を検出中...";
+      setFeedbackBackground(null, "Standby");
+      setWebcamPreviewVisible(true);
+    }
+
+    function updateAutoCalibration(faceDetected) {
+      if (!faceDetected) {
+        if (base.size || calibrationActive()) waitForFaceCalibration();
+        return;
+      }
+
+      if (!base.size && !calibrationActive()) startCalibration();
+    }
+
+    function updateCalibration(categories, landmarks) {
+      if (!calibrationActive()) return;
+
+      if (calibration.warmup > 0) {
+        calibration.warmup--;
+        status.textContent = `準備中 ${calibration.warmup}`;
+        return;
+      }
+
+      accumulateCategoryStats(calibration.stats, categories);
+      addPoseCalibrationSample(landmarks);
+      calibration.samples++;
+      calibration.remaining--;
+
+      status.textContent = `キャリブレーション中 ${calibration.remaining}`;
+
+      if (calibration.remaining > 0) return;
+
+      writeCalibrationBase(base, calibration.stats, calibration.samples);
+      neutralPose = finishPoseCalibration();
+      status.textContent = "キャリブレーション完了。10秒分の記録後、追従表示が始まります。";
+    }
+
+    function calibrationActive() {
+      return calibration.warmup > 0 || calibration.remaining > 0;
+    }
+
+    function createCalibrationState() {
+      return { warmup: 0, remaining: 0, samples: 0, stats: new Map() };
+    }
+
+    function accumulateCategoryStats(stats, categories) {
+      for (const { categoryName, score } of categories) {
+        const stat = stats.get(categoryName) ?? { sum: 0, sq: 0 };
+        stat.sum += score;
+        stat.sq += score * score;
+        stats.set(categoryName, stat);
+      }
+    }
+
+    function writeCalibrationBase(targetBase, stats, sampleCount) {
+      if (!sampleCount) return;
+
+      for (const [categoryName, { sum, sq }] of stats) {
+        const mean = sum / sampleCount;
+        const variance = Math.max(sq / sampleCount - mean * mean, 0);
+        targetBase.set(categoryName, {
+          mean,
+          dead: Math.max(Math.sqrt(variance) * 3, DEADZONE)
+        });
+      }
+    }
+
+    function calibratedScore(categoryName, score, baseMap = base) {
+      const entry = baseMap.get(categoryName);
+      if (!entry) return 0;
+
+      const { mean, dead } = entry;
+      const diff = score - mean;
+      if (Math.abs(diff) <= dead) return 0;
+      return diff > 0 ? diff - dead : diff + dead;
+    }
+
+    function adjustedCalibratedScore(categoryName, score, poseStable = currentPoseStable, baseMap = base) {
+      return poseStable ? calibratedScore(categoryName, score, baseMap) : 0;
+    }
+
+    function createPoseCalibrationState() {
+      return { samples: 0, sum: null };
+    }
+
+    function resetPoseCalibration() {
+      neutralPose = null;
+      currentPoseStable = true;
+      poseCalibration.samples = 0;
+      poseCalibration.sum = null;
+    }
+
+    function addPoseCalibrationSample(landmarks = []) {
+      const pose = getPose(landmarks);
+      if (!pose) return;
+
+      poseCalibration.sum ??= { scale: 0, yaw: 0, pitch: 0, roll: 0 };
+      for (const key of Object.keys(poseCalibration.sum)) {
+        poseCalibration.sum[key] += pose[key];
+      }
+      poseCalibration.samples++;
+    }
+
+    function finishPoseCalibration() {
+      if (!poseCalibration.samples || !poseCalibration.sum) return null;
+      return Object.fromEntries(
+        Object.entries(poseCalibration.sum).map(([key, value]) => [key, value / poseCalibration.samples])
+      );
+    }
+
+    function isPoseStable(landmarks = []) {
+      if (!base.size || !neutralPose) return true;
+      const pose = getPose(landmarks);
+      if (!pose) return false;
+
+      const dPose = poseDiff(pose, neutralPose);
+      const dRoll = Math.abs(angleDiff(pose.roll, neutralPose.roll));
+      return dPose < POSE_THRESHOLD && dRoll < ROLL_THRESHOLD;
+    }
+
+    function getPose(landmarks = []) {
+      const leftEye = averageLandmarks(landmarks, [33, 133]);
+      const rightEye = averageLandmarks(landmarks, [263, 362]);
+      const nose = landmarks[1];
+      if (!leftEye || !rightEye || !nose) return null;
+
+      const eyeCenter = midpoint(leftEye, rightEye);
+      const eyeDistance = Math.hypot(rightEye.x - leftEye.x, rightEye.y - leftEye.y);
+      if (!Number.isFinite(eyeDistance) || eyeDistance <= 0.001) return null;
+
+      const roll = Math.atan2(rightEye.y - leftEye.y, rightEye.x - leftEye.x);
+      const noseVector = rotatePoint({ x: nose.x - eyeCenter.x, y: nose.y - eyeCenter.y }, -roll);
+
+      return {
+        scale: eyeDistance,
+        yaw: noseVector.x / eyeDistance,
+        pitch: noseVector.y / eyeDistance,
+        roll
+      };
+    }
+
+    function poseDiff(pose, basePose) {
+      const scale = Math.max(basePose.scale, 0.001);
+      return (
+        Math.abs(Math.log(Math.max(pose.scale, 0.001) / scale)) +
+        Math.abs(pose.yaw - basePose.yaw) +
+        Math.abs(pose.pitch - basePose.pitch)
+      );
+    }
+
+    function angleDiff(value, baseValue) {
+      return Math.atan2(Math.sin(value - baseValue), Math.cos(value - baseValue));
+    }
+
+    function averageLandmarks(landmarks, indices) {
+      const points = indices.map(index => landmarks[index]).filter(Boolean);
+      if (!points.length) return null;
+      return {
+        x: points.reduce((sum, point) => sum + point.x, 0) / points.length,
+        y: points.reduce((sum, point) => sum + point.y, 0) / points.length
+      };
+    }
+
+    function rotatePoint(point, angle) {
+      const cos = Math.cos(angle);
+      const sin = Math.sin(angle);
+      return {
+        x: point.x * cos - point.y * sin,
+        y: point.x * sin + point.y * cos
+      };
+    }
+
+    function smoothLandmarks(landmarks = []) {
+      if (!landmarks.length) {
+        smoothedLandmarks = null;
+        return [];
+      }
+
+      if (!smoothedLandmarks || smoothedLandmarks.length !== landmarks.length) {
+        smoothedLandmarks = landmarks.map(point => ({ ...point }));
+        return smoothedLandmarks;
+      }
+
+      const currentWeight = 1 - LANDMARK_SMOOTHING;
+      smoothedLandmarks = landmarks.map((point, index) => {
+        const previous = smoothedLandmarks[index];
+        return {
+          x: previous.x * LANDMARK_SMOOTHING + point.x * currentWeight,
+          y: previous.y * LANDMARK_SMOOTHING + point.y * currentWeight,
+          z: (previous.z ?? point.z ?? 0) * LANDMARK_SMOOTHING + (point.z ?? previous.z ?? 0) * currentWeight
+        };
+      });
+
+      return smoothedLandmarks;
+    }
+
+    function pushDelayedHistory(categories, poseStable) {
+      const now = performance.now();
+      const keepMs = Number(delayRange.value) + HISTORY_MARGIN_MS;
+
+      delayedHistory.push({
+        time: now,
+        poseStable,
+        categories: categories.map(({ categoryName, score }) => ({ categoryName, score }))
+      });
+
+      delayedHistory = delayedHistory.filter(frame => now - frame.time <= keepMs);
+    }
+
+    function getDelayedFrame() {
+      const now = performance.now();
+      const delayMs = Number(delayRange.value);
+      const targetTime = now - delayMs;
+
+      if (!delayedHistory.length || now - delayedHistory[0].time < delayMs) return null;
+
+      let bestFrame = null;
+      let bestDiff = Infinity;
+      for (const frame of delayedHistory) {
+        const diff = Math.abs(frame.time - targetTime);
+        if (diff < bestDiff) {
+          bestDiff = diff;
+          bestFrame = frame;
+        }
+      }
+
+      return bestFrame;
+    }
+
+    function delayedProgress() {
+      if (!delayedHistory.length) return 0;
+      const now = performance.now();
+      const delayMs = Number(delayRange.value);
+      return clamp((now - delayedHistory[0].time) / delayMs, 0, 1);
+    }
+
+    function renderDelayedFollow(activeCategories) {
+      const currentFrame = updateSpectrumFrame(activeCategories, {
+        poseStable: currentPoseStable,
+        values: currentSpectrum,
+        sharpnessValues: currentSharpness,
+        baseMap: base
+      });
+
+      const delayedFrame = getDelayedFrame();
+      if (!delayedFrame) {
+        setWebcamPreviewVisible(true);
+        drawWarmup(currentFrame);
+        const progress = delayedProgress();
+        status.textContent = `記録中 ${(progress * Number(delayRange.value) / 1000).toFixed(1)} / ${(Number(delayRange.value) / 1000).toFixed(1)}s`;
+        return;
+      }
+
+      setWebcamPreviewVisible(false);
+
+      const targetFrame = updateSpectrumFrame(delayedFrame.categories, {
+        poseStable: delayedFrame.poseStable,
+        values: targetSpectrum,
+        sharpnessValues: targetSharpness,
+        baseMap: base
+      });
+
+      const mismatch = motionMismatch(
+        activeCategories,
+        delayedFrame.categories,
+        currentPoseStable,
+        delayedFrame.poseStable
+      );
+
+      drawDelayedFollowSpectrum(targetFrame, currentFrame, mismatch);
+      setFeedbackBackground(mismatch);
+
+      const matchRate = Math.round((1 - mismatch) * 100);
+      const poseText = currentPoseStable ? "" : "\n顔の向きが大きいため、現在値を抑制中。";
+      status.textContent = `Match ${matchRate}% / Mismatch ${(mismatch * 100).toFixed(0)}%${poseText}`;
+    }
+
+
+    function motionMismatch(currentCategories, delayedCategories, currentPoseStableValue, delayedPoseStableValue) {
+      const currentByName = new Map(currentCategories.map(category => [category.categoryName, category]));
+      let sum = 0;
+      let count = 0;
+
+      for (const delayed of delayedCategories) {
+        const current = currentByName.get(delayed.categoryName);
+        if (!current) continue;
+
+        const currentValue = adjustedCalibratedScore(current.categoryName, current.score, currentPoseStableValue, base);
+        const delayedValue = adjustedCalibratedScore(delayed.categoryName, delayed.score, delayedPoseStableValue, base);
+        const diff = Math.abs(currentValue - delayedValue);
+        sum += diff;
+        count++;
+      }
+
+      return count ? clamp((sum / count) * Number(gainRange.value), 0, 1) : 0;
+    }
+
+    function updateSpectrumFrame(categories, options = {}) {
+      const {
+        poseStable = currentPoseStable,
+        values = currentSpectrum,
+        sharpnessValues = currentSharpness,
+        baseMap = base
+      } = options;
+
+      const width = canvas.width;
+      const height = canvas.height;
+
+      if (categories.length < 3) {
+        return { active: false, points: [] };
+      }
+
+      const cx = width / 2;
+      const cy = height / 2;
+      const baseRadius = Math.min(width, height) * 0.24;
+      const maxSpike = Math.min(width, height) * 0.17;
+      const ordered = orderedSpectrumCategories(categories);
+      const calibrated = baseMap.size > 0;
+
+      const points = ordered.map(({ categoryName, score }, index) => {
+        const rawValue = calibrated ? adjustedCalibratedScore(categoryName, score, poseStable, baseMap) : 0;
+        const value = Math.abs(rawValue) < SPECTRUM_ZERO_THRESHOLD ? 0 : rawValue;
+        const previous = values.get(categoryName) ?? 0;
+        const smoothed = previous * 0.82 + value * 0.18;
+        const rawSpeed = Math.max(Math.abs(smoothed - previous) - 0.002, 0);
+        const previousSharpness = sharpnessValues.get(categoryName) ?? 0;
+        const changeSharpness = Math.min(rawSpeed * 180, 1);
+        const sharpness = value === 0 ? previousSharpness * 0.82 : Math.max(previousSharpness, changeSharpness);
+
+        values.set(categoryName, smoothed);
+        sharpnessValues.set(categoryName, sharpness);
+
+        const angle = index / ordered.length * Math.PI * 2 - Math.PI / 2;
+        const radius = baseRadius + clamp(smoothed * 18, -1, 1) * maxSpike;
+        return {
+          x: cx + Math.cos(angle) * radius,
+          y: cy + Math.sin(angle) * radius,
+          sharpness,
+          categoryName,
+          label: paramLabel(categoryName)
+        };
+      });
+
+      return { active: calibrated, points };
+    }
+
+    function orderedSpectrumCategories(categories) {
+      const byName = new Map(categories.map(category => [category.categoryName, category]));
+      const orderedNames = [
+        ...PARAM_ORDER.filter(categoryName => byName.has(categoryName)),
+        ...categories
+          .map(({ categoryName }) => categoryName)
+          .filter(categoryName => !PARAM_ORDER.includes(categoryName))
+          .sort((a, b) => a.localeCompare(b))
+      ];
+
+      return orderedNames.map(categoryName => byName.get(categoryName)).filter(Boolean);
+    }
+
+    function drawDelayedFollowSpectrum(targetFrame, currentFrame, mismatch) {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      const targetPoints = unstablePoints(targetFrame.points, mismatch);
+      const guidePoints = scalePoints(currentFrame.points, 0.93);
+
+      drawSpectrumPath(ctx, targetPoints, targetFrame.active, {
+        alpha: 0.96,
+        lineWidth: 4.4,
+        strokeStyle: "#1d64c8"
+      });
+
+      drawSpectrumPath(ctx, guidePoints, currentFrame.active, {
+        alpha: 0.88,
+        lineWidth: 3.0,
+        strokeStyle: "#d36a18"
+      });
+
+      drawCenterGuide(mismatch);
+      drawFeedbackBadge(mismatch);
+    }
+
+    function drawWarmup(currentFrame) {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      setFeedbackBackground(null, RECORDING_TEXT);
+      drawSpectrumPath(ctx, scalePoints(currentFrame.points, 0.93), currentFrame.active, {
+        alpha: 0.28 + delayedProgress() * 0.42,
+        lineWidth: 2.2,
+        strokeStyle: "#d36a18"
+      });
+    }
+
+    function drawCalibrationPreview(frame) {
+      setFeedbackBackground(null, calibrationActive() ? "Calibrating" : "Ready");
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      drawSpectrumPath(ctx, frame.points, frame.active, {
+        alpha: 0.22,
+        lineWidth: 2,
+        strokeStyle: "#111"
+      });
+    }
+
+    function drawNoFace() {
+      setFeedbackBackground(null, "No Face");
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.save();
+      ctx.globalAlpha = 0.25;
+      ctx.strokeStyle = "#111";
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(canvas.width / 2, canvas.height / 2, Math.min(canvas.width, canvas.height) * 0.18, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    function drawFeedbackBadge(mismatch, forcedText = null) {
+      if (forcedText) {
+        feedbackText.textContent = forcedText;
+        feedbackText.style.color = forcedText === RECORDING_TEXT ? "#111" : "#333";
+        feedbackText.style.opacity = forcedText === RECORDING_TEXT ? "0.24" : "0.26";
+        feedbackText.style.transform = "translate(-50%, -50%) scale(1)";
+        return;
+      }
+
+      const matchRate = 1 - mismatch;
+      const text = matchRate >= 0.68 ? "Good!" : "Bad...";
+      feedbackText.textContent = text;
+      feedbackText.style.color = matchRate >= 0.68 ? "#063f20" : "#5f0d08";
+      feedbackText.style.opacity = matchRate >= 0.68 ? "0.42" : "0.46";
+      feedbackText.style.transform = `translate(-50%, -50%) scale(${matchRate >= 0.68 ? 1.02 : 0.98})`;
+    }
+
+    function setFeedbackBackground(mismatch, neutralText = RECORDING_TEXT) {
+      if (mismatch === null || !Number.isFinite(mismatch)) {
+        document.documentElement.style.setProperty("--feedback-bg", "#f0f0f0");
+        drawFeedbackBadge(null, neutralText);
+        return;
+      }
+
+      const amount = clamp(mismatch, 0, 1);
+      const hue = 136 - amount * 132;
+      const saturation = 82 + amount * 6;
+      const lightness = 62 + amount * 2;
+      document.documentElement.style.setProperty(
+        "--feedback-bg",
+        `hsl(${hue.toFixed(1)} ${saturation.toFixed(0)}% ${lightness.toFixed(0)}%)`
+      );
+    }
+
+    function drawCenterGuide(mismatch) {
+      const cx = canvas.width / 2;
+      const cy = canvas.height / 2;
+      const radius = 5 + mismatch * 18;
+
+      ctx.save();
+      ctx.globalAlpha = 0.18 + mismatch * 0.22;
+      ctx.strokeStyle = "#111";
+      ctx.lineWidth = 1.4;
+      ctx.beginPath();
+      ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    function drawSpectrumPath(targetCtx, points, active, options = {}) {
+      if (points.length < 3) return;
+
+      const {
+        alpha = 1,
+        lineWidth = 3,
+        strokeStyle = active ? "#999" : "#bbb"
+      } = options;
+
+      targetCtx.save();
+      targetCtx.globalAlpha *= alpha;
+      targetCtx.lineWidth = lineWidth;
+      targetCtx.lineJoin = "miter";
+      targetCtx.miterLimit = 2.5;
+      targetCtx.lineCap = "round";
+      targetCtx.strokeStyle = strokeStyle;
+      targetCtx.beginPath();
+
+      const start = midpoint(points[points.length - 1], points[0]);
+      targetCtx.moveTo(start.x, start.y);
+
+      for (let i = 0; i < points.length; i++) {
+        const previous = points[(i - 1 + points.length) % points.length];
+        const current = points[i];
+        const next = points[(i + 1) % points.length];
+        const previousMid = midpoint(previous, current);
+        const nextMid = midpoint(current, next);
+        const sharpness = current.sharpness ?? 0;
+        const control = {
+          x: current.x * sharpness + previousMid.x * (1 - sharpness),
+          y: current.y * sharpness + previousMid.y * (1 - sharpness)
+        };
+
+        targetCtx.quadraticCurveTo(control.x, control.y, nextMid.x, nextMid.y);
+      }
+
+      targetCtx.closePath();
+      targetCtx.stroke();
+      targetCtx.restore();
+    }
+
+    function unstablePoints(points, instability) {
+      if (!points.length || instability <= 0.01) return points;
+
+      const t = performance.now() * 0.012;
+      const amplitude = instability * Number(jitterRange.value);
+
+      return points.map((point, index) => {
+        const n1 = Math.sin(t + index * 12.989);
+        const n2 = Math.cos(t * 0.87 + index * 78.233);
+        return {
+          ...point,
+          x: point.x + n1 * amplitude,
+          y: point.y + n2 * amplitude,
+          sharpness: clamp((point.sharpness ?? 0) + instability * 0.7, 0, 1)
+        };
+      });
+    }
+
+    function scalePoints(points, scale = 0.75) {
+      const cx = canvas.width / 2;
+      const cy = canvas.height / 2;
+      return points.map(point => ({
+        ...point,
+        x: cx + (point.x - cx) * scale,
+        y: cy + (point.y - cy) * scale
+      }));
+    }
+
+    function resetAll() {
+      waitForFaceCalibration();
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+    }
+
+    function resetCalibrationState() {
+      base.clear();
+      resetPoseCalibration();
+      resetVisualState();
+      calibration.warmup = 0;
+      calibration.remaining = 0;
+      calibration.samples = 0;
+      calibration.stats.clear();
+    }
+
+    function resetVisualState() {
+      delayedHistory = [];
+      [targetSpectrum, targetSharpness, currentSpectrum, currentSharpness, previewSpectrum, previewSharpness].forEach(map => map.clear());
+    }
+
+    function resizeCanvas() {
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const width = Math.max(1, Math.round(window.innerWidth * dpr));
+      const height = Math.max(1, Math.round(window.innerHeight * dpr));
+      if (canvas.width === width && canvas.height === height) return;
+      canvas.width = width;
+      canvas.height = height;
+    }
+
+    function updateControlOutputs() {
+      delayOutput.value = `${(Number(delayRange.value) / 1000).toFixed(1)}s`;
+      gainOutput.value = gainRange.value;
+      jitterOutput.value = `${jitterRange.value}px`;
+      resetVisualState();
+    }
+
+    function setWebcamPreviewVisible(visible) {
+      stage.classList.toggle("show-webcam", visible);
+    }
+
+    function midpoint(a, b) {
+      return {
+        x: (a.x + b.x) / 2,
+        y: (a.y + b.y) / 2
+      };
+    }
+
+    function clamp(value, min, max) {
+      return Math.min(Math.max(value, min), max);
+    }
+  </script>
+</body>
+
+</html>
