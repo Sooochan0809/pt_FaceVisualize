@@ -806,9 +806,10 @@
       drawDelayedFollowSpectrum(targetFrame, currentFrame, mismatch);
       setFeedbackBackground(mismatch);
 
-      const matchRate = Math.round((1 - mismatch) * 100);
+      const differentRate = Math.round(mismatch * 100);
+      const sameRate = Math.round((1 - mismatch) * 100);
       const poseText = currentPoseStable ? "" : "\n顔の向きが大きいため、現在値を抑制中。";
-      status.textContent = `Match ${matchRate}% / Mismatch ${(mismatch * 100).toFixed(0)}%${poseText}`;
+      status.textContent = `Different ${differentRate}% / Same ${sameRate}%${poseText}`;
     }
 
 
@@ -957,12 +958,12 @@
         return;
       }
 
-      const matchRate = 1 - mismatch;
-      const text = matchRate >= 0.68 ? "Good!" : "Bad...";
+      const differentRate = mismatch;
+      const text = differentRate >= 0.68 ? "Good!" : "Bad...";
       feedbackText.textContent = text;
-      feedbackText.style.color = matchRate >= 0.68 ? "#063f20" : "#5f0d08";
-      feedbackText.style.opacity = matchRate >= 0.68 ? "0.42" : "0.46";
-      feedbackText.style.transform = `translate(-50%, -50%) scale(${matchRate >= 0.68 ? 1.02 : 0.98})`;
+      feedbackText.style.color = differentRate >= 0.68 ? "#063f20" : "#5f0d08";
+      feedbackText.style.opacity = differentRate >= 0.68 ? "0.42" : "0.46";
+      feedbackText.style.transform = `translate(-50%, -50%) scale(${differentRate >= 0.68 ? 1.02 : 0.98})`;
     }
 
     function setFeedbackBackground(mismatch, neutralText = RECORDING_TEXT) {
@@ -973,7 +974,7 @@
       }
 
       const amount = clamp(mismatch, 0, 1);
-      const hue = 136 - amount * 132;
+      const hue = 4 + amount * 132;
       const saturation = 82 + amount * 6;
       const lightness = 62 + amount * 2;
       document.documentElement.style.setProperty(
