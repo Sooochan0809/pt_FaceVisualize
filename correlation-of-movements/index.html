@@ -332,7 +332,7 @@
             <div id="heatmapToolbar" class="heatmap-toolbar">
                 <span id="heatmapStatus">キャリブ後の変動値を収集中...</span>
                 <label for="heatmapLabelToggle">
-                    <input id="heatmapLabelToggle" type="checkbox">
+                    <input id="heatmapLabelToggle" type="checkbox" checked>
                     翻訳
                 </label>
                 <button id="exportHeatmapButton" type="button">Sheets出力</button>
@@ -350,8 +350,7 @@
             const BLENDSHAPE_HISTORY_LIMIT = 600;
             const HEATMAP_EXPORT_ENDPOINT_KEY = "correlationHeatmapExportEndpoint";
             const STD_EPSILON = 0.0005;
-            const TIE_EPSILON = 1e-12;
-            const HEATMAP_RATIO = Math.min((window.devicePixelRatio || 1) * 3, 6);
+            const HEATMAP_RATIO = Math.min((window.devicePixelRatio || 1) * 4, 8);
             const [HEATMAP_WIDTH, HEATMAP_HEIGHT, HEATMAP_FONT] = [560, 420, "11px Yu Gothic, sans-serif"];
             const HEATMAP_MIN_FRAMES = 3;
             const VIDEO_ANALYSIS_RUNS = 3;
@@ -418,7 +417,10 @@
             const clampRange = (value, min, max) => Math.min(max, Math.max(min, Number(value || 0)));
             const formatScore = (score) => (Math.trunc(score * 100) / 100).toFixed(2);
             const signedScore = (score) => `${score < 0 ? "" : "+"}${formatScore(score)}`;
-            const displayBlendshapeName = (name) => heatmapLabelToggle.checked ? BLENDSHAPE_LABELS_JA[name] || name : name;
+            const displayBlendshapeName = (name) => {
+                const label = BLENDSHAPE_LABELS_JA[name];
+                return heatmapLabelToggle.checked && label ? `${name}（${label}）` : name;
+            };
             const stage = document.querySelector("main");
             const heatmapPanel = document.querySelector(".heatmap-panel");
             const {
@@ -523,39 +525,9 @@
                 const meanB = mean(b);
                 const stdA = std(a, meanA);
                 const stdB = std(b, meanB);
-                if (stdA < STD_EPSILON || stdB < STD_EPSILON) return NaN;
+                if (stdA < STD_EPSILON || stdB < STD_EPSILON) return 0;
                 const cov = a.reduce((sum, value, index) => sum + (value - meanA) * (b[index] - meanB), 0) / a.length;
                 return clampRange(cov / (stdA * stdB), -1, 1);
-            };
-
-            const clusterOrder = (matrix, names) => {
-                let clusters = matrix.map((_, index) => [index]);
-                const distance = (a, b) => {
-                    let total = 0;
-                    let count = 0;
-                    a.forEach((i) => b.forEach((j) => {
-                        total += 1 - Math.abs(matrix[i][j]);
-                        count++;
-                    }));
-                    return count ? total / count : 1;
-                };
-
-                while (clusters.length > 1) {
-                    let best = { i: 0, j: 1, d: distance(clusters[0], clusters[1]) };
-                    for (let i = 0; i < clusters.length; i++) {
-                        for (let j = i + 1; j < clusters.length; j++) {
-                            const d = distance(clusters[i], clusters[j]);
-                            const key = (cluster) => cluster.map((index) => names[index]).join("|");
-                            if (d < best.d - TIE_EPSILON || (Math.abs(d - best.d) <= TIE_EPSILON && `${key(clusters[i])}|${key(clusters[j])}` < `${key(clusters[best.i])}|${key(clusters[best.j])}`)) {
-                                best = { i, j, d };
-                            }
-                        }
-                    }
-                    const merged = [...clusters[best.i], ...clusters[best.j]].sort((a, b) => names[a].localeCompare(names[b]));
-                    clusters = clusters.filter((_, index) => index !== best.i && index !== best.j);
-                    clusters.push(merged);
-                }
-                return clusters[0];
             };
 
             const colorForCorrelation = (value) => {
@@ -592,23 +564,18 @@
 
                 const names = Object.keys(blendshapeHistory.at(-1) || {});
                 const columns = names.map((name) => blendshapeHistory.map((frame) => Number(frame[name] || 0)));
-                const variable = columns.map((values, index) => ({ index, std: std(values) })).filter(({ std }) => std >= STD_EPSILON);
-                if (variable.length < 2) {
-                    return { ok: false, message: "相関に十分な変動がありません" };
+                if (names.length < 2) {
+                    return { ok: false, message: "ヒートマップに十分なパラメーターがありません" };
                 }
 
-                const keptNames = variable.map(({ index }) => names[index]);
-                const keptColumns = variable.map(({ index }) => columns[index]);
-                const matrix = keptColumns.map((a) => keptColumns.map((b) => pearson(a, b)));
-                const order = clusterOrder(matrix, keptNames);
-                const orderedNames = order.map((index) => keptNames[index]);
+                const matrix = columns.map((a) => columns.map((b) => pearson(a, b)));
                 return {
                     ok: true,
                     frames: blendshapeHistory.length,
-                    excluded: names.length - orderedNames.length,
-                    names: orderedNames,
-                    labels: orderedNames.map(displayBlendshapeName),
-                    matrix: order.map((i) => order.map((j) => matrix[i][j]))
+                    excluded: 0,
+                    names,
+                    labels: names.map(displayBlendshapeName),
+                    matrix
                 };
             };
 
@@ -643,7 +610,7 @@
                 ctx.fillStyle = "#f4f7fb";
                 ctx.fillRect(0, 0, canvasWidth, canvasHeight);
 
-                heatmapStatus.textContent = `${heatmap.frames} frames / ${n} variables / excluded ${heatmap.excluded}`;
+                heatmapStatus.textContent = `${heatmap.frames} frames / ${n} variables`;
                 const left = (canvasWidth - blockWidth) / 2 + labelWidth;
                 const top = (canvasHeight - blockHeight) / 2;
 
