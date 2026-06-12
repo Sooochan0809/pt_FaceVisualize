@@ -130,10 +130,6 @@
     </div>
 
     <script type="module">
-        // ==============================
-        // 1. Firebase SDK
-        // ==============================
-
         import { initializeApp } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-app.js";
 
         import {
@@ -160,11 +156,6 @@
             serverTimestamp
         } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-firestore.js";
 
-        // ==============================
-        // 2. Firebase設定を差し替える
-        // ==============================
-
-        // For Firebase JS SDK v7.20.0 and later, measurementId is optional
         const firebaseConfig = {
             apiKey: "AIzaSyDR0O3RHxihP81XoDzrjrxYIo4vk0Pf0ak",
             authDomain: "facetime-8464f.firebaseapp.com",
@@ -178,10 +169,6 @@
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
         const db = getFirestore(app);
-
-        // ==============================
-        // 3. DOM
-        // ==============================
 
         const authView = document.getElementById("authView");
         const appView = document.getElementById("appView");
@@ -207,10 +194,6 @@
         const acceptButton = document.getElementById("acceptButton");
         const declineButton = document.getElementById("declineButton");
 
-        // ==============================
-        // 4. 状態
-        // ==============================
-
         let currentUser = null;
         let currentCallId = null;
         let incomingCallId = null;
@@ -218,10 +201,6 @@
         let unsubscribeUsers = null;
         let unsubscribeIncoming = null;
         let unsubscribeCurrentCall = null;
-
-        // ==============================
-        // 5. 認証
-        // ==============================
 
         signupButton.onclick = async () => {
             const email = emailInput.value.trim();
@@ -234,7 +213,6 @@
             }
 
             try {
-                // このタブ内のメモリだけにログイン状態を保存する
                 await setPersistence(auth, inMemoryPersistence);
 
                 const result = await createUserWithEmailAndPassword(auth, email, password);
@@ -257,14 +235,9 @@
             }
 
             try {
-                // このタブ内のメモリだけにログイン状態を保存する
                 await setPersistence(auth, inMemoryPersistence);
 
-                console.log("ログイン開始:", email);
-
                 const result = await signInWithEmailAndPassword(auth, email, password);
-
-                console.log("ログイン成功:", result.user.uid);
 
                 await saveUser(result.user, name);
             } catch (error) {
@@ -286,9 +259,8 @@
                 updatedAt: serverTimestamp()
             };
 
-            // 名前が入力されているときだけ name を保存・更新する
-            if (name && name.trim() !== "") {
-                data.name = name.trim();
+            if (name) {
+                data.name = name;
             }
 
             await setDoc(
@@ -299,32 +271,23 @@
         }
 
         onAuthStateChanged(auth, async (user) => {
-            console.log("onAuthStateChanged 発火:", user ? user.uid : "未ログイン");
-
             cleanupListeners();
 
             if (!user) {
-                currentUser = null;
-                authView.classList.remove("hidden");
-                appView.classList.add("hidden");
-                callView.classList.add("hidden");
-                incomingModal.classList.add("hidden");
+                resetAppState();
                 return;
             }
 
             try {
                 currentUser = user;
 
-                // 先に画面だけ切り替える
                 currentUserLabel.textContent = "読み込み中...";
-                authView.classList.add("hidden");
-                appView.classList.remove("hidden");
+                setVisible(authView, false);
+                setVisible(appView, true);
 
-                // Firestoreからユーザー名を取得
                 const userSnap = await getDoc(doc(db, "users", user.uid));
                 const userData = userSnap.data();
 
-                // ここでメールではなくユーザー名を表示
                 currentUserLabel.textContent = userData?.name || "名前未設定";
 
                 listenUsers();
@@ -334,10 +297,6 @@
                 alert(`ログイン後の初期化に失敗しました: ${error.code || error.message}`);
             }
         });
-
-        // ==============================
-        // 6. ユーザー一覧
-        // ==============================
 
         function listenUsers() {
             unsubscribeUsers = onSnapshot(collection(db, "users"), (snapshot) => {
@@ -353,10 +312,12 @@
                     row.className = "user-row";
 
                     const label = document.createElement("div");
-                    label.innerHTML = `
-            <strong>${escapeHtml(user.name || user.email)}</strong><br>
-            <span class="muted">${escapeHtml(user.email || "")}</span>
-          `;
+                    const name = document.createElement("strong");
+                    const email = document.createElement("span");
+                    email.className = "muted";
+                    name.textContent = user.name || user.email;
+                    email.textContent = user.email || "";
+                    label.append(name, document.createElement("br"), email);
 
                     const button = document.createElement("button");
                     button.textContent = "呼び出す";
@@ -368,10 +329,6 @@
                 });
             });
         }
-
-        // ==============================
-        // 7. 発信
-        // ==============================
 
         async function startCall(calleeId, calleeName) {
             if (!currentUser) return;
@@ -389,10 +346,6 @@
             showCallView("呼び出し中...", calleeName);
             listenCurrentCall(currentCallId);
         }
-
-        // ==============================
-        // 8. 着信監視
-        // ==============================
 
         function listenIncomingCalls() {
             if (!currentUser) return;
@@ -414,7 +367,7 @@
                 const callerName = await getUserName(call.callerId);
 
                 incomingText.textContent = `${callerName} から着信しています`;
-                incomingModal.classList.remove("hidden");
+                setVisible(incomingModal, true);
 
                 playSmallBeep();
             });
@@ -431,7 +384,7 @@
             currentCallId = incomingCallId;
             incomingCallId = null;
 
-            incomingModal.classList.add("hidden");
+            setVisible(incomingModal, false);
 
             const callSnap = await getDoc(doc(db, "calls", currentCallId));
             const call = callSnap.data();
@@ -450,39 +403,17 @@
             });
 
             incomingCallId = null;
-            incomingModal.classList.add("hidden");
+            setVisible(incomingModal, false);
         };
 
-        // ==============================
-        // 9. 通話状態の監視
-        // ==============================
-
         function listenCurrentCall(callId) {
-            if (unsubscribeCurrentCall) {
-                unsubscribeCurrentCall();
-            }
+            unsubscribeCurrentCall = replaceSubscription(unsubscribeCurrentCall, () => {
+                return onSnapshot(doc(db, "calls", callId), (snapshot) => {
+                    const call = snapshot.data();
+                    if (!call) return;
 
-            unsubscribeCurrentCall = onSnapshot(doc(db, "calls", callId), async (snapshot) => {
-                const call = snapshot.data();
-                if (!call) return;
-
-                if (call.status === "ringing") {
-                    callStatus.textContent = "呼び出し中...";
-                }
-
-                if (call.status === "accepted") {
-                    callStatus.textContent = "通話中";
-                }
-
-                if (call.status === "declined") {
-                    callStatus.textContent = "拒否されました";
-                    currentCallId = null;
-                }
-
-                if (call.status === "ended") {
-                    callStatus.textContent = "通話終了";
-                    currentCallId = null;
-                }
+                    updateCallStatus(call.status);
+                });
             });
         }
 
@@ -503,20 +434,47 @@
             hideCallView();
         };
 
-        // ==============================
-        // 10. UI
-        // ==============================
-
         function showCallView(statusText, partnerName) {
             callStatus.textContent = statusText;
             callPartnerLabel.textContent = `相手：${partnerName}`;
-            callView.classList.remove("hidden");
+            setVisible(callView, true);
         }
 
         function hideCallView() {
-            callView.classList.add("hidden");
+            setVisible(callView, false);
             callStatus.textContent = "---";
             callPartnerLabel.textContent = "";
+        }
+
+        function updateCallStatus(status) {
+            const statusText = {
+                ringing: "呼び出し中...",
+                accepted: "通話中",
+                declined: "拒否されました",
+                ended: "通話終了"
+            }[status];
+
+            if (statusText) {
+                callStatus.textContent = statusText;
+            }
+
+            if (status === "declined" || status === "ended") {
+                currentCallId = null;
+            }
+        }
+
+        function setVisible(element, visible) {
+            element.classList.toggle("hidden", !visible);
+        }
+
+        function resetAppState() {
+            currentUser = null;
+            currentCallId = null;
+            incomingCallId = null;
+            setVisible(authView, true);
+            setVisible(appView, false);
+            setVisible(incomingModal, false);
+            hideCallView();
         }
 
         async function getUserName(uid) {
@@ -526,22 +484,17 @@
         }
 
         function cleanupListeners() {
-            if (unsubscribeUsers) unsubscribeUsers();
-            if (unsubscribeIncoming) unsubscribeIncoming();
-            if (unsubscribeCurrentCall) unsubscribeCurrentCall();
-
-            unsubscribeUsers = null;
-            unsubscribeIncoming = null;
-            unsubscribeCurrentCall = null;
+            unsubscribeUsers = replaceSubscription(unsubscribeUsers);
+            unsubscribeIncoming = replaceSubscription(unsubscribeIncoming);
+            unsubscribeCurrentCall = replaceSubscription(unsubscribeCurrentCall);
         }
 
-        function escapeHtml(str) {
-            return String(str)
-                .replaceAll("&", "&amp;")
-                .replaceAll("<", "&lt;")
-                .replaceAll(">", "&gt;")
-                .replaceAll('"', "&quot;")
-                .replaceAll("'", "&#039;");
+        function replaceSubscription(unsubscribe, subscribe) {
+            if (unsubscribe) {
+                unsubscribe();
+            }
+
+            return subscribe ? subscribe() : null;
         }
 
         function playSmallBeep() {
