@@ -500,6 +500,7 @@
     const currentSharpness = new Map();
     const previewSpectrum = new Map();
     const previewSharpness = new Map();
+    const userNameCache = new Map();
     let paramSets = {};
     let activeParamSetName = "";
     let motionGainSets = {};
@@ -779,11 +780,7 @@
           const call = snapshot.data();
           if (!call) {
             if (currentCallId === callId || rtcCallId === callId) {
-              currentCallId = null;
-              currentPartnerId = "";
-              rtcCallId = "";
-              closePeerConnection();
-              hideCallState();
+              resetCallSession();
             }
             return;
           }
@@ -815,11 +812,7 @@
       });
       scheduleCallDeletion(callId);
 
-      currentCallId = null;
-      currentPartnerId = "";
-      rtcCallId = "";
-      closePeerConnection();
-      hideCallState();
+      resetCallSession();
     }
 
     function showCallState(statusText, partnerName) {
@@ -837,11 +830,19 @@
       resetRemoteDisplay("No Call");
     }
 
+    function resetCallSession() {
+      currentCallId = null;
+      currentPartnerId = "";
+      rtcCallId = "";
+      closePeerConnection();
+      hideCallState();
+    }
+
     function resetRemoteDisplay(message = "No Call") {
       remoteEmpty.textContent = message;
       remoteEmpty.hidden = false;
       lastRemoteMotionFrame = null;
-      remoteCtx.clearRect(0, 0, remoteCanvas.width, remoteCanvas.height);
+      clearCanvas(remoteCtx, remoteCanvas);
     }
 
     function updateCallStatus(callStatusValue) {
@@ -862,26 +863,23 @@
 
       if (callStatusValue === "declined" || callStatusValue === "ended") {
         const terminalCallId = currentCallId || rtcCallId;
-        currentCallId = null;
-        currentPartnerId = "";
-        rtcCallId = "";
-        closePeerConnection();
-        setVisible(endCallButton, false);
-        resetRemoteDisplay("No Call");
+        resetCallSession();
         scheduleCallDeletion(terminalCallId);
       }
     }
 
     async function getUserName(uid) {
+      if (userNameCache.has(uid)) return userNameCache.get(uid);
+
       const snap = await getDoc(doc(db, "users", uid));
       const data = snap.data();
-      return data?.name || data?.email || uid;
+      const name = data?.name || data?.email || uid;
+      userNameCache.set(uid, name);
+      return name;
     }
 
     function resetAppState() {
       currentUser = null;
-      currentCallId = null;
-      currentPartnerId = "";
       incomingCallId = null;
       currentUserLabel.textContent = "---";
       usersList.innerHTML = "";
@@ -890,8 +888,7 @@
       setVisible(logoutButton, false);
       setVisible(incomingModal, false);
       stopRingtone();
-      setVisible(endCallButton, false);
-      hideCallState();
+      resetCallSession();
     }
 
     function cleanupListeners() {
@@ -928,13 +925,18 @@
 
     function unlockAudio() {
       try {
-        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-        if (!AudioContextClass) return;
-        audioContext ??= new AudioContextClass();
+        if (!ensureAudioContext()) return;
         audioContext.resume?.();
       } catch (error) {
         console.warn("audio unlock failed", error);
       }
+    }
+
+    function ensureAudioContext() {
+      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+      if (!AudioContextClass) return null;
+      audioContext ??= new AudioContextClass();
+      return audioContext;
     }
 
     function startRingtone() {
@@ -958,9 +960,7 @@
       if (!ringtoneActive) return;
 
       try {
-        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-        if (!AudioContextClass) return;
-        audioContext ??= new AudioContextClass();
+        if (!ensureAudioContext()) return;
         if (audioContext.state === "suspended") audioContext.resume?.();
 
         const now = audioContext.currentTime;
@@ -1156,6 +1156,10 @@
       rtcPeer?.close?.();
       motionChannel = null;
       rtcPeer = null;
+      resetRtcState();
+    }
+
+    function resetRtcState() {
       rtcRole = "";
       rtcCallId = "";
       remoteDescriptionApplied = false;
@@ -1200,7 +1204,7 @@
       }
 
       frame ??= lastRemoteMotionFrame;
-      remoteCtx.clearRect(0, 0, remoteCanvas.width, remoteCanvas.height);
+      clearCanvas(remoteCtx, remoteCanvas);
 
       if (!frame?.items?.length) {
         remoteEmpty.hidden = !currentCallId;
@@ -1705,12 +1709,12 @@
     }
 
     function drawSpectrum(targetCtx, targetCanvas, frame, options = {}) {
-      targetCtx.clearRect(0, 0, targetCanvas.width, targetCanvas.height);
+      clearCanvas(targetCtx, targetCanvas);
       drawSpectrumPath(targetCtx, frame.points, frame.active, options);
     }
 
     function drawNoFace(targetCtx, targetCanvas) {
-      targetCtx.clearRect(0, 0, targetCanvas.width, targetCanvas.height);
+      clearCanvas(targetCtx, targetCanvas);
     }
 
     function drawSpectrumPath(targetCtx, points, active, options = {}) {
@@ -1860,7 +1864,7 @@
 
     function resetAll() {
       waitForFaceCalibration();
-      localCtx.clearRect(0, 0, localCanvas.width, localCanvas.height);
+      clearCanvas(localCtx, localCanvas);
     }
 
     function resetCalibrationState() {
@@ -1901,6 +1905,10 @@
 
     function clamp(value, min, max) {
       return Math.min(Math.max(value, min), max);
+    }
+
+    function clearCanvas(targetCtx, targetCanvas) {
+      targetCtx.clearRect(0, 0, targetCanvas.width, targetCanvas.height);
     }
   </script>
 </body>
