@@ -313,6 +313,9 @@
 
     <section id="hud">
       <div class="panel">
+        <button id="cameraButton" type="button">WebCam</button>
+      </div>
+      <div class="panel">
         <div class="row">
           <button id="resetButton" type="button">リセット</button>
           <button id="paramToggleButton" type="button">パラメータ</button>
@@ -403,6 +406,7 @@
     const callAction = $("callAction");
     const callSelectedButton = $("callSelectedButton");
     const resetButton = $("resetButton");
+    const cameraButton = $("cameraButton");
     const paramToggleButton = $("paramToggleButton");
     const logoutButton = $("logoutButton");
     const authView = $("authView");
@@ -591,6 +595,7 @@
     acceptButton.addEventListener("click", () => acceptIncomingCall().catch(showCallError));
     declineButton.addEventListener("click", () => declineIncomingCall().catch(showCallError));
     endCallButton.addEventListener("click", () => endCall().catch(showCallError));
+    cameraButton.addEventListener("click", () => startCameraFromUserAction().catch(showCameraError));
     ["pointerdown", "keydown"].forEach(eventName => {
       window.addEventListener(eventName, unlockAudio, { once: true });
     });
@@ -602,7 +607,11 @@
 
     await loadParameterControls();
     initializeAuth();
-    startCamera().catch(showCameraError);
+    if (shouldWaitForCameraGesture()) {
+      status.textContent = "WebCamボタンを押してカメラを開始してください。";
+    } else {
+      startCamera().catch(showCameraError);
+    }
 
     function initializeAuth() {
       onAuthStateChanged(auth, async user => {
@@ -1351,6 +1360,23 @@
       await video.play();
       waitForFaceCalibration();
       startLoop();
+    }
+
+    async function startCameraFromUserAction() {
+      cameraButton.disabled = true;
+      status.textContent = "WebCamを準備中...";
+      try {
+        await startCamera();
+        cameraButton.textContent = "WebCam再起動";
+      } finally {
+        cameraButton.disabled = false;
+      }
+    }
+
+    function shouldWaitForCameraGesture() {
+      const ua = navigator.userAgent || "";
+      const isiPadOS = navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1;
+      return /iPad|iPhone|iPod/.test(ua) || isiPadOS;
     }
 
     async function openUserFacingCamera() {
