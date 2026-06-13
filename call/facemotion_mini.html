@@ -313,9 +313,6 @@
 
     <section id="hud">
       <div class="panel">
-        <button id="cameraButton" type="button">WebCam</button>
-      </div>
-      <div class="panel">
         <div class="row">
           <button id="resetButton" type="button">リセット</button>
           <button id="paramToggleButton" type="button">パラメータ</button>
@@ -405,7 +402,6 @@
     const callAction = $("callAction");
     const callSelectedButton = $("callSelectedButton");
     const resetButton = $("resetButton");
-    const cameraButton = $("cameraButton");
     const paramToggleButton = $("paramToggleButton");
     const logoutButton = $("logoutButton");
     const authView = $("authView");
@@ -557,6 +553,8 @@
     let currentCallId = null;
     let currentPartnerId = "";
     let selectedCallee = null;
+    let cameraReady = false;
+    let cameraStartPromise = null;
     let incomingCallId = null;
     let localMotionFrame = null;
     let lastRemoteMotionFrame = null;
@@ -594,7 +592,6 @@
     acceptButton.addEventListener("click", () => acceptIncomingCall().catch(showCallError));
     declineButton.addEventListener("click", () => declineIncomingCall().catch(showCallError));
     endCallButton.addEventListener("click", () => endCall().catch(showCallError));
-    cameraButton.addEventListener("click", () => startCameraFromUserAction().catch(showCameraError));
     ["pointerdown", "keydown"].forEach(eventName => {
       window.addEventListener(eventName, unlockAudio, { once: true });
     });
@@ -606,11 +603,7 @@
 
     await loadParameterControls();
     if (await initializeFirebase()) initializeAuth();
-    if (shouldWaitForCameraGesture()) {
-      status.textContent = "WebCamボタンを押してカメラを開始してください。";
-    } else {
-      startCamera().catch(showCameraError);
-    }
+    status.textContent = "ログイン後、通話相手を選ぶとWebCamを開始します。";
 
     async function initializeFirebase() {
       try {
@@ -774,10 +767,11 @@
         name: user.name || user.email || user.uid
       };
       updateCallAction();
+      ensureCameraStarted().catch(showCameraError);
     }
 
     function updateCallAction() {
-      const available = Boolean(currentUser && selectedCallee && !currentCallId);
+      const available = Boolean(currentUser && selectedCallee && cameraReady && !currentCallId);
       setVisible(callAction, Boolean(currentUser && !currentCallId));
       callSelectedButton.disabled = !available;
     }
@@ -841,6 +835,7 @@
 
     async function acceptIncomingCall() {
       if (!incomingCallId) return;
+      await ensureCameraStarted();
 
       const callId = incomingCallId;
       const callSnap = await getDoc(doc(db, "calls", callId));
@@ -1008,6 +1003,7 @@
       setVisible(logoutButton, false);
       setVisible(incomingModal, false);
       stopRingtone();
+      stopCamera();
       resetCallSession();
     }
 
@@ -1396,25 +1392,24 @@
       video.srcObject = stream;
 
       await video.play();
+      cameraReady = true;
+      cameraStartPromise = null;
+      updateCallAction();
       waitForFaceCalibration();
       startLoop();
     }
 
-    async function startCameraFromUserAction() {
-      cameraButton.disabled = true;
+    async function ensureCameraStarted() {
+      if (cameraReady) return;
+      if (cameraStartPromise) return cameraStartPromise;
       status.textContent = "WebCamを準備中...";
-      try {
-        await startCamera();
-        cameraButton.textContent = "WebCam再起動";
-      } finally {
-        cameraButton.disabled = false;
-      }
-    }
-
-    function shouldWaitForCameraGesture() {
-      const ua = navigator.userAgent || "";
-      const isiPadOS = navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1;
-      return /iPad|iPhone|iPod/.test(ua) || isiPadOS;
+      cameraStartPromise = startCamera().catch(error => {
+        cameraReady = false;
+        cameraStartPromise = null;
+        updateCallAction();
+        throw error;
+      });
+      return cameraStartPromise;
     }
 
     async function openUserFacingCamera() {
@@ -1461,6 +1456,9 @@
       const cameraStream = video.srcObject instanceof MediaStream ? video.srcObject : null;
       if (cameraStream) cameraStream.getTracks().forEach(track => track.stop());
       video.srcObject = null;
+      cameraReady = false;
+      cameraStartPromise = null;
+      updateCallAction();
     }
 
     function startLoop() {

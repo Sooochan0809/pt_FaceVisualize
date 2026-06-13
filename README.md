@@ -41,7 +41,7 @@ GitHub Pages で公開している場合は、以下からアクセスできま�
 
 このリポジトリはビルド不要の静的サイトです。ブラウザで `index.html` を開くか、ローカルサーバーを起動してアクセスします。
 
-`call/` を使う場合は、`call/firebase-config.example.js` を参考に `call/firebase-config.js` を作成し、Firebase の Web アプリ設定を記入してください。`call/firebase-config.js` は Git の追跡対象から除外されています。
+`call/` の通話機能は `call/firebase-config.js` の Firebase Web アプリ設定を読み込みます。GitHub Pages でも通話機能を使うため、このファイルはリポジトリに含めています。
 
 ```bash
 python3 -m http.server 8000
