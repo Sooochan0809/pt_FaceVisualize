@@ -166,12 +166,12 @@
 
     .user-row {
       display: flex;
-      justify-content: space-between;
       gap: 8px;
       align-items: center;
       padding-top: 6px;
       border-top: 1px solid #ffffff24;
       font-size: 12px;
+      cursor: pointer;
     }
 
     .user-row strong,
@@ -185,6 +185,43 @@
     .user-row span,
     .muted {
       color: #cbd5df;
+    }
+
+    .call-action {
+      position: absolute;
+      left: 50%;
+      bottom: 28px;
+      z-index: 14;
+      transform: translateX(-50%);
+      display: grid;
+      place-items: center;
+    }
+
+    #callSelectedButton {
+      min-width: auto;
+      border: 0;
+      border-radius: 999px;
+      padding: 24px 48px;
+      background: #00C948;
+      color: #fff;
+      box-shadow: 0 14px 34px #00000035;
+      font-size: 1.6em;
+      font-weight: 500;
+      display: inline-flex;
+      gap: 10px;
+      align-items: center;
+      justify-content: center;
+    }
+
+    #callSelectedButton img {
+      width: 1.6em;
+      height: 1.6em;
+      display: block;
+    }
+
+    #callSelectedButton:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
     }
 
     .modal {
@@ -267,6 +304,12 @@
     <canvas id="remoteCanvas"></canvas>
     <canvas id="localCanvas"></canvas>
     <div id="remoteEmpty" class="remote-empty">No Call</div>
+    <div id="callAction" class="call-action hidden">
+      <button id="callSelectedButton" type="button" disabled>
+        <img src="./icon_facetime.svg" alt="" aria-hidden="true" />
+        <span>FaceTime</span>
+      </button>
+    </div>
 
     <section id="hud">
       <div class="panel">
@@ -357,6 +400,8 @@
     const remoteCanvas = $("remoteCanvas");
     const localCtx = localCanvas.getContext("2d");
     const remoteCtx = remoteCanvas.getContext("2d");
+    const callAction = $("callAction");
+    const callSelectedButton = $("callSelectedButton");
     const resetButton = $("resetButton");
     const paramToggleButton = $("paramToggleButton");
     const logoutButton = $("logoutButton");
@@ -508,6 +553,7 @@
     let currentUser = null;
     let currentCallId = null;
     let currentPartnerId = "";
+    let selectedCallee = null;
     let incomingCallId = null;
     let localMotionFrame = null;
     let lastRemoteMotionFrame = null;
@@ -538,6 +584,10 @@
     signupButton.addEventListener("click", signup);
     loginButton.addEventListener("click", login);
     logoutButton.addEventListener("click", logout);
+    callSelectedButton.addEventListener("click", () => {
+      if (!selectedCallee) return;
+      startCall(selectedCallee.uid, selectedCallee.name).catch(showCallError);
+    });
     acceptButton.addEventListener("click", () => acceptIncomingCall().catch(showCallError));
     declineButton.addEventListener("click", () => declineIncomingCall().catch(showCallError));
     endCallButton.addEventListener("click", () => endCall().catch(showCallError));
@@ -579,6 +629,7 @@
         }
         listenUsers();
         listenIncomingCalls();
+        updateCallAction();
       });
     }
 
@@ -638,13 +689,23 @@
     function listenUsers() {
       unsubscribeUsers = onSnapshot(collection(db, "users"), snapshot => {
         usersList.innerHTML = "";
+        const seenUserIds = new Set();
 
         snapshot.forEach(docSnap => {
           const user = docSnap.data();
           if (!currentUser || user.uid === currentUser.uid) return;
+          seenUserIds.add(user.uid);
 
-          const row = document.createElement("div");
+          const row = document.createElement("label");
           row.className = "user-row";
+
+          const input = document.createElement("input");
+          input.type = "radio";
+          input.name = "callee";
+          input.checked = selectedCallee?.uid === user.uid;
+          input.addEventListener("change", () => {
+            if (input.checked) selectCallee(user);
+          });
 
           const label = document.createElement("div");
           const name = document.createElement("strong");
@@ -653,18 +714,27 @@
           email.textContent = user.email || "";
           label.append(name, email);
 
-          const button = document.createElement("button");
-          button.type = "button";
-          button.textContent = "呼び出す";
-          button.disabled = Boolean(currentCallId);
-          button.addEventListener("click", () => {
-            startCall(user.uid, user.name || user.email || user.uid).catch(showCallError);
-          });
-
-          row.append(label, button);
+          row.append(input, label);
           usersList.append(row);
         });
+
+        if (selectedCallee && !seenUserIds.has(selectedCallee.uid)) selectedCallee = null;
+        updateCallAction();
       });
+    }
+
+    function selectCallee(user) {
+      selectedCallee = {
+        uid: user.uid,
+        name: user.name || user.email || user.uid
+      };
+      updateCallAction();
+    }
+
+    function updateCallAction() {
+      const available = Boolean(currentUser && selectedCallee && !currentCallId);
+      setVisible(callAction, Boolean(currentUser && !currentCallId));
+      callSelectedButton.disabled = !available;
     }
 
     async function startCall(calleeId, calleeName) {
@@ -693,6 +763,7 @@
       rtcCallId = callRef.id;
       currentPartnerId = calleeId;
       flushPendingIceCandidates().catch(error => console.warn("ICE candidate flush failed", error));
+      updateCallAction();
       showCallState("呼び出し中...", calleeName);
       listenCurrentCall(currentCallId);
     }
@@ -754,6 +825,7 @@
 
       currentPartnerId = call.callerId;
       flushPendingIceCandidates().catch(error => console.warn("ICE candidate flush failed", error));
+      updateCallAction();
       showCallState("通話中", await getUserName(call.callerId));
       listenCurrentCall(callId);
     }
@@ -819,6 +891,7 @@
       callStatus.textContent = statusText;
       callPartnerLabel.textContent = `相手: ${partnerName}`;
       setVisible(endCallButton, true);
+      updateCallAction();
       remoteEmpty.textContent = statusText;
       remoteEmpty.hidden = false;
     }
@@ -827,6 +900,7 @@
       callStatus.textContent = "未接続";
       callPartnerLabel.textContent = "";
       setVisible(endCallButton, false);
+      updateCallAction();
       resetRemoteDisplay("No Call");
     }
 
@@ -881,6 +955,7 @@
     function resetAppState() {
       currentUser = null;
       incomingCallId = null;
+      selectedCallee = null;
       currentUserLabel.textContent = "---";
       usersList.innerHTML = "";
       setVisible(authView, true);
@@ -1356,7 +1431,7 @@
       drawSpectrum(localCtx, localCanvas, frame, {
         alpha: poseStable ? 0.94 : 0.58,
         lineWidth: 4,
-        strokeStyle: poseStable ? "#1d64c8" : "#6d7782"
+        strokeStyle: poseStable ? "#00C948" : "#6d7782"
       });
       localMotionFrame = motionPayloadFromFrame(frame, poseStable);
       sendLocalMotionFrame();
