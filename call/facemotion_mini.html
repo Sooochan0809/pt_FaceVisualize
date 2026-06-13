@@ -72,15 +72,15 @@
       left: 16px;
       top: 16px;
       z-index: 10;
-      width: min(390px, calc(100dvw - 32px));
+      width: min(260px, calc(100dvw - 32px));
       color: #f4f7fb;
     }
 
     .panel {
       padding: 12px 14px;
-      border-radius: 10px;
+      margin-bottom: 8px;
+      border-radius: 8px;
       background: var(--panel-bg);
-      border: 1px solid var(--panel-border);
     }
 
     .row {
@@ -88,6 +88,10 @@
       flex-wrap: wrap;
       gap: 8px;
       align-items: center;
+    }
+
+    .auth-actions {
+      justify-content: flex-end;
     }
 
     .set-controls {
@@ -271,11 +275,25 @@
           <button id="paramToggleButton" type="button">パラメータ</button>
           <button id="logoutButton" type="button" class="hidden">ログアウト</button>
         </div>
+        <div class="set-controls">
+          <label>
+            <span>dataset</span>
+            <select id="paramSetSelect" aria-label="パラメーターセット"></select>
+          </label>
+          <label>
+            <span>motion gain</span>
+            <select id="motionGainSetSelect" aria-label="係数セット"></select>
+          </label>
+        </div>
+        <div id="status">WebCamを準備中...</div>
+        <div id="params" class="hidden"></div>
+      </div>
+      <div class="panel">
         <div id="authView" class="auth-grid">
           <input id="emailInput" type="email" placeholder="email@example.com" />
           <input id="passwordInput" type="password" placeholder="password" />
           <input id="nameInput" type="text" placeholder="表示名" />
-          <div class="row">
+          <div class="row auth-actions">
             <button id="signupButton" type="button">新規登録</button>
             <button id="loginButton" type="button">ログイン</button>
           </div>
@@ -291,18 +309,6 @@
           </div>
           <div id="usersList"></div>
         </div>
-        <div class="set-controls">
-          <label>
-            <span>dataset</span>
-            <select id="paramSetSelect" aria-label="パラメーターセット"></select>
-          </label>
-          <label>
-            <span>motion gain</span>
-            <select id="motionGainSetSelect" aria-label="係数セット"></select>
-          </label>
-        </div>
-        <div id="status">WebCamを準備中...</div>
-        <div id="params" class="hidden"></div>
       </div>
     </section>
 
@@ -336,6 +342,7 @@
       addDoc,
       updateDoc,
       getDoc,
+      deleteDoc,
       query,
       where,
       onSnapshot,
@@ -389,6 +396,8 @@
     const UNSTABLE_POSE_GAIN = 0.45;
     const MOTION_GAIN_MIN = 0;
     const MOTION_GAIN_MAX = 2;
+    const TERMINAL_CALL_DELETE_DELAY_MS = 15000;
+    const ICE_FLUSH_DELAY_MS = 180;
 
     const PARAM_LABELS = new Map([
       ["browInnerUp", "眉上げ"],
@@ -510,9 +519,11 @@
     let pendingIceCandidates = [];
     let pendingRemoteIceCandidates = [];
     let processedRemoteCandidateCount = 0;
+    let iceFlushTimer = null;
     let audioContext = null;
     let ringtoneTimer = null;
     let ringtoneActive = false;
+    const scheduledCallDeletes = new Set();
     let unsubscribeUsers = null;
     let unsubscribeIncoming = null;
     let unsubscribeCurrentCall = null;
@@ -562,7 +573,9 @@
         const userData = userSnap.data();
         currentUserLabel.textContent = userData?.name || user.email || "名前未設定";
 
-        await saveUser(user, userData?.name || nameInput.value.trim());
+        if (!userSnap.exists()) {
+          await saveUser(user, nameInput.value.trim());
+        }
         listenUsers();
         listenIncomingCalls();
       });
@@ -600,7 +613,7 @@
       try {
         await setPersistence(auth, inMemoryPersistence);
         const result = await signInWithEmailAndPassword(auth, email, password);
-        await saveUser(result.user, name);
+        if (name) await saveUser(result.user, name);
       } catch (error) {
         alert(`ログインに失敗しました: ${error.code || error.message}`);
       }
@@ -614,9 +627,7 @@
     async function saveUser(user, name) {
       const data = {
         uid: user.uid,
-        email: user.email,
-        online: true,
-        updatedAt: serverTimestamp()
+        email: user.email
       };
 
       if (name) data.name = name;
@@ -674,8 +685,7 @@
         },
         callerCandidates: [],
         calleeCandidates: [],
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp()
+        createdAt: serverTimestamp()
       });
 
       currentCallId = callRef.id;
@@ -732,8 +742,7 @@
         answer: {
           type: answer.type,
           sdp: answer.sdp
-        },
-        updatedAt: serverTimestamp()
+        }
       });
 
       currentCallId = callId;
@@ -753,9 +762,9 @@
 
       const callId = incomingCallId;
       await updateDoc(doc(db, "calls", callId), {
-        status: "declined",
-        updatedAt: serverTimestamp()
+        status: "declined"
       });
+      scheduleCallDeletion(callId);
 
       incomingCallId = null;
       setVisible(incomingModal, false);
@@ -768,7 +777,17 @@
       unsubscribeCurrentCall = replaceSubscription(unsubscribeCurrentCall, () => {
         return onSnapshot(doc(db, "calls", callId), async snapshot => {
           const call = snapshot.data();
-          if (!call || !currentUser) return;
+          if (!call) {
+            if (currentCallId === callId || rtcCallId === callId) {
+              currentCallId = null;
+              currentPartnerId = "";
+              rtcCallId = "";
+              closePeerConnection();
+              hideCallState();
+            }
+            return;
+          }
+          if (!currentUser) return;
 
           const partnerId = call.callerId === currentUser.uid ? call.calleeId : call.callerId;
           currentPartnerId = partnerId;
@@ -792,9 +811,9 @@
 
       const callId = currentCallId;
       await updateDoc(doc(db, "calls", callId), {
-        status: "ended",
-        updatedAt: serverTimestamp()
+        status: "ended"
       });
+      scheduleCallDeletion(callId);
 
       currentCallId = null;
       currentPartnerId = "";
@@ -842,12 +861,14 @@
       }
 
       if (callStatusValue === "declined" || callStatusValue === "ended") {
+        const terminalCallId = currentCallId || rtcCallId;
         currentCallId = null;
         currentPartnerId = "";
         rtcCallId = "";
         closePeerConnection();
         setVisible(endCallButton, false);
         resetRemoteDisplay("No Call");
+        scheduleCallDeletion(terminalCallId);
       }
     }
 
@@ -888,6 +909,21 @@
 
     function setVisible(element, visible) {
       element.classList.toggle("hidden", !visible);
+    }
+
+    function scheduleCallDeletion(callId) {
+      if (!callId || scheduledCallDeletes.has(callId)) return;
+
+      scheduledCallDeletes.add(callId);
+      window.setTimeout(async () => {
+        try {
+          await deleteDoc(doc(db, "calls", callId));
+        } catch (error) {
+          console.warn("call cleanup failed", error);
+        } finally {
+          scheduledCallDeletes.delete(callId);
+        }
+      }, TERMINAL_CALL_DELETE_DELAY_MS);
     }
 
     function unlockAudio() {
@@ -1036,19 +1072,27 @@
       const payload = normalizeIceCandidate(candidate);
       if (!payload) return;
 
+      pendingIceCandidates.push(payload);
+      scheduleIceFlush();
+    }
+
+    function scheduleIceFlush() {
       const callId = rtcCallId || currentCallId;
       const role = rtcRole;
-      if (!callId || !role) {
-        pendingIceCandidates.push(payload);
-        return;
-      }
+      if (!callId || !role || iceFlushTimer) return;
 
-      await updateDoc(doc(db, "calls", callId), {
-        [`${role}Candidates`]: arrayUnion(payload)
-      });
+      iceFlushTimer = window.setTimeout(() => {
+        iceFlushTimer = null;
+        flushPendingIceCandidates().catch(error => console.warn("ICE candidate flush failed", error));
+      }, ICE_FLUSH_DELAY_MS);
     }
 
     async function flushPendingIceCandidates() {
+      if (iceFlushTimer) {
+        window.clearTimeout(iceFlushTimer);
+        iceFlushTimer = null;
+      }
+
       const callId = rtcCallId || currentCallId;
       const role = rtcRole;
       if (!callId || !role || !pendingIceCandidates.length) return;
@@ -1104,6 +1148,10 @@
     }
 
     function closePeerConnection() {
+      if (iceFlushTimer) {
+        window.clearTimeout(iceFlushTimer);
+        iceFlushTimer = null;
+      }
       motionChannel?.close?.();
       rtcPeer?.close?.();
       motionChannel = null;
