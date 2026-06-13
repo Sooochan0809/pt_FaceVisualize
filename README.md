@@ -41,6 +41,8 @@ GitHub Pages で公開している場合は、以下からアクセスできま�
 
 このリポジトリはビルド不要の静的サイトです。ブラウザで `index.html` を開くか、ローカルサーバーを起動してアクセスします。
 
+`call/` を使う場合は、`call/firebase-config.example.js` を参考に `call/firebase-config.js` を作成し、Firebase の Web アプリ設定を記入してください。`call/firebase-config.js` は Git の追跡対象から除外されています。
+
 ```bash
 python3 -m http.server 8000
 ```
