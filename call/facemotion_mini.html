@@ -395,7 +395,6 @@
       serverTimestamp,
       arrayUnion
     } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-firestore.js";
-    import { firebaseConfig } from "./firebase-config.js";
 
     const $ = id => document.getElementById(id);
     const video = $("video");
@@ -430,9 +429,9 @@
     const motionGainSetSelect = $("motionGainSetSelect");
     const status = $("status");
     const params = $("params");
-    const firebaseApp = initializeApp(firebaseConfig);
-    const auth = getAuth(firebaseApp);
-    const db = getFirestore(firebaseApp);
+    let firebaseApp = null;
+    let auth = null;
+    let db = null;
 
     const PARAM_SET_DIR = "../parameter";
     const WARMUP_FRAMES = 20;
@@ -606,14 +605,42 @@
     });
 
     await loadParameterControls();
-    initializeAuth();
+    if (await initializeFirebase()) initializeAuth();
     if (shouldWaitForCameraGesture()) {
       status.textContent = "WebCamボタンを押してカメラを開始してください。";
     } else {
       startCamera().catch(showCameraError);
     }
 
+    async function initializeFirebase() {
+      try {
+        const { firebaseConfig } = await import("./firebase-config.js");
+        firebaseApp = initializeApp(firebaseConfig);
+        auth = getAuth(firebaseApp);
+        db = getFirestore(firebaseApp);
+        return true;
+      } catch (error) {
+        console.warn("Firebase config was not loaded. Calling features are disabled.", error);
+        disableCallingFeatures("Firebase設定が見つからないため、ログイン/通話機能は無効です。");
+        return false;
+      }
+    }
+
+    function disableCallingFeatures(message) {
+      signupButton.disabled = true;
+      loginButton.disabled = true;
+      logoutButton.disabled = true;
+      callSelectedButton.disabled = true;
+      setVisible(authView, true);
+      setVisible(appView, false);
+      setVisible(logoutButton, false);
+      callStatus.textContent = message;
+      usersList.textContent = "";
+      updateCallAction();
+    }
+
     function initializeAuth() {
+      if (!auth || !db) return;
       onAuthStateChanged(auth, async user => {
         cleanupListeners();
 
@@ -641,6 +668,11 @@
     }
 
     async function signup() {
+      if (!auth || !db) {
+        alert("Firebase設定がないため、新規登録できません");
+        return;
+      }
+
       const email = emailInput.value.trim();
       const password = passwordInput.value.trim();
       const name = nameInput.value.trim();
@@ -660,6 +692,11 @@
     }
 
     async function login() {
+      if (!auth || !db) {
+        alert("Firebase設定がないため、ログインできません");
+        return;
+      }
+
       const email = emailInput.value.trim();
       const password = passwordInput.value.trim();
       const name = nameInput.value.trim();
@@ -679,6 +716,7 @@
     }
 
     async function logout() {
+      if (!auth) return;
       cleanupListeners();
       await signOut(auth);
     }
