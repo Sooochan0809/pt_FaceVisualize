@@ -10,6 +10,7 @@
       --panel-bg: #1b2026dc;
       --text: #111;
       --bg: #f0f0f0;
+      --panel-border: #ffffff24;
     }
 
     * {
@@ -35,14 +36,16 @@
 
     video {
       position: absolute;
-      inset: 0;
-      z-index: 0;
-      width: 100%;
-      height: 100%;
+      right: 18px;
+      bottom: 18px;
+      z-index: 12;
+      width: min(24dvw, 160px);
+      height: auto;
+      aspect-ratio: 3 / 4;
       object-fit: cover;
-      opacity: 0.16;
+      border-radius: 8px;
+      background: #111;
       transform: scaleX(-1);
-      pointer-events: none;
     }
 
     canvas {
@@ -53,6 +56,15 @@
       height: 100%;
       display: block;
       pointer-events: none;
+    }
+
+    #localCanvas {
+      z-index: 3;
+      opacity: 0;
+    }
+
+    #remoteCanvas {
+      z-index: 2;
     }
 
     #hud {
@@ -68,6 +80,7 @@
       padding: 12px 14px;
       border-radius: 10px;
       background: var(--panel-bg);
+      border: 1px solid var(--panel-border);
     }
 
     .row {
@@ -113,6 +126,97 @@
       cursor: pointer;
     }
 
+    input {
+      min-width: 0;
+      border: 1px solid #aaa;
+      border-radius: 6px;
+      padding: 7px 9px;
+      background: #fff;
+      color: #111;
+      font: inherit;
+      font-size: 13px;
+    }
+
+    .auth-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 7px;
+      margin-top: 8px;
+    }
+
+    .call-meta {
+      display: grid;
+      gap: 4px;
+      margin-top: 8px;
+      color: #cbd5df;
+      font-size: 12px;
+    }
+
+    #usersList {
+      display: grid;
+      gap: 6px;
+      max-height: 24dvh;
+      overflow: auto;
+      margin-top: 8px;
+    }
+
+    .user-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      align-items: center;
+      padding-top: 6px;
+      border-top: 1px solid #ffffff24;
+      font-size: 12px;
+    }
+
+    .user-row strong,
+    .user-row span {
+      display: block;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .user-row span,
+    .muted {
+      color: #cbd5df;
+    }
+
+    .modal {
+      position: fixed;
+      inset: 0;
+      z-index: 30;
+      display: grid;
+      place-items: center;
+      padding: 20px;
+      background: #00000080;
+    }
+
+    .modal-content {
+      width: min(420px, 100%);
+      padding: 22px;
+      border-radius: 14px;
+      background: #fff;
+      color: #111;
+      text-align: center;
+    }
+
+    .remote-empty {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      z-index: 1;
+      transform: translate(-50%, -50%);
+      color: #111;
+      font-size: clamp(28px, 8vw, 96px);
+      font-weight: 800;
+      opacity: 0.15;
+      pointer-events: none;
+      text-align: center;
+      white-space: nowrap;
+    }
+
     #status {
       min-height: 1.6em;
       margin-top: 8px;
@@ -156,13 +260,36 @@
 <body>
   <main>
     <video id="video" autoplay playsinline muted></video>
-    <canvas id="vizCanvas"></canvas>
+    <canvas id="remoteCanvas"></canvas>
+    <canvas id="localCanvas"></canvas>
+    <div id="remoteEmpty" class="remote-empty">No Call</div>
 
     <section id="hud">
       <div class="panel">
         <div class="row">
           <button id="resetButton" type="button">リセット</button>
           <button id="paramToggleButton" type="button">パラメータ</button>
+          <button id="logoutButton" type="button" class="hidden">ログアウト</button>
+        </div>
+        <div id="authView" class="auth-grid">
+          <input id="emailInput" type="email" placeholder="email@example.com" />
+          <input id="passwordInput" type="password" placeholder="password" />
+          <input id="nameInput" type="text" placeholder="表示名" />
+          <div class="row">
+            <button id="signupButton" type="button">新規登録</button>
+            <button id="loginButton" type="button">ログイン</button>
+          </div>
+        </div>
+        <div id="appView" class="hidden">
+          <div class="call-meta">
+            <span>ログイン中: <strong id="currentUserLabel">---</strong></span>
+            <span id="callStatus">未接続</span>
+            <span id="callPartnerLabel"></span>
+          </div>
+          <div class="row">
+            <button id="endCallButton" type="button" class="hidden">終了</button>
+          </div>
+          <div id="usersList"></div>
         </div>
         <div class="set-controls">
           <label>
@@ -178,21 +305,77 @@
         <div id="params" class="hidden"></div>
       </div>
     </section>
+
+    <div id="incomingModal" class="modal hidden">
+      <div class="modal-content">
+        <h2>着信</h2>
+        <p id="incomingText">誰かから着信しています</p>
+        <button id="acceptButton" type="button">応答</button>
+        <button id="declineButton" type="button">拒否</button>
+      </div>
+    </div>
   </main>
 
   <script type="module">
     import { FaceLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.34";
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-app.js";
+    import {
+      getAuth,
+      createUserWithEmailAndPassword,
+      signInWithEmailAndPassword,
+      signOut,
+      onAuthStateChanged,
+      setPersistence,
+      inMemoryPersistence
+    } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-auth.js";
+    import {
+      getFirestore,
+      collection,
+      doc,
+      setDoc,
+      addDoc,
+      updateDoc,
+      getDoc,
+      query,
+      where,
+      onSnapshot,
+      serverTimestamp
+    } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-firestore.js";
+    import { firebaseConfig } from "./firebase-config.js";
 
     const $ = id => document.getElementById(id);
     const video = $("video");
-    const canvas = $("vizCanvas");
-    const ctx = canvas.getContext("2d");
+    const localCanvas = $("localCanvas");
+    const remoteCanvas = $("remoteCanvas");
+    const localCtx = localCanvas.getContext("2d");
+    const remoteCtx = remoteCanvas.getContext("2d");
     const resetButton = $("resetButton");
     const paramToggleButton = $("paramToggleButton");
+    const logoutButton = $("logoutButton");
+    const authView = $("authView");
+    const appView = $("appView");
+    const emailInput = $("emailInput");
+    const passwordInput = $("passwordInput");
+    const nameInput = $("nameInput");
+    const signupButton = $("signupButton");
+    const loginButton = $("loginButton");
+    const currentUserLabel = $("currentUserLabel");
+    const usersList = $("usersList");
+    const callStatus = $("callStatus");
+    const callPartnerLabel = $("callPartnerLabel");
+    const endCallButton = $("endCallButton");
+    const incomingModal = $("incomingModal");
+    const incomingText = $("incomingText");
+    const acceptButton = $("acceptButton");
+    const declineButton = $("declineButton");
+    const remoteEmpty = $("remoteEmpty");
     const paramSetSelect = $("paramSetSelect");
     const motionGainSetSelect = $("motionGainSetSelect");
     const status = $("status");
     const params = $("params");
+    const firebaseApp = initializeApp(firebaseConfig);
+    const auth = getAuth(firebaseApp);
+    const db = getFirestore(firebaseApp);
 
     const PARAM_SET_DIR = "../parameter";
     const WARMUP_FRAMES = 20;
@@ -310,6 +493,16 @@
     let activeParamSetName = "";
     let motionGainSets = {};
     let activeMotionGainSetName = "";
+    let currentUser = null;
+    let currentCallId = null;
+    let currentPartnerId = "";
+    let incomingCallId = null;
+    let localMotionFrame = null;
+    let lastRemoteMotionFrame = null;
+    let lastMotionSentAt = 0;
+    let unsubscribeUsers = null;
+    let unsubscribeIncoming = null;
+    let unsubscribeCurrentCall = null;
 
     resizeCanvas();
     window.addEventListener("resize", resizeCanvas);
@@ -317,11 +510,388 @@
     paramToggleButton.addEventListener("click", () => params.classList.toggle("hidden"));
     paramSetSelect.addEventListener("change", () => applyParamSet(paramSetSelect.value));
     motionGainSetSelect.addEventListener("change", () => applyMotionGainSet(motionGainSetSelect.value));
+    signupButton.addEventListener("click", signup);
+    loginButton.addEventListener("click", login);
+    logoutButton.addEventListener("click", logout);
+    acceptButton.addEventListener("click", acceptIncomingCall);
+    declineButton.addEventListener("click", declineIncomingCall);
+    endCallButton.addEventListener("click", endCall);
+    window.addEventListener("pagehide", () => {
+      cleanupListeners();
+      stopCamera();
+    });
 
     await loadParameterControls();
+    initializeAuth();
     startCamera().catch(error => {
       status.textContent = `カメラを開始できません: ${error.message}\nHTTPSまたはlocalhost上で実行してください。`;
     });
+
+    function initializeAuth() {
+      onAuthStateChanged(auth, async user => {
+        cleanupListeners();
+
+        if (!user) {
+          resetAppState();
+          return;
+        }
+
+        currentUser = user;
+        setVisible(authView, false);
+        setVisible(appView, true);
+        setVisible(logoutButton, true);
+
+        const userSnap = await getDoc(doc(db, "users", user.uid));
+        const userData = userSnap.data();
+        currentUserLabel.textContent = userData?.name || user.email || "名前未設定";
+
+        await saveUser(user, userData?.name || nameInput.value.trim());
+        listenUsers();
+        listenIncomingCalls();
+      });
+    }
+
+    async function signup() {
+      const email = emailInput.value.trim();
+      const password = passwordInput.value.trim();
+      const name = nameInput.value.trim();
+
+      if (!email || !password || !name) {
+        alert("メールアドレス、パスワード、表示名を入力してください");
+        return;
+      }
+
+      try {
+        await setPersistence(auth, inMemoryPersistence);
+        const result = await createUserWithEmailAndPassword(auth, email, password);
+        await saveUser(result.user, name);
+      } catch (error) {
+        alert(`新規登録に失敗しました: ${error.code || error.message}`);
+      }
+    }
+
+    async function login() {
+      const email = emailInput.value.trim();
+      const password = passwordInput.value.trim();
+      const name = nameInput.value.trim();
+
+      if (!email || !password) {
+        alert("メールアドレスとパスワードを入力してください");
+        return;
+      }
+
+      try {
+        await setPersistence(auth, inMemoryPersistence);
+        const result = await signInWithEmailAndPassword(auth, email, password);
+        await saveUser(result.user, name);
+      } catch (error) {
+        alert(`ログインに失敗しました: ${error.code || error.message}`);
+      }
+    }
+
+    async function logout() {
+      cleanupListeners();
+      await signOut(auth);
+    }
+
+    async function saveUser(user, name) {
+      const data = {
+        uid: user.uid,
+        email: user.email,
+        online: true,
+        updatedAt: serverTimestamp()
+      };
+
+      if (name) data.name = name;
+      await setDoc(doc(db, "users", user.uid), data, { merge: true });
+    }
+
+    function listenUsers() {
+      unsubscribeUsers = onSnapshot(collection(db, "users"), snapshot => {
+        usersList.innerHTML = "";
+
+        snapshot.forEach(docSnap => {
+          const user = docSnap.data();
+          if (!currentUser || user.uid === currentUser.uid) return;
+
+          const row = document.createElement("div");
+          row.className = "user-row";
+
+          const label = document.createElement("div");
+          const name = document.createElement("strong");
+          const email = document.createElement("span");
+          name.textContent = user.name || user.email || user.uid;
+          email.textContent = user.email || "";
+          label.append(name, email);
+
+          const button = document.createElement("button");
+          button.type = "button";
+          button.textContent = "呼び出す";
+          button.disabled = Boolean(currentCallId);
+          button.addEventListener("click", () => startCall(user.uid, user.name || user.email || user.uid));
+
+          row.append(label, button);
+          usersList.append(row);
+        });
+      });
+    }
+
+    async function startCall(calleeId, calleeName) {
+      if (!currentUser || currentCallId) return;
+
+      const callRef = await addDoc(collection(db, "calls"), {
+        callerId: currentUser.uid,
+        calleeId,
+        status: "ringing",
+        motionFrames: {},
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      });
+
+      currentCallId = callRef.id;
+      currentPartnerId = calleeId;
+      showCallState("呼び出し中...", calleeName);
+      listenCurrentCall(currentCallId);
+    }
+
+    function listenIncomingCalls() {
+      if (!currentUser) return;
+
+      const incomingQuery = query(
+        collection(db, "calls"),
+        where("calleeId", "==", currentUser.uid),
+        where("status", "==", "ringing")
+      );
+
+      unsubscribeIncoming = onSnapshot(incomingQuery, async snapshot => {
+        if (snapshot.empty || currentCallId) return;
+
+        const docSnap = snapshot.docs[0];
+        const call = docSnap.data();
+        incomingCallId = docSnap.id;
+        incomingText.textContent = `${await getUserName(call.callerId)} から着信しています`;
+        setVisible(incomingModal, true);
+      });
+    }
+
+    async function acceptIncomingCall() {
+      if (!incomingCallId) return;
+
+      await updateDoc(doc(db, "calls", incomingCallId), {
+        status: "accepted",
+        updatedAt: serverTimestamp()
+      });
+
+      currentCallId = incomingCallId;
+      incomingCallId = null;
+      setVisible(incomingModal, false);
+
+      const callSnap = await getDoc(doc(db, "calls", currentCallId));
+      const call = callSnap.data();
+      currentPartnerId = call.callerId;
+      showCallState("通話中", await getUserName(call.callerId));
+      listenCurrentCall(currentCallId);
+    }
+
+    async function declineIncomingCall() {
+      if (!incomingCallId) return;
+
+      await updateDoc(doc(db, "calls", incomingCallId), {
+        status: "declined",
+        updatedAt: serverTimestamp()
+      });
+
+      incomingCallId = null;
+      setVisible(incomingModal, false);
+    }
+
+    function listenCurrentCall(callId) {
+      unsubscribeCurrentCall = replaceSubscription(unsubscribeCurrentCall, () => {
+        return onSnapshot(doc(db, "calls", callId), async snapshot => {
+          const call = snapshot.data();
+          if (!call || !currentUser) return;
+
+          const partnerId = call.callerId === currentUser.uid ? call.calleeId : call.callerId;
+          currentPartnerId = partnerId;
+          callPartnerLabel.textContent = `相手: ${await getUserName(partnerId)}`;
+          updateCallStatus(call.status);
+          lastRemoteMotionFrame = call.motionFrames?.[partnerId] || null;
+          drawRemoteMotionFrame(lastRemoteMotionFrame);
+        });
+      });
+    }
+
+    async function endCall() {
+      if (!currentCallId) {
+        hideCallState();
+        return;
+      }
+
+      const callId = currentCallId;
+      await updateDoc(doc(db, "calls", callId), {
+        status: "ended",
+        updatedAt: serverTimestamp()
+      });
+
+      currentCallId = null;
+      currentPartnerId = "";
+      hideCallState();
+    }
+
+    function showCallState(statusText, partnerName) {
+      callStatus.textContent = statusText;
+      callPartnerLabel.textContent = `相手: ${partnerName}`;
+      setVisible(endCallButton, true);
+      remoteEmpty.textContent = statusText;
+      remoteEmpty.hidden = false;
+    }
+
+    function hideCallState() {
+      callStatus.textContent = "未接続";
+      callPartnerLabel.textContent = "";
+      setVisible(endCallButton, false);
+      remoteEmpty.textContent = "No Call";
+      remoteEmpty.hidden = false;
+      lastRemoteMotionFrame = null;
+      remoteCtx.clearRect(0, 0, remoteCanvas.width, remoteCanvas.height);
+    }
+
+    function updateCallStatus(callStatusValue) {
+      const label = {
+        ringing: "呼び出し中...",
+        accepted: "通話中",
+        declined: "拒否されました",
+        ended: "通話終了"
+      }[callStatusValue];
+
+      if (label) callStatus.textContent = label;
+
+      if (callStatusValue === "accepted") {
+        setVisible(endCallButton, true);
+        remoteEmpty.textContent = "Waiting";
+        remoteEmpty.hidden = false;
+      }
+
+      if (callStatusValue === "declined" || callStatusValue === "ended") {
+        currentCallId = null;
+        currentPartnerId = "";
+        setVisible(endCallButton, false);
+        remoteEmpty.textContent = "No Call";
+        remoteEmpty.hidden = false;
+      }
+    }
+
+    async function getUserName(uid) {
+      const snap = await getDoc(doc(db, "users", uid));
+      const data = snap.data();
+      return data?.name || data?.email || uid;
+    }
+
+    function resetAppState() {
+      currentUser = null;
+      currentCallId = null;
+      currentPartnerId = "";
+      incomingCallId = null;
+      currentUserLabel.textContent = "---";
+      usersList.innerHTML = "";
+      setVisible(authView, true);
+      setVisible(appView, false);
+      setVisible(logoutButton, false);
+      setVisible(incomingModal, false);
+      setVisible(endCallButton, false);
+      hideCallState();
+    }
+
+    function cleanupListeners() {
+      unsubscribeUsers = replaceSubscription(unsubscribeUsers);
+      unsubscribeIncoming = replaceSubscription(unsubscribeIncoming);
+      unsubscribeCurrentCall = replaceSubscription(unsubscribeCurrentCall);
+    }
+
+    function replaceSubscription(unsubscribe, subscribe) {
+      if (unsubscribe) unsubscribe();
+      return subscribe ? subscribe() : null;
+    }
+
+    function setVisible(element, visible) {
+      element.classList.toggle("hidden", !visible);
+    }
+
+    function motionPayloadFromFrame(frame, poseStable) {
+      return {
+        active: Boolean(frame.active),
+        poseStable: Boolean(poseStable),
+        sentAt: Date.now(),
+        items: (frame.items || []).map(({ categoryName, label, amount, sharpness }) => ({
+          categoryName,
+          label,
+          amount: roundMotionValue(amount),
+          sharpness: roundMotionValue(sharpness)
+        }))
+      };
+    }
+
+    async function sendLocalMotionFrame() {
+      if (!currentUser || !currentCallId || !localMotionFrame) return;
+
+      const now = performance.now();
+      if (now - lastMotionSentAt < 100) return;
+      lastMotionSentAt = now;
+
+      try {
+        await updateDoc(doc(db, "calls", currentCallId), {
+          [`motionFrames.${currentUser.uid}`]: localMotionFrame,
+          updatedAt: serverTimestamp()
+        });
+      } catch (error) {
+        console.warn("motion frame send failed", error);
+      }
+    }
+
+    function drawRemoteMotionFrame(frame = null) {
+      frame ??= lastRemoteMotionFrame;
+      remoteCtx.clearRect(0, 0, remoteCanvas.width, remoteCanvas.height);
+
+      if (!frame?.items?.length) {
+        remoteEmpty.hidden = !currentCallId;
+        return;
+      }
+
+      remoteEmpty.hidden = true;
+      const remoteFrame = spectrumFrameFromPayload(frame, remoteCanvas);
+      drawSpectrum(remoteCtx, remoteCanvas, remoteFrame, {
+        alpha: frame.poseStable ? 0.94 : 0.24,
+        lineWidth: 4,
+        strokeStyle: frame.poseStable ? "#1d64c8" : "#6d7782"
+      });
+    }
+
+    function spectrumFrameFromPayload(frame, targetCanvas) {
+      const width = targetCanvas.width;
+      const height = targetCanvas.height;
+      const cx = width / 2;
+      const cy = height / 2;
+      const baseRadius = Math.min(width, height) * 0.24;
+      const maxSpike = Math.min(width, height) * 0.17;
+      const items = frame.items || [];
+      const points = items.map(({ categoryName, label, amount = 0, sharpness = 0 }, index) => {
+        const angle = index / items.length * Math.PI * 2 - Math.PI / 2;
+        const radius = baseRadius + clamp(Number(amount), -1, 1) * maxSpike;
+        return {
+          x: cx + Math.cos(angle) * radius,
+          y: cy + Math.sin(angle) * radius,
+          sharpness: clamp(Number(sharpness), 0, 1),
+          categoryName,
+          label
+        };
+      });
+
+      return { active: Boolean(frame.active), points };
+    }
+
+    function roundMotionValue(value) {
+      return Math.round(Number(value || 0) * 10000) / 10000;
+    }
 
     async function setupFaceLandmarker() {
       if (faceLandmarker) return faceLandmarker;
@@ -394,7 +964,8 @@
 
       if (!categories.length) {
         if (base.size || calibrationActive()) waitForFaceCalibration();
-        drawNoFace();
+        drawNoFace(localCtx, localCanvas);
+        localMotionFrame = null;
         status.textContent = "顔を検出中...";
         return;
       }
@@ -413,11 +984,12 @@
           sharpnessValues: previewSharpness,
           baseMap: base
         });
-        drawSpectrum(preview, {
+        drawSpectrum(localCtx, localCanvas, preview, {
           alpha: 0.24,
           lineWidth: 2,
           strokeStyle: "#111"
         });
+        localMotionFrame = null;
         return;
       }
 
@@ -427,11 +999,13 @@
         sharpnessValues: currentSharpness,
         baseMap: base
       });
-      drawSpectrum(frame, {
+      drawSpectrum(localCtx, localCanvas, frame, {
         alpha: poseStable ? 0.94 : 0.24,
         lineWidth: 4,
         strokeStyle: poseStable ? "#1d64c8" : "#6d7782"
       });
+      localMotionFrame = motionPayloadFromFrame(frame, poseStable);
+      sendLocalMotionFrame();
       status.textContent = poseStable ? "検出中" : "顔の向きが大きいため、現在値を抑制中。";
     }
 
@@ -725,8 +1299,8 @@
 
       if (categories.length < 3) return { active: false, points: [] };
 
-      const width = canvas.width;
-      const height = canvas.height;
+      const width = localCanvas.width;
+      const height = localCanvas.height;
       const cx = width / 2;
       const cy = height / 2;
       const baseRadius = Math.min(width, height) * 0.24;
@@ -748,17 +1322,23 @@
         sharpnessValues.set(categoryName, sharpness);
 
         const angle = index / ordered.length * Math.PI * 2 - Math.PI / 2;
-        const radius = baseRadius + clamp(smoothed * 18, -1, 1) * maxSpike;
+        const amount = clamp(smoothed * 18, -1, 1);
+        const radius = baseRadius + amount * maxSpike;
         return {
           x: cx + Math.cos(angle) * radius,
           y: cy + Math.sin(angle) * radius,
+          amount,
           sharpness,
           categoryName,
           label: paramLabel(categoryName)
         };
       });
 
-      return { active: calibrated, points };
+      return {
+        active: calibrated,
+        points,
+        items: points.map(({ categoryName, label, amount, sharpness }) => ({ categoryName, label, amount, sharpness }))
+      };
     }
 
     function orderedSpectrumCategories(categories) {
@@ -774,13 +1354,13 @@
       return orderedNames.map(categoryName => byName.get(categoryName)).filter(Boolean);
     }
 
-    function drawSpectrum(frame, options = {}) {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      drawSpectrumPath(ctx, frame.points, frame.active, options);
+    function drawSpectrum(targetCtx, targetCanvas, frame, options = {}) {
+      targetCtx.clearRect(0, 0, targetCanvas.width, targetCanvas.height);
+      drawSpectrumPath(targetCtx, frame.points, frame.active, options);
     }
 
-    function drawNoFace() {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
+    function drawNoFace(targetCtx, targetCanvas) {
+      targetCtx.clearRect(0, 0, targetCanvas.width, targetCanvas.height);
     }
 
     function drawSpectrumPath(targetCtx, points, active, options = {}) {
@@ -930,7 +1510,7 @@
 
     function resetAll() {
       waitForFaceCalibration();
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      localCtx.clearRect(0, 0, localCanvas.width, localCanvas.height);
     }
 
     function resetCalibrationState() {
@@ -953,9 +1533,13 @@
       const dpr = Math.min(window.devicePixelRatio || 1, 2);
       const width = Math.max(1, Math.round(window.innerWidth * dpr));
       const height = Math.max(1, Math.round(window.innerHeight * dpr));
-      if (canvas.width === width && canvas.height === height) return;
-      canvas.width = width;
-      canvas.height = height;
+      for (const targetCanvas of [localCanvas, remoteCanvas]) {
+        if (targetCanvas.width !== width || targetCanvas.height !== height) {
+          targetCanvas.width = width;
+          targetCanvas.height = height;
+        }
+      }
+      drawRemoteMotionFrame();
     }
 
     function midpoint(a, b) {
