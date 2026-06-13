@@ -339,7 +339,8 @@
       query,
       where,
       onSnapshot,
-      serverTimestamp
+      serverTimestamp,
+      arrayUnion
     } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-firestore.js";
     import { firebaseConfig } from "./firebase-config.js";
 
@@ -383,8 +384,9 @@
     const DEADZONE = 0.005;
     const SPECTRUM_ZERO_THRESHOLD = 0.012;
     const LANDMARK_SMOOTHING = 0.78;
-    const POSE_THRESHOLD = 0.26;
-    const ROLL_THRESHOLD = 0.18;
+    const POSE_THRESHOLD = 0.38;
+    const ROLL_THRESHOLD = 0.28;
+    const UNSTABLE_POSE_GAIN = 0.45;
     const MOTION_GAIN_MIN = 0;
     const MOTION_GAIN_MAX = 2;
 
@@ -500,6 +502,17 @@
     let localMotionFrame = null;
     let lastRemoteMotionFrame = null;
     let lastMotionSentAt = 0;
+    let rtcPeer = null;
+    let motionChannel = null;
+    let rtcRole = "";
+    let rtcCallId = "";
+    let remoteDescriptionApplied = false;
+    let pendingIceCandidates = [];
+    let pendingRemoteIceCandidates = [];
+    let processedRemoteCandidateCount = 0;
+    let audioContext = null;
+    let ringtoneTimer = null;
+    let ringtoneActive = false;
     let unsubscribeUsers = null;
     let unsubscribeIncoming = null;
     let unsubscribeCurrentCall = null;
@@ -513,10 +526,14 @@
     signupButton.addEventListener("click", signup);
     loginButton.addEventListener("click", login);
     logoutButton.addEventListener("click", logout);
-    acceptButton.addEventListener("click", acceptIncomingCall);
-    declineButton.addEventListener("click", declineIncomingCall);
-    endCallButton.addEventListener("click", endCall);
+    acceptButton.addEventListener("click", () => acceptIncomingCall().catch(showCallError));
+    declineButton.addEventListener("click", () => declineIncomingCall().catch(showCallError));
+    endCallButton.addEventListener("click", () => endCall().catch(showCallError));
+    ["pointerdown", "keydown"].forEach(eventName => {
+      window.addEventListener(eventName, unlockAudio, { once: true });
+    });
     window.addEventListener("pagehide", () => {
+      stopRingtone();
       cleanupListeners();
       stopCamera();
     });
@@ -628,7 +645,9 @@
           button.type = "button";
           button.textContent = "呼び出す";
           button.disabled = Boolean(currentCallId);
-          button.addEventListener("click", () => startCall(user.uid, user.name || user.email || user.uid));
+          button.addEventListener("click", () => {
+            startCall(user.uid, user.name || user.email || user.uid).catch(showCallError);
+          });
 
           row.append(label, button);
           usersList.append(row);
@@ -639,17 +658,30 @@
     async function startCall(calleeId, calleeName) {
       if (!currentUser || currentCallId) return;
 
+      const peer = createPeerConnection("caller");
+      const channel = peer.createDataChannel("motion", { ordered: false, maxRetransmits: 0 });
+      attachMotionChannel(channel);
+      const offer = await peer.createOffer();
+      await peer.setLocalDescription(offer);
+
       const callRef = await addDoc(collection(db, "calls"), {
         callerId: currentUser.uid,
         calleeId,
         status: "ringing",
-        motionFrames: {},
+        offer: {
+          type: offer.type,
+          sdp: offer.sdp
+        },
+        callerCandidates: [],
+        calleeCandidates: [],
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp()
       });
 
       currentCallId = callRef.id;
+      rtcCallId = callRef.id;
       currentPartnerId = calleeId;
+      flushPendingIceCandidates().catch(error => console.warn("ICE candidate flush failed", error));
       showCallState("呼び出し中...", calleeName);
       listenCurrentCall(currentCallId);
     }
@@ -664,48 +696,75 @@
       );
 
       unsubscribeIncoming = onSnapshot(incomingQuery, async snapshot => {
-        if (snapshot.empty || currentCallId) return;
+        if (snapshot.empty || currentCallId) {
+          incomingCallId = null;
+          setVisible(incomingModal, false);
+          stopRingtone();
+          return;
+        }
 
         const docSnap = snapshot.docs[0];
         const call = docSnap.data();
         incomingCallId = docSnap.id;
         incomingText.textContent = `${await getUserName(call.callerId)} から着信しています`;
         setVisible(incomingModal, true);
+        startRingtone();
       });
     }
 
     async function acceptIncomingCall() {
       if (!incomingCallId) return;
 
-      await updateDoc(doc(db, "calls", incomingCallId), {
+      const callId = incomingCallId;
+      const callSnap = await getDoc(doc(db, "calls", callId));
+      const call = callSnap.data();
+      if (!call?.offer) return;
+
+      const peer = createPeerConnection("callee");
+      peer.ondatachannel = event => attachMotionChannel(event.channel);
+      await peer.setRemoteDescription(new RTCSessionDescription(call.offer));
+      remoteDescriptionApplied = true;
+      const answer = await peer.createAnswer();
+      await peer.setLocalDescription(answer);
+
+      await updateDoc(doc(db, "calls", callId), {
         status: "accepted",
+        answer: {
+          type: answer.type,
+          sdp: answer.sdp
+        },
         updatedAt: serverTimestamp()
       });
 
-      currentCallId = incomingCallId;
+      currentCallId = callId;
+      rtcCallId = callId;
       incomingCallId = null;
       setVisible(incomingModal, false);
+      stopRingtone();
 
-      const callSnap = await getDoc(doc(db, "calls", currentCallId));
-      const call = callSnap.data();
       currentPartnerId = call.callerId;
+      flushPendingIceCandidates().catch(error => console.warn("ICE candidate flush failed", error));
       showCallState("通話中", await getUserName(call.callerId));
-      listenCurrentCall(currentCallId);
+      listenCurrentCall(callId);
     }
 
     async function declineIncomingCall() {
       if (!incomingCallId) return;
 
-      await updateDoc(doc(db, "calls", incomingCallId), {
+      const callId = incomingCallId;
+      await updateDoc(doc(db, "calls", callId), {
         status: "declined",
         updatedAt: serverTimestamp()
       });
 
       incomingCallId = null;
       setVisible(incomingModal, false);
+      stopRingtone();
     }
 
     function listenCurrentCall(callId) {
+      if (!callId) return;
+
       unsubscribeCurrentCall = replaceSubscription(unsubscribeCurrentCall, () => {
         return onSnapshot(doc(db, "calls", callId), async snapshot => {
           const call = snapshot.data();
@@ -715,8 +774,12 @@
           currentPartnerId = partnerId;
           callPartnerLabel.textContent = `相手: ${await getUserName(partnerId)}`;
           updateCallStatus(call.status);
-          lastRemoteMotionFrame = call.motionFrames?.[partnerId] || null;
-          drawRemoteMotionFrame(lastRemoteMotionFrame);
+          if (rtcRole === "caller" && call.answer && rtcPeer && !remoteDescriptionApplied) {
+            await rtcPeer.setRemoteDescription(new RTCSessionDescription(call.answer));
+            remoteDescriptionApplied = true;
+            flushPendingRemoteIceCandidates();
+          }
+          consumeRemoteIceCandidates(call);
         });
       });
     }
@@ -735,6 +798,8 @@
 
       currentCallId = null;
       currentPartnerId = "";
+      rtcCallId = "";
+      closePeerConnection();
       hideCallState();
     }
 
@@ -750,7 +815,11 @@
       callStatus.textContent = "未接続";
       callPartnerLabel.textContent = "";
       setVisible(endCallButton, false);
-      remoteEmpty.textContent = "No Call";
+      resetRemoteDisplay("No Call");
+    }
+
+    function resetRemoteDisplay(message = "No Call") {
+      remoteEmpty.textContent = message;
       remoteEmpty.hidden = false;
       lastRemoteMotionFrame = null;
       remoteCtx.clearRect(0, 0, remoteCanvas.width, remoteCanvas.height);
@@ -775,9 +844,10 @@
       if (callStatusValue === "declined" || callStatusValue === "ended") {
         currentCallId = null;
         currentPartnerId = "";
+        rtcCallId = "";
+        closePeerConnection();
         setVisible(endCallButton, false);
-        remoteEmpty.textContent = "No Call";
-        remoteEmpty.hidden = false;
+        resetRemoteDisplay("No Call");
       }
     }
 
@@ -798,6 +868,7 @@
       setVisible(appView, false);
       setVisible(logoutButton, false);
       setVisible(incomingModal, false);
+      stopRingtone();
       setVisible(endCallButton, false);
       hideCallState();
     }
@@ -806,6 +877,8 @@
       unsubscribeUsers = replaceSubscription(unsubscribeUsers);
       unsubscribeIncoming = replaceSubscription(unsubscribeIncoming);
       unsubscribeCurrentCall = replaceSubscription(unsubscribeCurrentCall);
+      stopRingtone();
+      closePeerConnection();
     }
 
     function replaceSubscription(unsubscribe, subscribe) {
@@ -815,6 +888,232 @@
 
     function setVisible(element, visible) {
       element.classList.toggle("hidden", !visible);
+    }
+
+    function unlockAudio() {
+      try {
+        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+        if (!AudioContextClass) return;
+        audioContext ??= new AudioContextClass();
+        audioContext.resume?.();
+      } catch (error) {
+        console.warn("audio unlock failed", error);
+      }
+    }
+
+    function startRingtone() {
+      if (ringtoneActive) return;
+
+      ringtoneActive = true;
+      unlockAudio();
+      playRingtonePattern();
+      ringtoneTimer = window.setInterval(playRingtonePattern, 3200);
+    }
+
+    function stopRingtone() {
+      ringtoneActive = false;
+      if (ringtoneTimer) {
+        window.clearInterval(ringtoneTimer);
+        ringtoneTimer = null;
+      }
+    }
+
+    function playRingtonePattern() {
+      if (!ringtoneActive) return;
+
+      try {
+        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+        if (!AudioContextClass) return;
+        audioContext ??= new AudioContextClass();
+        if (audioContext.state === "suspended") audioContext.resume?.();
+
+        const now = audioContext.currentTime;
+        playRingTone(now, 0.42);
+        playRingTone(now + 0.62, 0.42);
+      } catch (error) {
+        stopRingtone();
+        console.warn("ringtone failed", error);
+      }
+    }
+
+    function playRingTone(startAt, duration) {
+      const output = audioContext.createGain();
+      const toneA = audioContext.createOscillator();
+      const toneB = audioContext.createOscillator();
+      const filter = audioContext.createBiquadFilter();
+
+      toneA.type = "sine";
+      toneB.type = "sine";
+      toneA.frequency.setValueAtTime(440, startAt);
+      toneB.frequency.setValueAtTime(480, startAt);
+      filter.type = "bandpass";
+      filter.frequency.setValueAtTime(920, startAt);
+      filter.Q.setValueAtTime(1.2, startAt);
+
+      output.gain.setValueAtTime(0.0001, startAt);
+      output.gain.exponentialRampToValueAtTime(0.09, startAt + 0.04);
+      output.gain.setValueAtTime(0.09, startAt + duration - 0.08);
+      output.gain.exponentialRampToValueAtTime(0.0001, startAt + duration);
+
+      toneA.connect(filter);
+      toneB.connect(filter);
+      filter.connect(output);
+      output.connect(audioContext.destination);
+
+      toneA.start(startAt);
+      toneB.start(startAt);
+      toneA.stop(startAt + duration + 0.03);
+      toneB.stop(startAt + duration + 0.03);
+
+      toneB.onended = () => {
+        toneA.disconnect();
+        toneB.disconnect();
+        filter.disconnect();
+        output.disconnect();
+      };
+    }
+
+    function createPeerConnection(role) {
+      if (typeof RTCPeerConnection !== "function") {
+        throw new Error("このブラウザではWebRTC DataChannelを利用できません");
+      }
+
+      closePeerConnection();
+      rtcRole = role;
+      rtcCallId = currentCallId || "";
+      remoteDescriptionApplied = false;
+      pendingIceCandidates = [];
+      pendingRemoteIceCandidates = [];
+      processedRemoteCandidateCount = 0;
+      rtcPeer = new RTCPeerConnection({
+        iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
+      });
+
+      rtcPeer.onicecandidate = event => {
+        if (event.candidate) queueOrSendIceCandidate(event.candidate);
+      };
+
+      rtcPeer.onconnectionstatechange = () => {
+        if (!rtcPeer) return;
+        if (rtcPeer.connectionState === "connected") {
+          remoteEmpty.textContent = "Waiting";
+        }
+        if (["failed", "disconnected", "closed"].includes(rtcPeer.connectionState)) {
+          remoteEmpty.hidden = false;
+          remoteEmpty.textContent = currentCallId ? "Reconnecting" : "No Call";
+        }
+      };
+
+      return rtcPeer;
+    }
+
+    function showCallError(error) {
+      callStatus.textContent = `通話エラー: ${error.message}`;
+      console.error(error);
+    }
+
+    function attachMotionChannel(channel) {
+      motionChannel = channel;
+      motionChannel.binaryType = "arraybuffer";
+      motionChannel.onopen = () => {
+        remoteEmpty.textContent = "Waiting";
+      };
+      motionChannel.onmessage = event => {
+        if (!currentCallId) return;
+        try {
+          lastRemoteMotionFrame = JSON.parse(event.data);
+          drawRemoteMotionFrame(lastRemoteMotionFrame);
+        } catch (error) {
+          console.warn("motion frame parse failed", error);
+        }
+      };
+      motionChannel.onclose = () => {
+        if (motionChannel === channel) motionChannel = null;
+      };
+    }
+
+    async function queueOrSendIceCandidate(candidate) {
+      const payload = normalizeIceCandidate(candidate);
+      if (!payload) return;
+
+      const callId = rtcCallId || currentCallId;
+      const role = rtcRole;
+      if (!callId || !role) {
+        pendingIceCandidates.push(payload);
+        return;
+      }
+
+      await updateDoc(doc(db, "calls", callId), {
+        [`${role}Candidates`]: arrayUnion(payload)
+      });
+    }
+
+    async function flushPendingIceCandidates() {
+      const callId = rtcCallId || currentCallId;
+      const role = rtcRole;
+      if (!callId || !role || !pendingIceCandidates.length) return;
+
+      const pending = pendingIceCandidates;
+      pendingIceCandidates = [];
+      await updateDoc(doc(db, "calls", callId), {
+        [`${role}Candidates`]: arrayUnion(...pending)
+      });
+    }
+
+    function normalizeIceCandidate(candidate) {
+      const data = typeof candidate.toJSON === "function" ? candidate.toJSON() : candidate;
+      if (!data?.candidate) return null;
+
+      const normalized = {
+        candidate: String(data.candidate),
+        sdpMid: data.sdpMid == null ? "0" : String(data.sdpMid),
+        sdpMLineIndex: Number.isFinite(data.sdpMLineIndex) ? data.sdpMLineIndex : 0
+      };
+      if (data.usernameFragment != null) normalized.usernameFragment = String(data.usernameFragment);
+      return normalized;
+    }
+
+    function consumeRemoteIceCandidates(call) {
+      if (!rtcPeer || !rtcRole) return;
+
+      const remoteField = rtcRole === "caller" ? "calleeCandidates" : "callerCandidates";
+      const candidates = Array.isArray(call[remoteField]) ? call[remoteField] : [];
+      const newCandidates = candidates.slice(processedRemoteCandidateCount);
+      processedRemoteCandidateCount = candidates.length;
+
+      for (const candidate of newCandidates) addRemoteIceCandidate(candidate);
+    }
+
+    function addRemoteIceCandidate(candidate) {
+      if (!remoteDescriptionApplied) {
+        pendingRemoteIceCandidates.push(candidate);
+        return;
+      }
+
+      rtcPeer?.addIceCandidate(new RTCIceCandidate(candidate)).catch(error => {
+        console.warn("ICE candidate add failed", error);
+      });
+    }
+
+    function flushPendingRemoteIceCandidates() {
+      if (!remoteDescriptionApplied || !rtcPeer || !pendingRemoteIceCandidates.length) return;
+
+      const pending = pendingRemoteIceCandidates;
+      pendingRemoteIceCandidates = [];
+      for (const candidate of pending) addRemoteIceCandidate(candidate);
+    }
+
+    function closePeerConnection() {
+      motionChannel?.close?.();
+      rtcPeer?.close?.();
+      motionChannel = null;
+      rtcPeer = null;
+      rtcRole = "";
+      rtcCallId = "";
+      remoteDescriptionApplied = false;
+      pendingIceCandidates = [];
+      pendingRemoteIceCandidates = [];
+      processedRemoteCandidateCount = 0;
     }
 
     function motionPayloadFromFrame(frame, poseStable) {
@@ -833,22 +1132,25 @@
 
     async function sendLocalMotionFrame() {
       if (!currentUser || !currentCallId || !localMotionFrame) return;
+      if (motionChannel?.readyState !== "open") return;
 
       const now = performance.now();
-      if (now - lastMotionSentAt < 100) return;
+      if (now - lastMotionSentAt < 33) return;
       lastMotionSentAt = now;
 
       try {
-        await updateDoc(doc(db, "calls", currentCallId), {
-          [`motionFrames.${currentUser.uid}`]: localMotionFrame,
-          updatedAt: serverTimestamp()
-        });
+        motionChannel.send(JSON.stringify(localMotionFrame));
       } catch (error) {
         console.warn("motion frame send failed", error);
       }
     }
 
     function drawRemoteMotionFrame(frame = null) {
+      if (!currentCallId) {
+        resetRemoteDisplay("No Call");
+        return;
+      }
+
       frame ??= lastRemoteMotionFrame;
       remoteCtx.clearRect(0, 0, remoteCanvas.width, remoteCanvas.height);
 
@@ -1000,13 +1302,13 @@
         baseMap: base
       });
       drawSpectrum(localCtx, localCanvas, frame, {
-        alpha: poseStable ? 0.94 : 0.24,
+        alpha: poseStable ? 0.94 : 0.58,
         lineWidth: 4,
         strokeStyle: poseStable ? "#1d64c8" : "#6d7782"
       });
       localMotionFrame = motionPayloadFromFrame(frame, poseStable);
       sendLocalMotionFrame();
-      status.textContent = poseStable ? "検出中" : "顔の向きが大きいため、現在値を抑制中。";
+      status.textContent = poseStable ? "検出中" : "顔の向きが大きいため、動きを少し抑えています。";
     }
 
     function startCalibration() {
@@ -1279,14 +1581,14 @@
     }
 
     function calibratedScore(categoryName, score, poseStable, baseMap = base) {
-      if (!poseStable) return 0;
       const entry = baseMap.get(categoryName);
       if (!entry) return 0;
 
       const { mean, dead } = entry;
       const diff = score - mean;
       if (Math.abs(diff) <= dead) return 0;
-      return diff > 0 ? diff - dead : diff + dead;
+      const value = diff > 0 ? diff - dead : diff + dead;
+      return poseStable ? value : value * UNSTABLE_POSE_GAIN;
     }
 
     function updateSpectrumFrame(categories, options = {}) {
