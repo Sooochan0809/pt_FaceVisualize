@@ -425,7 +425,6 @@
     const motionGainSetSelect = $("motionGainSetSelect");
     const status = $("status");
     const params = $("params");
-    let firebaseApp = null;
     let auth = null;
     let db = null;
 
@@ -551,7 +550,6 @@
     let activeMotionGainSetName = "";
     let currentUser = null;
     let currentCallId = null;
-    let currentPartnerId = "";
     let selectedCallee = null;
     let cameraReady = false;
     let cameraStartPromise = null;
@@ -603,14 +601,13 @@
 
     await loadParameterControls();
     if (await initializeFirebase()) initializeAuth();
-    status.textContent = "ログイン後、通話相手を選ぶとWebCamを開始します。";
 
     async function initializeFirebase() {
       try {
         const { firebaseConfig } = await import("./firebase-config.js");
-        firebaseApp = initializeApp(firebaseConfig);
-        auth = getAuth(firebaseApp);
-        db = getFirestore(firebaseApp);
+        const app = initializeApp(firebaseConfig);
+        auth = getAuth(app);
+        db = getFirestore(app);
         return true;
       } catch (error) {
         console.warn("Firebase config was not loaded. Calling features are disabled.", error);
@@ -619,21 +616,29 @@
       }
     }
 
+    function hasFirebase() {
+      return Boolean(auth && db);
+    }
+
     function disableCallingFeatures(message) {
       signupButton.disabled = true;
       loginButton.disabled = true;
       logoutButton.disabled = true;
       callSelectedButton.disabled = true;
-      setVisible(authView, true);
-      setVisible(appView, false);
-      setVisible(logoutButton, false);
+      showSignedInView(false);
       callStatus.textContent = message;
       usersList.textContent = "";
       updateCallAction();
     }
 
+    function showSignedInView(signedIn) {
+      setVisible(authView, !signedIn);
+      setVisible(appView, signedIn);
+      setVisible(logoutButton, signedIn);
+    }
+
     function initializeAuth() {
-      if (!auth || !db) return;
+      if (!hasFirebase()) return;
       onAuthStateChanged(auth, async user => {
         cleanupListeners();
 
@@ -643,9 +648,7 @@
         }
 
         currentUser = user;
-        setVisible(authView, false);
-        setVisible(appView, true);
-        setVisible(logoutButton, true);
+        showSignedInView(true);
 
         const userSnap = await getDoc(doc(db, "users", user.uid));
         const userData = userSnap.data();
@@ -661,7 +664,7 @@
     }
 
     async function signup() {
-      if (!auth || !db) {
+      if (!hasFirebase()) {
         alert("Firebase設定がないため、新規登録できません");
         return;
       }
@@ -685,7 +688,7 @@
     }
 
     async function login() {
-      if (!auth || !db) {
+      if (!hasFirebase()) {
         alert("Firebase設定がないため、ログインできません");
         return;
       }
@@ -800,7 +803,6 @@
 
       currentCallId = callRef.id;
       rtcCallId = callRef.id;
-      currentPartnerId = calleeId;
       flushPendingIceCandidates().catch(error => console.warn("ICE candidate flush failed", error));
       updateCallAction();
       showCallState("呼び出し中...", calleeName);
@@ -863,7 +865,6 @@
       setVisible(incomingModal, false);
       stopRingtone();
 
-      currentPartnerId = call.callerId;
       flushPendingIceCandidates().catch(error => console.warn("ICE candidate flush failed", error));
       updateCallAction();
       showCallState("通話中", await getUserName(call.callerId));
@@ -899,7 +900,6 @@
           if (!currentUser) return;
 
           const partnerId = call.callerId === currentUser.uid ? call.calleeId : call.callerId;
-          currentPartnerId = partnerId;
           callPartnerLabel.textContent = `相手: ${await getUserName(partnerId)}`;
           updateCallStatus(call.status);
           if (rtcRole === "caller" && call.answer && rtcPeer && !remoteDescriptionApplied) {
@@ -946,7 +946,6 @@
 
     function resetCallSession() {
       currentCallId = null;
-      currentPartnerId = "";
       rtcCallId = "";
       closePeerConnection();
       hideCallState();
@@ -998,9 +997,7 @@
       selectedCallee = null;
       currentUserLabel.textContent = "---";
       usersList.innerHTML = "";
-      setVisible(authView, true);
-      setVisible(appView, false);
-      setVisible(logoutButton, false);
+      showSignedInView(false);
       setVisible(incomingModal, false);
       stopRingtone();
       stopCamera();
@@ -1184,7 +1181,7 @@
       };
     }
 
-    async function queueOrSendIceCandidate(candidate) {
+    function queueOrSendIceCandidate(candidate) {
       const payload = normalizeIceCandidate(candidate);
       if (!payload) return;
 
