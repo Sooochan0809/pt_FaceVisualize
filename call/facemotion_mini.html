@@ -602,9 +602,7 @@
 
     await loadParameterControls();
     initializeAuth();
-    startCamera().catch(error => {
-      status.textContent = `カメラを開始できません: ${error.message}\nHTTPSまたはlocalhost上で実行してください。`;
-    });
+    startCamera().catch(showCameraError);
 
     function initializeAuth() {
       onAuthStateChanged(auth, async user => {
@@ -1347,18 +1345,52 @@
       stopCamera();
       await setupFaceLandmarker();
 
-      video.srcObject = await navigator.mediaDevices.getUserMedia({
-        video: {
-          width: { ideal: 1280 },
-          height: { ideal: 720 },
-          aspectRatio: { ideal: 16 / 9 }
-        },
-        audio: false
-      });
+      const stream = await openUserFacingCamera();
+      video.srcObject = stream;
 
       await video.play();
       waitForFaceCalibration();
       startLoop();
+    }
+
+    async function openUserFacingCamera() {
+      if (!navigator.mediaDevices?.getUserMedia) {
+        throw new Error("このURLではカメラAPIを利用できません");
+      }
+
+      const preferredConstraints = {
+        video: {
+          facingMode: { ideal: "user" },
+          width: { ideal: 640 },
+          height: { ideal: 480 }
+        },
+        audio: false
+      };
+
+      try {
+        return await navigator.mediaDevices.getUserMedia(preferredConstraints);
+      } catch (error) {
+        if (!shouldFallbackCamera(error)) throw error;
+        return navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: "user",
+            width: { ideal: 640 },
+            height: { ideal: 480 }
+          },
+          audio: false
+        });
+      }
+    }
+
+    function shouldFallbackCamera(error) {
+      return ["OverconstrainedError", "ConstraintNotSatisfiedError", "NotFoundError"].includes(error?.name);
+    }
+
+    function showCameraError(error) {
+      const secureHint = location.protocol === "https:" || location.hostname === "localhost" || location.hostname === "127.0.0.1"
+        ? ""
+        : "\nHTTPSまたはlocalhost上で実行してください。";
+      status.textContent = `カメラを開始できません: ${error.message || error.name}${secureHint}`;
     }
 
     function stopCamera() {
