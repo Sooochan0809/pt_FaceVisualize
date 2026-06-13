@@ -34,7 +34,7 @@
       background: var(--bg);
     }
 
-    video {
+    #video {
       position: absolute;
       right: 18px;
       bottom: 18px;
@@ -48,6 +48,18 @@
       transform: scaleX(-1);
     }
 
+    #remoteVideo {
+      position: absolute;
+      inset: 0;
+      z-index: 1;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      background: #111;
+      filter: brightness(1.08) saturate(0.82);
+      opacity: 0.88;
+    }
+
     canvas {
       position: absolute;
       inset: 0;
@@ -56,6 +68,7 @@
       height: 100%;
       display: block;
       pointer-events: none;
+      background: #f0f0f0df;
     }
 
     #localCanvas {
@@ -224,6 +237,10 @@
       cursor: not-allowed;
     }
 
+    #callSelectedButton.end-call {
+      background: #e5484d;
+    }
+
     .modal {
       position: fixed;
       inset: 0;
@@ -247,7 +264,7 @@
       position: absolute;
       left: 50%;
       top: 50%;
-      z-index: 1;
+      z-index: 4;
       transform: translate(-50%, -50%);
       color: #111;
       font-size: clamp(28px, 8vw, 96px);
@@ -300,10 +317,11 @@
 
 <body>
   <main>
+    <video id="remoteVideo" autoplay playsinline class="hidden"></video>
     <video id="video" autoplay playsinline muted></video>
     <canvas id="remoteCanvas"></canvas>
     <canvas id="localCanvas"></canvas>
-    <div id="remoteEmpty" class="remote-empty">No Call</div>
+    <div id="remoteEmpty" class="remote-empty"></div>
     <div id="callAction" class="call-action hidden">
       <button id="callSelectedButton" type="button" disabled>
         <img src="./icon_facetime.svg" alt="" aria-hidden="true" />
@@ -346,9 +364,6 @@
             <span>ログイン中: <strong id="currentUserLabel">---</strong></span>
             <span id="callStatus">未接続</span>
             <span id="callPartnerLabel"></span>
-          </div>
-          <div class="row">
-            <button id="endCallButton" type="button" class="hidden">終了</button>
           </div>
           <div id="usersList"></div>
         </div>
@@ -395,6 +410,7 @@
 
     const $ = id => document.getElementById(id);
     const video = $("video");
+    const remoteVideo = $("remoteVideo");
     const localCanvas = $("localCanvas");
     const remoteCanvas = $("remoteCanvas");
     const localCtx = localCanvas.getContext("2d");
@@ -415,7 +431,6 @@
     const usersList = $("usersList");
     const callStatus = $("callStatus");
     const callPartnerLabel = $("callPartnerLabel");
-    const endCallButton = $("endCallButton");
     const incomingModal = $("incomingModal");
     const incomingText = $("incomingText");
     const acceptButton = $("acceptButton");
@@ -584,12 +599,15 @@
     loginButton.addEventListener("click", login);
     logoutButton.addEventListener("click", logout);
     callSelectedButton.addEventListener("click", () => {
+      if (currentCallId) {
+        endCall().catch(showCallError);
+        return;
+      }
       if (!selectedCallee) return;
       startCall(selectedCallee.uid, selectedCallee.name).catch(showCallError);
     });
     acceptButton.addEventListener("click", () => acceptIncomingCall().catch(showCallError));
     declineButton.addEventListener("click", () => declineIncomingCall().catch(showCallError));
-    endCallButton.addEventListener("click", () => endCall().catch(showCallError));
     ["pointerdown", "keydown"].forEach(eventName => {
       window.addEventListener(eventName, unlockAudio, { once: true });
     });
@@ -774,15 +792,20 @@
     }
 
     function updateCallAction() {
-      const available = Boolean(currentUser && selectedCallee && cameraReady && !currentCallId);
-      setVisible(callAction, Boolean(currentUser && !currentCallId));
+      const inCall = Boolean(currentCallId);
+      const available = Boolean(currentUser && (inCall || selectedCallee && cameraReady));
+      setVisible(callAction, Boolean(currentUser));
       callSelectedButton.disabled = !available;
+      callSelectedButton.classList.toggle("end-call", inCall);
+      callSelectedButton.querySelector("span").textContent = inCall ? "FaceTime 終了" : "FaceTime";
     }
 
     async function startCall(calleeId, calleeName) {
       if (!currentUser || currentCallId) return;
+      await ensureCameraStarted();
 
       const peer = createPeerConnection("caller");
+      addLocalVideoTrack(peer);
       const channel = peer.createDataChannel("motion", { ordered: false, maxRetransmits: 0 });
       attachMotionChannel(channel);
       const offer = await peer.createOffer();
@@ -845,6 +868,7 @@
       if (!call?.offer) return;
 
       const peer = createPeerConnection("callee");
+      addLocalVideoTrack(peer);
       peer.ondatachannel = event => attachMotionChannel(event.channel);
       await peer.setRemoteDescription(new RTCSessionDescription(call.offer));
       remoteDescriptionApplied = true;
@@ -930,18 +954,16 @@
     function showCallState(statusText, partnerName) {
       callStatus.textContent = statusText;
       callPartnerLabel.textContent = `相手: ${partnerName}`;
-      setVisible(endCallButton, true);
       updateCallAction();
       remoteEmpty.textContent = statusText;
-      remoteEmpty.hidden = false;
+      remoteEmpty.hidden = statusText !== "呼び出し中...";
     }
 
     function hideCallState() {
       callStatus.textContent = "未接続";
       callPartnerLabel.textContent = "";
-      setVisible(endCallButton, false);
       updateCallAction();
-      resetRemoteDisplay("No Call");
+      resetRemoteDisplay();
     }
 
     function resetCallSession() {
@@ -951,10 +973,11 @@
       hideCallState();
     }
 
-    function resetRemoteDisplay(message = "No Call") {
-      remoteEmpty.textContent = message;
-      remoteEmpty.hidden = false;
+    function resetRemoteDisplay() {
+      remoteEmpty.textContent = "";
+      remoteEmpty.hidden = true;
       lastRemoteMotionFrame = null;
+      resetRemoteVideo();
       clearCanvas(remoteCtx, remoteCanvas);
     }
 
@@ -963,15 +986,13 @@
         ringing: "呼び出し中...",
         accepted: "通話中",
         declined: "拒否されました",
-        ended: "通話終了"
+        ended: "FaceTime 終了"
       }[callStatusValue];
 
       if (label) callStatus.textContent = label;
 
       if (callStatusValue === "accepted") {
-        setVisible(endCallButton, true);
-        remoteEmpty.textContent = "Waiting";
-        remoteEmpty.hidden = false;
+        remoteEmpty.hidden = true;
       }
 
       if (callStatusValue === "declined" || callStatusValue === "ended") {
@@ -1142,18 +1163,50 @@
         if (event.candidate) queueOrSendIceCandidate(event.candidate);
       };
 
+      rtcPeer.ontrack = event => {
+        attachRemoteVideoStream(event.streams[0]);
+      };
+
       rtcPeer.onconnectionstatechange = () => {
         if (!rtcPeer) return;
         if (rtcPeer.connectionState === "connected") {
-          remoteEmpty.textContent = "Waiting";
+          remoteEmpty.hidden = true;
         }
         if (["failed", "disconnected", "closed"].includes(rtcPeer.connectionState)) {
-          remoteEmpty.hidden = false;
-          remoteEmpty.textContent = currentCallId ? "Reconnecting" : "No Call";
+          remoteEmpty.hidden = true;
         }
       };
 
       return rtcPeer;
+    }
+
+    function addLocalVideoTrack(peer) {
+      const stream = getLocalCameraStream();
+      const tracks = stream.getVideoTracks();
+      if (!tracks.length) throw new Error("送信できるカメラ映像がありません");
+      for (const track of tracks) {
+        peer.addTrack(track, stream);
+      }
+    }
+
+    function getLocalCameraStream() {
+      if (!(video.srcObject instanceof MediaStream)) {
+        throw new Error("カメラが開始されていません");
+      }
+      return video.srcObject;
+    }
+
+    function attachRemoteVideoStream(stream) {
+      if (!stream || remoteVideo.srcObject === stream) return;
+      remoteVideo.srcObject = stream;
+      setVisible(remoteVideo, true);
+      remoteEmpty.hidden = true;
+      remoteVideo.play().catch(error => console.warn("remote video play failed", error));
+    }
+
+    function resetRemoteVideo() {
+      remoteVideo.srcObject = null;
+      setVisible(remoteVideo, false);
     }
 
     function showCallError(error) {
@@ -1165,7 +1218,7 @@
       motionChannel = channel;
       motionChannel.binaryType = "arraybuffer";
       motionChannel.onopen = () => {
-        remoteEmpty.textContent = "Waiting";
+        remoteEmpty.hidden = true;
       };
       motionChannel.onmessage = event => {
         if (!currentCallId) return;
@@ -1269,6 +1322,7 @@
       rtcPeer?.close?.();
       motionChannel = null;
       rtcPeer = null;
+      resetRemoteVideo();
       resetRtcState();
     }
 
@@ -1312,7 +1366,7 @@
 
     function drawRemoteMotionFrame(frame = null) {
       if (!currentCallId) {
-        resetRemoteDisplay("No Call");
+        resetRemoteDisplay();
         return;
       }
 
@@ -1320,7 +1374,7 @@
       clearCanvas(remoteCtx, remoteCanvas);
 
       if (!frame?.items?.length) {
-        remoteEmpty.hidden = !currentCallId;
+        remoteEmpty.hidden = true;
         return;
       }
 
