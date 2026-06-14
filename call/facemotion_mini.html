@@ -1656,8 +1656,10 @@
     function applyEffectMode(mode) {
       activeEffectMode = normalizeEffectMode(mode);
       effectModeSelect.value = activeEffectMode;
+      prepareEffectMode();
 
       if (shapeEffectActive()) {
+        if (cameraReady && !base.size && !calibrationActive()) waitForFaceCalibration();
         return;
       }
 
@@ -1678,6 +1680,15 @@
 
     function normalizeEffectMode(mode) {
       return EFFECT_MODE_VALUES.has(mode) ? mode : EFFECT_MODES.shape;
+    }
+
+    function prepareEffectMode() {
+      if (emojiEffectActive()) {
+        setupEmotionEstimator();
+        return;
+      }
+
+      clearDominantEmotion();
     }
 
     function spectrumFrameFromPayload(frame, targetCanvas) {
@@ -1780,9 +1791,9 @@
       cameraReady = true;
       cameraStartPromise = null;
       updateCallAction();
-      waitForFaceCalibration();
+      if (shapeEffectActive()) waitForFaceCalibration();
       startLoop();
-      setupEmotionEstimator();
+      prepareEffectMode();
     }
 
     async function ensureCameraStarted() {
@@ -1870,12 +1881,11 @@
       if (!faceLandmarker || video.readyState < 2) return;
 
       const result = faceLandmarker.detectForVideo(video, performance.now());
-      updateEmotionEstimate();
       const landmarks = smoothLandmarks(result.faceLandmarks?.[0] ?? []);
-      const categories = normalizeCategories(result.faceBlendshapes?.[0]?.categories ?? []);
+      const hasFace = Boolean(landmarks.length);
 
-      if (!categories.length) {
-        if (base.size || calibrationActive()) waitForFaceCalibration();
+      if (!hasFace) {
+        if (shapeEffectActive() && (base.size || calibrationActive())) waitForFaceCalibration();
         currentFaceBounds = null;
         if (shapeEffectActive()) {
           drawNoFace(localCtx, localCanvas);
@@ -1890,7 +1900,20 @@
 
       currentFaceBounds = faceBoundsFromLandmarks(landmarks);
       if (emojiEffectActive()) {
+        updateEmotionEstimate();
         clearCanvas(localCtx, localCanvas);
+        localMotionFrame = motionPayloadFromFrame({ active: false, items: [] }, true);
+        sendLocalMotionFrame();
+        status.textContent = emotionStatus("検出中");
+        return;
+      }
+
+      const categories = normalizeCategories(result.faceBlendshapes?.[0]?.categories ?? []);
+      if (!categories.length) {
+        drawNoFace(localCtx, localCanvas);
+        localMotionFrame = null;
+        status.textContent = "顔を検出中...";
+        return;
       }
 
       updateParamCheckboxes(categories);
