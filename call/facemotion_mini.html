@@ -630,6 +630,7 @@
     const TERMINAL_CALL_DELETE_DELAY_MS = 15000;
     const ICE_FLUSH_DELAY_MS = 180;
     const EMOTION_DETECT_INTERVAL_MS = 200;
+    const OUTGOING_CALIBRATION_DELAY_MS = 200;
     const CLEANUP_CALL_DOCUMENTS_FROM_CLIENT = false;
     const CALLING_TEXT = "呼び出し中...";
     const CALL_STATUS_LABELS = {
@@ -760,6 +761,8 @@
     let loopToken = 0;
     let neutralPose = null;
     let smoothedLandmarks = null;
+    let calibrationRequested = false;
+    let calibrationTimer = null;
 
     const base = new Map();
     const enabledParams = new Set();
@@ -1043,7 +1046,13 @@
 
     async function startCall(calleeId, calleeName) {
       if (!currentUser || currentCallId) return;
-      await ensureCameraStarted();
+      scheduleFaceCalibration(OUTGOING_CALIBRATION_DELAY_MS);
+      try {
+        await ensureCameraStarted();
+      } catch (error) {
+        cancelFaceCalibration();
+        throw error;
+      }
 
       const peer = createPeerConnection("caller");
       addLocalVideoTrack(peer);
@@ -1134,7 +1143,7 @@
 
       currentCallId = callId;
       rtcCallId = callId;
-      clearIncomingCallNotice();
+      clearIncomingCallNotice({ cancelCalibration: false });
 
       flushPendingIceCandidates().catch(error => console.warn("ICE candidate flush failed", error));
       showCallState("通話中", await getUserName(call.callerId));
@@ -1210,16 +1219,21 @@
     }
 
     function showIncomingCallNotice(callId) {
+      if (incomingCallId === callId) return;
+
       incomingCallId = callId;
       incomingText.textContent = "FaceTimeビデオ";
       setIncomingVisible(true);
       startRingtone();
+      scheduleFaceCalibration();
+      ensureCameraStarted().catch(showCameraError);
     }
 
-    function clearIncomingCallNotice() {
+    function clearIncomingCallNotice({ cancelCalibration = true } = {}) {
       incomingCallId = null;
       setIncomingVisible(false);
       stopRingtone();
+      if (cancelCalibration) cancelFaceCalibration();
     }
 
     function shouldShowRemoteState(statusText) {
@@ -1234,6 +1248,7 @@
     function resetCallSession() {
       currentCallId = null;
       rtcCallId = "";
+      cancelFaceCalibration();
       setOutgoingCallingVisible(false);
       closePeerConnection();
       hideCallState();
@@ -1690,7 +1705,6 @@
       prepareEffectMode();
 
       if (shapeEffectActive()) {
-        if (cameraReady && !base.size && !calibrationActive()) waitForFaceCalibration();
         return;
       }
 
@@ -1812,7 +1826,7 @@
 
     async function startCamera() {
       stopLoop();
-      stopCamera();
+      stopCamera({ cancelCalibration: false });
       await setupFaceLandmarker();
 
       const stream = await openUserFacingCamera();
@@ -1822,7 +1836,6 @@
       cameraReady = true;
       cameraStartPromise = null;
       updateCallAction();
-      if (shapeEffectActive()) waitForFaceCalibration();
       startLoop();
       prepareEffectMode();
     }
@@ -1880,7 +1893,7 @@
       status.textContent = `カメラを開始できません: ${error.message || error.name}${secureHint}`;
     }
 
-    function stopCamera() {
+    function stopCamera({ cancelCalibration = true } = {}) {
       const cameraStream = video.srcObject instanceof MediaStream ? video.srcObject : null;
       if (cameraStream) cameraStream.getTracks().forEach(track => track.stop());
       video.srcObject = null;
@@ -1888,6 +1901,7 @@
       cameraStartPromise = null;
       currentFaceBounds = null;
       clearDominantEmotion();
+      if (cancelCalibration) cancelFaceCalibration();
       updateCallAction();
     }
 
@@ -1948,7 +1962,7 @@
       }
 
       updateParamCheckboxes(categories);
-      if (!base.size && !calibrationActive()) startCalibration();
+      if (calibrationRequested && !base.size && !calibrationActive()) startCalibration();
       updateCalibration(categories, landmarks);
 
       const activeCategories = selectedCategories(categories);
@@ -2100,6 +2114,27 @@
       return currentEmotionText ? `${message} / 感情: ${currentEmotionText}` : message;
     }
 
+    function scheduleFaceCalibration(delayMs = 0) {
+      clearScheduledCalibration();
+      if (!shapeEffectActive()) return;
+
+      calibrationTimer = window.setTimeout(() => {
+        calibrationTimer = null;
+        waitForFaceCalibration();
+      }, delayMs);
+    }
+
+    function clearScheduledCalibration() {
+      if (!calibrationTimer) return;
+      window.clearTimeout(calibrationTimer);
+      calibrationTimer = null;
+    }
+
+    function cancelFaceCalibration() {
+      clearScheduledCalibration();
+      calibrationRequested = false;
+    }
+
     function startCalibration() {
       resetVisualState();
       base.clear();
@@ -2116,6 +2151,7 @@
     }
 
     function waitForFaceCalibration() {
+      calibrationRequested = true;
       resetCalibrationState();
       status.textContent = "顔を検出中...";
     }
@@ -2139,6 +2175,7 @@
 
       writeCalibrationBase(base, calibration.stats, calibration.samples);
       neutralPose = finishPoseCalibration();
+      calibrationRequested = false;
       status.textContent = "キャリブレーション完了";
     }
 
