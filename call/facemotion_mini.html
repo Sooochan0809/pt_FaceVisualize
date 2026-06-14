@@ -510,7 +510,7 @@
       signOut,
       onAuthStateChanged,
       setPersistence,
-      inMemoryPersistence
+      browserLocalPersistence
     } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-auth.js";
     import {
       getFirestore,
@@ -760,6 +760,7 @@
         const { firebaseConfig } = await import("./firebase-config.js");
         const app = initializeApp(firebaseConfig);
         auth = getAuth(app);
+        await setPersistence(auth, browserLocalPersistence);
         db = getFirestore(app);
         return true;
       } catch (error) {
@@ -832,7 +833,6 @@
       }
 
       try {
-        await setPersistence(auth, inMemoryPersistence);
         const result = await createUserWithEmailAndPassword(auth, email, password);
         await saveUser(result.user, name);
       } catch (error) {
@@ -856,7 +856,6 @@
       }
 
       try {
-        await setPersistence(auth, inMemoryPersistence);
         const result = await signInWithEmailAndPassword(auth, email, password);
         if (name) await saveUser(result.user, name);
       } catch (error) {
