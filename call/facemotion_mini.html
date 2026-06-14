@@ -581,6 +581,14 @@
     const INCOMING_CALL_GRACE_MS = 3000;
     const TERMINAL_CALL_DELETE_DELAY_MS = 15000;
     const ICE_FLUSH_DELAY_MS = 180;
+    const CALLING_TEXT = "呼び出し中...";
+    const CALL_STATUS_LABELS = {
+      ringing: CALLING_TEXT,
+      accepted: "通話中",
+      declined: "拒否されました",
+      ended: "FaceTime 終了"
+    };
+    const TERMINAL_CALL_STATUSES = new Set(["declined", "ended"]);
 
     const PARAM_LABELS = new Map([
       ["browInnerUp", "眉上げ"],
@@ -933,6 +941,7 @@
     function setIncomingVisible(visible) {
       setVisible(incomingModal, visible);
       stage.classList.toggle("incoming-active", visible);
+      updateCallAction();
     }
 
     function setOutgoingCallingVisible(visible) {
@@ -971,8 +980,7 @@
       rtcCallId = callRef.id;
       flushPendingIceCandidates().catch(error => console.warn("ICE candidate flush failed", error));
       setOutgoingCallingVisible(true);
-      updateCallAction();
-      showCallState("呼び出し中...", calleeName);
+      showCallState(CALLING_TEXT, calleeName);
       listenCurrentCall(currentCallId);
     }
 
@@ -988,29 +996,18 @@
 
       unsubscribeIncoming = onSnapshot(incomingQuery, async snapshot => {
         if (snapshot.empty || currentCallId) {
-          incomingCallId = null;
-          setIncomingVisible(false);
-          updateCallAction();
-          stopRingtone();
+          clearIncomingCallNotice();
           return;
         }
 
         const docSnap = snapshot.docs.find(candidate => isFreshIncomingCall(candidate.data(), listenStartedAt));
         if (!docSnap) {
-          incomingCallId = null;
-          setIncomingVisible(false);
-          updateCallAction();
-          stopRingtone();
+          clearIncomingCallNotice();
           snapshot.docs.forEach(candidate => scheduleCallDeletion(candidate.id));
           return;
         }
 
-        const call = docSnap.data();
-        incomingCallId = docSnap.id;
-        incomingText.textContent = "FaceTimeビデオ";
-        setIncomingVisible(true);
-        updateCallAction();
-        startRingtone();
+        showIncomingCallNotice(docSnap.id);
       });
     }
 
@@ -1047,12 +1044,9 @@
 
       currentCallId = callId;
       rtcCallId = callId;
-      incomingCallId = null;
-      setIncomingVisible(false);
-      stopRingtone();
+      clearIncomingCallNotice();
 
       flushPendingIceCandidates().catch(error => console.warn("ICE candidate flush failed", error));
-      updateCallAction();
       showCallState("通話中", await getUserName(call.callerId));
       listenCurrentCall(callId);
     }
@@ -1066,10 +1060,7 @@
       });
       scheduleCallDeletion(callId);
 
-      incomingCallId = null;
-      setIncomingVisible(false);
-      updateCallAction();
-      stopRingtone();
+      clearIncomingCallNotice();
     }
 
     function listenCurrentCall(callId) {
@@ -1118,8 +1109,7 @@
       callStatus.textContent = statusText;
       callPartnerLabel.textContent = `相手: ${partnerName}`;
       updateCallAction();
-      remoteEmpty.textContent = statusText;
-      remoteEmpty.hidden = outgoingCalling || statusText !== "呼び出し中...";
+      setRemoteEmptyText(statusText, shouldShowRemoteState(statusText));
     }
 
     function hideCallState() {
@@ -1127,6 +1117,28 @@
       callPartnerLabel.textContent = "";
       updateCallAction();
       resetRemoteDisplay();
+    }
+
+    function showIncomingCallNotice(callId) {
+      incomingCallId = callId;
+      incomingText.textContent = "FaceTimeビデオ";
+      setIncomingVisible(true);
+      startRingtone();
+    }
+
+    function clearIncomingCallNotice() {
+      incomingCallId = null;
+      setIncomingVisible(false);
+      stopRingtone();
+    }
+
+    function shouldShowRemoteState(statusText) {
+      return !outgoingCalling && statusText === CALLING_TEXT;
+    }
+
+    function setRemoteEmptyText(text = "", visible = false) {
+      remoteEmpty.textContent = text;
+      remoteEmpty.hidden = !visible;
     }
 
     function resetCallSession() {
@@ -1138,31 +1150,24 @@
     }
 
     function resetRemoteDisplay() {
-      remoteEmpty.textContent = "";
-      remoteEmpty.hidden = true;
+      setRemoteEmptyText();
       lastRemoteMotionFrame = null;
       resetRemoteVideo();
       clearCanvas(remoteCtx, remoteCanvas);
     }
 
     function updateCallStatus(callStatusValue) {
-      const label = {
-        ringing: "呼び出し中...",
-        accepted: "通話中",
-        declined: "拒否されました",
-        ended: "FaceTime 終了"
-      }[callStatusValue];
+      const label = CALL_STATUS_LABELS[callStatusValue];
 
       if (label) callStatus.textContent = label;
 
       if (callStatusValue === "accepted") {
         setOutgoingCallingVisible(false);
-        remoteEmpty.hidden = true;
+        setRemoteEmptyText();
       }
 
-      if (callStatusValue === "declined" || callStatusValue === "ended") {
+      if (TERMINAL_CALL_STATUSES.has(callStatusValue)) {
         const terminalCallId = currentCallId || rtcCallId;
-        setOutgoingCallingVisible(false);
         resetCallSession();
         scheduleCallDeletion(terminalCallId);
       }
@@ -1850,28 +1855,12 @@
     }
 
     async function loadParamSets() {
-      try {
-        const sets = {};
-
-        for (let index = 1; index <= 99; index++) {
-          const name = datasetName(index);
-          const response = await fetch(`${PARAM_SET_DIR}/${name}`, { cache: "no-store" });
-          if (response.status === 404) break;
-          if (!response.ok) throw new Error(`${name}: HTTP ${response.status}`);
-
-          const text = await response.text();
-          if (!text.trim()) continue;
-
-          const stored = JSON.parse(text);
-          const paramSet = stored?.[name] ?? stored;
-          if (validParamSet(paramSet)) sets[name] = paramSet;
-        }
-
-        return sets;
-      } catch (error) {
-        status.textContent = `parameterを読み込めません: ${error.message}`;
-        return {};
-      }
+      return loadSequentialSets({
+        fileNameForIndex: datasetName,
+        errorLabel: "parameter",
+        normalize: (stored, name) => stored?.[name] ?? stored,
+        validate: validParamSet
+      });
     }
 
     function validParamSet(value) {
@@ -1925,25 +1914,35 @@
     }
 
     async function loadMotionGainSets() {
+      return loadSequentialSets({
+        fileNameForIndex: index => `${motionGainSetName(index)}.json`,
+        errorLabel: "係数セット",
+        normalize: normalizeMotionGainSet,
+        validate: validMotionGainSet
+      });
+    }
+
+    async function loadSequentialSets({ fileNameForIndex, errorLabel, normalize, validate }) {
       try {
         const sets = {};
 
         for (let index = 1; index <= 99; index++) {
-          const name = motionGainSetName(index);
-          const response = await fetch(`${PARAM_SET_DIR}/${name}.json`, { cache: "no-store" });
+          const fileName = fileNameForIndex(index);
+          const response = await fetch(`${PARAM_SET_DIR}/${fileName}`, { cache: "no-store" });
           if (response.status === 404) break;
-          if (!response.ok) throw new Error(`${name}.json: HTTP ${response.status}`);
+          if (!response.ok) throw new Error(`${fileName}: HTTP ${response.status}`);
 
           const text = await response.text();
           if (!text.trim()) continue;
 
-          const gainSet = normalizeMotionGainSet(JSON.parse(text));
-          if (validMotionGainSet(gainSet)) sets[name] = gainSet;
+          const key = fileName.replace(/\.json$/, "");
+          const set = normalize(JSON.parse(text), key);
+          if (validate(set)) sets[key] = set;
         }
 
         return sets;
       } catch (error) {
-        status.textContent = `係数セットを読み込めません: ${error.message}`;
+        status.textContent = `${errorLabel}を読み込めません: ${error.message}`;
         return {};
       }
     }
