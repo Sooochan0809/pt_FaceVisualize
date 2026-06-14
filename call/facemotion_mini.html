@@ -581,6 +581,7 @@
     const INCOMING_CALL_GRACE_MS = 3000;
     const TERMINAL_CALL_DELETE_DELAY_MS = 15000;
     const ICE_FLUSH_DELAY_MS = 180;
+    const CLEANUP_CALL_DOCUMENTS_FROM_CLIENT = false;
     const CALLING_TEXT = "呼び出し中...";
     const CALL_STATUS_LABELS = {
       ringing: CALLING_TEXT,
@@ -1214,6 +1215,7 @@
     }
 
     function scheduleCallDeletion(callId) {
+      if (!CLEANUP_CALL_DOCUMENTS_FROM_CLIENT) return;
       if (!callId || scheduledCallDeletes.has(callId)) return;
 
       scheduledCallDeletes.add(callId);
@@ -1221,6 +1223,7 @@
         try {
           await deleteDoc(doc(db, "calls", callId));
         } catch (error) {
+          if (error?.code === "permission-denied") return;
           console.warn("call cleanup failed", error);
         } finally {
           scheduledCallDeletes.delete(callId);
