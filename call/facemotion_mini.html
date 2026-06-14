@@ -36,16 +36,23 @@
 
     #video {
       position: absolute;
-      right: 18px;
-      bottom: 18px;
+      inset: 0;
+      z-index: 1;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      border-radius: 0;
+      background: #111;
+      transform: scaleX(-1);
+    }
+
+    main.remote-active #video {
+      inset: auto 18px 18px auto;
       z-index: 12;
       width: min(24dvw, 160px);
       height: auto;
       aspect-ratio: 3 / 4;
-      object-fit: cover;
       border-radius: 8px;
-      background: #111;
-      transform: scaleX(-1);
     }
 
     #remoteVideo {
@@ -68,6 +75,9 @@
       height: 100%;
       display: block;
       pointer-events: none;
+    }
+
+    main.remote-active canvas {
       background: #f0f0f0df;
     }
 
@@ -241,23 +251,118 @@
       background: #e5484d;
     }
 
-    .modal {
+    #callSelectedButton.calling-cancel {
+      min-width: 0;
+      width: auto;
+      height: auto;
+      padding: 0;
+      background: #e5484d;
+    }
+
+    #callSelectedButton.calling-cancel img {
+      width: 34px;
+      height: 34px;
+      margin: 24px;
+      transform: rotate(130deg);
+    }
+
+    #callSelectedButton.calling-cancel span {
+      display: none;
+    }
+
+    .modal,
+    .call-overlay {
       position: fixed;
       inset: 0;
-      z-index: 30;
-      display: grid;
-      place-items: center;
-      padding: 20px;
       background: #00000080;
     }
 
-    .modal-content {
-      width: min(420px, 100%);
-      padding: 22px;
-      border-radius: 14px;
-      background: #fff;
-      color: #111;
+    .modal {
+      z-index: 30;
+      display: block;
+      padding: 20px;
+    }
+
+    .call-overlay {
+      z-index: 13;
+      pointer-events: none;
+    }
+
+    .incoming-number {
+      position: absolute;
+      left: 50%;
+      top: 28px;
+      transform: translateX(-50%);
+      color: #fff;
+      font-size: clamp(24px, 5vw, 48px);
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      text-shadow: 0 2px 18px #00000070;
+      white-space: nowrap;
+    }
+
+    .incoming-actions {
+      position: absolute;
+      left: 50%;
+      bottom: 28px;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 56px;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .incoming-action {
+      display: grid;
+      gap: 8px;
+      justify-items: center;
+      color: #fff;
+      font-size: 12px;
+      font-weight: 600;
+      text-shadow: 0 2px 12px #00000070;
+    }
+
+    .incoming-actions button {
+      width: auto;
+      height: auto;
+      border: 0;
+      border-radius: 999px;
+      padding: 0;
+      color: #fff;
+      box-shadow: 0 14px 34px #00000035;
+      display: inline-grid;
+      place-items: center;
+    }
+
+    .incoming-actions img {
+      width: 34px;
+      height: 34px;
+      display: block;
+      margin: 24px 24px;
+    }
+
+    #acceptButton {
+      background: #00C948;
+    }
+
+    #declineButton {
+      background: #e5484d;
+    }
+
+    .phone-icon-decline {
+      transform: rotate(130deg);
+    }
+
+    .incoming-hint {
+      position: absolute;
+      left: 50%;
+      top: 84px;
+      transform: translateX(-50%);
+      color: #ffffffd8;
+      font-size: 14px;
       text-align: center;
+      text-shadow: 0 2px 12px #00000070;
+      white-space: nowrap;
     }
 
     .remote-empty {
@@ -269,9 +374,10 @@
       color: #111;
       font-size: clamp(28px, 8vw, 96px);
       font-weight: 800;
-      opacity: 0.15;
+      opacity: 0.42;
       pointer-events: none;
       text-align: center;
+      text-shadow: 0 2px 14px #ffffffc8;
       white-space: nowrap;
     }
 
@@ -316,7 +422,7 @@
 </head>
 
 <body>
-  <main>
+  <main id="stage">
     <video id="remoteVideo" autoplay playsinline class="hidden"></video>
     <video id="video" autoplay playsinline muted></video>
     <canvas id="remoteCanvas"></canvas>
@@ -327,6 +433,10 @@
         <img src="./icon_facetime.svg" alt="" aria-hidden="true" />
         <span>FaceTime</span>
       </button>
+    </div>
+    <div id="outgoingOverlay" class="call-overlay hidden">
+      <div class="incoming-number">080-XXXX-XXXX</div>
+      <div class="incoming-hint">FaceTimeで発信中...</div>
     </div>
 
     <section id="hud">
@@ -371,11 +481,21 @@
     </section>
 
     <div id="incomingModal" class="modal hidden">
-      <div class="modal-content">
-        <h2>着信</h2>
-        <p id="incomingText">誰かから着信しています</p>
-        <button id="acceptButton" type="button">応答</button>
-        <button id="declineButton" type="button">拒否</button>
+      <div id="incomingNumber" class="incoming-number">080-XXXX-XXXX</div>
+      <div id="incomingText" class="incoming-hint">着信中</div>
+      <div class="incoming-actions">
+        <div class="incoming-action">
+          <button id="declineButton" type="button" aria-label="拒否">
+            <img class="phone-icon-decline" src="./icon_phon.svg" alt="" aria-hidden="true" />
+          </button>
+          <span>拒否</span>
+        </div>
+        <div class="incoming-action">
+          <button id="acceptButton" type="button" aria-label="応答">
+            <img src="./icon_phon.svg" alt="" aria-hidden="true" />
+          </button>
+          <span>応答</span>
+        </div>
       </div>
     </div>
   </main>
@@ -409,6 +529,7 @@
     } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-firestore.js";
 
     const $ = id => document.getElementById(id);
+    const stage = $("stage");
     const video = $("video");
     const remoteVideo = $("remoteVideo");
     const localCanvas = $("localCanvas");
@@ -417,6 +538,9 @@
     const remoteCtx = remoteCanvas.getContext("2d");
     const callAction = $("callAction");
     const callSelectedButton = $("callSelectedButton");
+    const callSelectedIcon = callSelectedButton.querySelector("img");
+    const callSelectedLabel = callSelectedButton.querySelector("span");
+    const outgoingOverlay = $("outgoingOverlay");
     const resetButton = $("resetButton");
     const paramToggleButton = $("paramToggleButton");
     const logoutButton = $("logoutButton");
@@ -454,6 +578,7 @@
     const UNSTABLE_POSE_GAIN = 0.45;
     const MOTION_GAIN_MIN = 0;
     const MOTION_GAIN_MAX = 2;
+    const INCOMING_CALL_GRACE_MS = 3000;
     const TERMINAL_CALL_DELETE_DELAY_MS = 15000;
     const ICE_FLUSH_DELAY_MS = 180;
 
@@ -568,6 +693,7 @@
     let selectedCallee = null;
     let cameraReady = false;
     let cameraStartPromise = null;
+    let outgoingCalling = false;
     let incomingCallId = null;
     let localMotionFrame = null;
     let lastRemoteMotionFrame = null;
@@ -793,11 +919,27 @@
 
     function updateCallAction() {
       const inCall = Boolean(currentCallId);
+      const calling = Boolean(outgoingCalling && inCall);
       const available = Boolean(currentUser && (inCall || selectedCallee && cameraReady));
-      setVisible(callAction, Boolean(currentUser));
+      setVisible(callAction, Boolean(currentUser && !incomingCallId));
       callSelectedButton.disabled = !available;
       callSelectedButton.classList.toggle("end-call", inCall);
-      callSelectedButton.querySelector("span").textContent = inCall ? "FaceTime 終了" : "FaceTime";
+      callSelectedButton.classList.toggle("calling-cancel", calling);
+      callSelectedIcon.src = calling ? "./icon_phon.svg" : "./icon_facetime.svg";
+      callSelectedIcon.classList.toggle("phone-icon-decline", calling);
+      callSelectedLabel.textContent = inCall ? "FaceTime 終了" : "FaceTime";
+    }
+
+    function setIncomingVisible(visible) {
+      setVisible(incomingModal, visible);
+      stage.classList.toggle("incoming-active", visible);
+    }
+
+    function setOutgoingCallingVisible(visible) {
+      outgoingCalling = visible;
+      setVisible(outgoingOverlay, visible);
+      stage.classList.toggle("calling-active", visible);
+      updateCallAction();
     }
 
     async function startCall(calleeId, calleeName) {
@@ -821,12 +963,14 @@
         },
         callerCandidates: [],
         calleeCandidates: [],
+        clientCreatedAt: Date.now(),
         createdAt: serverTimestamp()
       });
 
       currentCallId = callRef.id;
       rtcCallId = callRef.id;
       flushPendingIceCandidates().catch(error => console.warn("ICE candidate flush failed", error));
+      setOutgoingCallingVisible(true);
       updateCallAction();
       showCallState("呼び出し中...", calleeName);
       listenCurrentCall(currentCallId);
@@ -834,6 +978,7 @@
 
     function listenIncomingCalls() {
       if (!currentUser) return;
+      const listenStartedAt = Date.now();
 
       const incomingQuery = query(
         collection(db, "calls"),
@@ -844,18 +989,35 @@
       unsubscribeIncoming = onSnapshot(incomingQuery, async snapshot => {
         if (snapshot.empty || currentCallId) {
           incomingCallId = null;
-          setVisible(incomingModal, false);
+          setIncomingVisible(false);
+          updateCallAction();
           stopRingtone();
           return;
         }
 
-        const docSnap = snapshot.docs[0];
+        const docSnap = snapshot.docs.find(candidate => isFreshIncomingCall(candidate.data(), listenStartedAt));
+        if (!docSnap) {
+          incomingCallId = null;
+          setIncomingVisible(false);
+          updateCallAction();
+          stopRingtone();
+          snapshot.docs.forEach(candidate => scheduleCallDeletion(candidate.id));
+          return;
+        }
+
         const call = docSnap.data();
         incomingCallId = docSnap.id;
-        incomingText.textContent = `${await getUserName(call.callerId)} から着信しています`;
-        setVisible(incomingModal, true);
+        incomingText.textContent = "FaceTimeビデオ";
+        setIncomingVisible(true);
+        updateCallAction();
         startRingtone();
       });
+    }
+
+    function isFreshIncomingCall(call, listenStartedAt) {
+      const createdAt = call.createdAt?.toMillis?.() || call.clientCreatedAt;
+      if (!createdAt) return false;
+      return createdAt >= listenStartedAt - INCOMING_CALL_GRACE_MS;
     }
 
     async function acceptIncomingCall() {
@@ -886,7 +1048,7 @@
       currentCallId = callId;
       rtcCallId = callId;
       incomingCallId = null;
-      setVisible(incomingModal, false);
+      setIncomingVisible(false);
       stopRingtone();
 
       flushPendingIceCandidates().catch(error => console.warn("ICE candidate flush failed", error));
@@ -905,7 +1067,8 @@
       scheduleCallDeletion(callId);
 
       incomingCallId = null;
-      setVisible(incomingModal, false);
+      setIncomingVisible(false);
+      updateCallAction();
       stopRingtone();
     }
 
@@ -956,7 +1119,7 @@
       callPartnerLabel.textContent = `相手: ${partnerName}`;
       updateCallAction();
       remoteEmpty.textContent = statusText;
-      remoteEmpty.hidden = statusText !== "呼び出し中...";
+      remoteEmpty.hidden = outgoingCalling || statusText !== "呼び出し中...";
     }
 
     function hideCallState() {
@@ -969,6 +1132,7 @@
     function resetCallSession() {
       currentCallId = null;
       rtcCallId = "";
+      setOutgoingCallingVisible(false);
       closePeerConnection();
       hideCallState();
     }
@@ -992,11 +1156,13 @@
       if (label) callStatus.textContent = label;
 
       if (callStatusValue === "accepted") {
+        setOutgoingCallingVisible(false);
         remoteEmpty.hidden = true;
       }
 
       if (callStatusValue === "declined" || callStatusValue === "ended") {
         const terminalCallId = currentCallId || rtcCallId;
+        setOutgoingCallingVisible(false);
         resetCallSession();
         scheduleCallDeletion(terminalCallId);
       }
@@ -1019,7 +1185,7 @@
       currentUserLabel.textContent = "---";
       usersList.innerHTML = "";
       showSignedInView(false);
-      setVisible(incomingModal, false);
+      setIncomingVisible(false);
       stopRingtone();
       stopCamera();
       resetCallSession();
@@ -1200,6 +1366,7 @@
       if (!stream || remoteVideo.srcObject === stream) return;
       remoteVideo.srcObject = stream;
       setVisible(remoteVideo, true);
+      stage.classList.add("remote-active");
       remoteEmpty.hidden = true;
       remoteVideo.play().catch(error => console.warn("remote video play failed", error));
     }
@@ -1207,6 +1374,7 @@
     function resetRemoteVideo() {
       remoteVideo.srcObject = null;
       setVisible(remoteVideo, false);
+      stage.classList.remove("remote-active");
     }
 
     function showCallError(error) {
