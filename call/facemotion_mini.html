@@ -90,12 +90,26 @@
       z-index: 2;
     }
 
+    #emotionEmoji,
+    #remoteEmotionEmoji {
+      position: absolute;
+      left: 0;
+      top: 0;
+      z-index: 13;
+      transform: translate(-50%, -50%);
+      font-size: var(--emotion-emoji-size, 72px);
+      line-height: 1;
+      pointer-events: none;
+      text-shadow: 0 4px 18px #00000045;
+      transition: left 90ms linear, top 90ms linear, opacity 120ms linear;
+    }
+
     #hud {
       position: absolute;
+      width: auto;
       left: 16px;
       top: 16px;
       z-index: 10;
-      width: min(260px, calc(100dvw - 32px));
       color: #f4f7fb;
     }
 
@@ -427,6 +441,8 @@
     <video id="video" autoplay playsinline muted></video>
     <canvas id="remoteCanvas"></canvas>
     <canvas id="localCanvas"></canvas>
+    <div id="remoteEmotionEmoji" class="hidden" aria-hidden="true"></div>
+    <div id="emotionEmoji" class="hidden" aria-hidden="true"></div>
     <div id="remoteEmpty" class="remote-empty"></div>
     <div id="callAction" class="call-action hidden">
       <button id="callSelectedButton" type="button" disabled>
@@ -454,6 +470,13 @@
           <label>
             <span>motion gain</span>
             <select id="motionGainSetSelect" aria-label="係数セット"></select>
+          </label>
+          <label>
+            <span>effect</span>
+            <select id="effectModeSelect" aria-label="FaceTime中のエフェクト">
+              <option value="shape">図形</option>
+              <option value="emoji">顔文字</option>
+            </select>
           </label>
         </div>
         <div id="status">WebCamを準備中...</div>
@@ -536,6 +559,8 @@
     const remoteCanvas = $("remoteCanvas");
     const localCtx = localCanvas.getContext("2d");
     const remoteCtx = remoteCanvas.getContext("2d");
+    const emotionEmoji = $("emotionEmoji");
+    const remoteEmotionEmoji = $("remoteEmotionEmoji");
     const callAction = $("callAction");
     const callSelectedButton = $("callSelectedButton");
     const callSelectedIcon = callSelectedButton.querySelector("img");
@@ -562,12 +587,15 @@
     const remoteEmpty = $("remoteEmpty");
     const paramSetSelect = $("paramSetSelect");
     const motionGainSetSelect = $("motionGainSetSelect");
+    const effectModeSelect = $("effectModeSelect");
     const status = $("status");
     const params = $("params");
     let auth = null;
     let db = null;
 
     const PARAM_SET_DIR = "../parameter";
+    const FACE_API_SCRIPT = "../modules/faceAPI/face-api.min.js";
+    const FACE_API_MODEL_DIR = "../modules/faceAPI/models";
     const WARMUP_FRAMES = 20;
     const CALIBRATION_FRAMES = 60;
     const DEADZONE = 0.005;
@@ -581,6 +609,7 @@
     const INCOMING_CALL_GRACE_MS = 3000;
     const TERMINAL_CALL_DELETE_DELAY_MS = 15000;
     const ICE_FLUSH_DELAY_MS = 180;
+    const EMOTION_DETECT_INTERVAL_MS = 200;
     const CLEANUP_CALL_DOCUMENTS_FROM_CLIENT = false;
     const CALLING_TEXT = "呼び出し中...";
     const CALL_STATUS_LABELS = {
@@ -590,6 +619,28 @@
       ended: "FaceTime 終了"
     };
     const TERMINAL_CALL_STATUSES = new Set(["declined", "ended"]);
+    const EMOTION_LABELS = {
+      neutral: "中立",
+      happy: "喜び",
+      sad: "悲しみ",
+      angry: "怒り",
+      fearful: "恐れ",
+      disgusted: "嫌悪",
+      surprised: "驚き"
+    };
+    const EMOTION_EMOJIS = {
+      neutral: "😐",
+      happy: "🤣",
+      sad: "😢",
+      angry: "😡",
+      fearful: "😱",
+      disgusted: "🙁",
+      surprised: "😯"
+    };
+    const EFFECT_MODES = {
+      shape: "shape",
+      emoji: "emoji"
+    };
 
     const PARAM_LABELS = new Map([
       ["browInnerUp", "眉上げ"],
@@ -676,6 +727,14 @@
     ]);
 
     let faceLandmarker = null;
+    let faceApiReady = false;
+    let faceApiLoadPromise = null;
+    let faceApiDetectOptions = null;
+    let emotionDetecting = false;
+    let lastEmotionDetectedAt = 0;
+    let currentFaceBounds = null;
+    let currentEmotionName = "";
+    let currentEmotionText = "";
     let running = false;
     let loopToken = 0;
     let neutralPose = null;
@@ -697,6 +756,7 @@
     let activeParamSetName = "";
     let motionGainSets = {};
     let activeMotionGainSetName = "";
+    let activeEffectMode = EFFECT_MODES.shape;
     let currentUser = null;
     let currentCallId = null;
     let selectedCallee = null;
@@ -730,6 +790,7 @@
     paramToggleButton.addEventListener("click", () => params.classList.toggle("hidden"));
     paramSetSelect.addEventListener("change", () => applyParamSet(paramSetSelect.value));
     motionGainSetSelect.addEventListener("change", () => applyMotionGainSet(motionGainSetSelect.value));
+    effectModeSelect.addEventListener("change", () => applyEffectMode(effectModeSelect.value));
     signupButton.addEventListener("click", signup);
     loginButton.addEventListener("click", login);
     logoutButton.addEventListener("click", logout);
@@ -1153,6 +1214,7 @@
       setRemoteEmptyText();
       lastRemoteMotionFrame = null;
       resetRemoteVideo();
+      hideEmotionEmoji(remoteEmotionEmoji);
       clearCanvas(remoteCtx, remoteCanvas);
     }
 
@@ -1187,6 +1249,7 @@
       currentUser = null;
       incomingCallId = null;
       selectedCallee = null;
+      applyEffectMode(EFFECT_MODES.shape);
       currentUserLabel.textContent = "---";
       usersList.innerHTML = "";
       showSignedInView(false);
@@ -1382,6 +1445,7 @@
       remoteVideo.srcObject = null;
       setVisible(remoteVideo, false);
       stage.classList.remove("remote-active");
+      hideEmotionEmoji(remoteEmotionEmoji);
     }
 
     function showCallError(error) {
@@ -1512,16 +1576,30 @@
 
     function motionPayloadFromFrame(frame, poseStable) {
       return {
+        effectMode: activeEffectMode,
         active: Boolean(frame.active),
         poseStable: Boolean(poseStable),
         sentAt: Date.now(),
-        items: (frame.items || []).map(({ categoryName, label, amount, sharpness }) => ({
+        emotion: emotionPayload(),
+        items: (shapeEffectActive() ? frame.items || [] : []).map(({ categoryName, label, amount, sharpness }) => ({
           categoryName,
           label,
           amount: roundMotionValue(amount),
           sharpness: roundMotionValue(sharpness)
         }))
       };
+    }
+
+    function emotionPayload() {
+      return {
+        name: currentEmotionName,
+        bounds: currentFaceBounds ? roundFaceBounds(currentFaceBounds) : null
+      };
+    }
+
+    function roundFaceBounds(bounds) {
+      return Object.fromEntries(Object.entries(bounds)
+        .map(([key, value]) => [key, roundMotionValue(value)]));
     }
 
     async function sendLocalMotionFrame() {
@@ -1548,6 +1626,15 @@
       frame ??= lastRemoteMotionFrame;
       clearCanvas(remoteCtx, remoteCanvas);
 
+      if (frameEffectMode(frame) === EFFECT_MODES.emoji) {
+        remoteEmpty.hidden = true;
+        hideEmotionEmoji(remoteEmotionEmoji);
+        if (remoteVideoActive()) updateRemoteEmotionEmoji(frame?.emotion);
+        return;
+      }
+
+      hideEmotionEmoji(remoteEmotionEmoji);
+
       if (!frame?.items?.length) {
         remoteEmpty.hidden = true;
         return;
@@ -1560,6 +1647,34 @@
         lineWidth: 4,
         strokeStyle: frame.poseStable ? "#1d64c8" : "#6d7782"
       });
+    }
+
+    function frameEffectMode(frame) {
+      return Object.values(EFFECT_MODES).includes(frame?.effectMode) ? frame.effectMode : EFFECT_MODES.shape;
+    }
+
+    function applyEffectMode(mode) {
+      activeEffectMode = Object.values(EFFECT_MODES).includes(mode) ? mode : EFFECT_MODES.shape;
+      effectModeSelect.value = activeEffectMode;
+
+      if (shapeEffectActive()) {
+        hideEmotionEmoji(emotionEmoji);
+        return;
+      }
+
+      clearCanvas(localCtx, localCanvas);
+    }
+
+    function shapeEffectActive() {
+      return activeEffectMode === EFFECT_MODES.shape;
+    }
+
+    function emojiEffectActive() {
+      return activeEffectMode === EFFECT_MODES.emoji;
+    }
+
+    function remoteVideoActive() {
+      return stage.classList.contains("remote-active") && remoteVideo.srcObject instanceof MediaStream;
     }
 
     function spectrumFrameFromPayload(frame, targetCanvas) {
@@ -1609,6 +1724,47 @@
       return faceLandmarker;
     }
 
+    async function setupEmotionEstimator() {
+      if (faceApiReady) return true;
+      if (faceApiLoadPromise) return faceApiLoadPromise;
+
+      faceApiLoadPromise = (async () => {
+        const faceapi = await loadFaceApi();
+        if (!faceapi) throw new Error("face-apiを読み込めません");
+
+        await Promise.all([
+          faceapi.nets.tinyFaceDetector.loadFromUri(FACE_API_MODEL_DIR),
+          faceapi.nets.faceExpressionNet.loadFromUri(FACE_API_MODEL_DIR)
+        ]);
+        faceApiDetectOptions = new faceapi.TinyFaceDetectorOptions({
+          inputSize: 160,
+          scoreThreshold: 0.5
+        });
+        faceApiReady = true;
+        return true;
+      })().catch(error => {
+        currentEmotionText = "";
+        console.warn("emotion estimator setup failed", error);
+        return false;
+      }).finally(() => {
+        faceApiLoadPromise = null;
+      });
+
+      return faceApiLoadPromise;
+    }
+
+    function loadFaceApi() {
+      if (window.faceapi) return Promise.resolve(window.faceapi);
+
+      return new Promise((resolve, reject) => {
+        const script = document.createElement("script");
+        script.src = FACE_API_SCRIPT;
+        script.onload = () => resolve(window.faceapi);
+        script.onerror = () => reject(new Error("face-api.min.jsを読み込めません"));
+        document.head.appendChild(script);
+      });
+    }
+
     async function startCamera() {
       stopLoop();
       stopCamera();
@@ -1623,6 +1779,7 @@
       updateCallAction();
       waitForFaceCalibration();
       startLoop();
+      setupEmotionEstimator();
     }
 
     async function ensureCameraStarted() {
@@ -1684,6 +1841,10 @@
       video.srcObject = null;
       cameraReady = false;
       cameraStartPromise = null;
+      currentFaceBounds = null;
+      currentEmotionName = "";
+      currentEmotionText = "";
+      hideEmotionEmoji(emotionEmoji);
       updateCallAction();
     }
 
@@ -1708,16 +1869,30 @@
       if (!faceLandmarker || video.readyState < 2) return;
 
       const result = faceLandmarker.detectForVideo(video, performance.now());
+      updateEmotionEstimate();
       const landmarks = smoothLandmarks(result.faceLandmarks?.[0] ?? []);
       const categories = normalizeCategories(result.faceBlendshapes?.[0]?.categories ?? []);
 
       if (!categories.length) {
         if (base.size || calibrationActive()) waitForFaceCalibration();
-        drawNoFace(localCtx, localCanvas);
-        localMotionFrame = null;
-        status.textContent = "顔を検出中...";
+        currentFaceBounds = null;
+        if (shapeEffectActive()) {
+          drawNoFace(localCtx, localCanvas);
+        } else {
+          clearCanvas(localCtx, localCanvas);
+        }
+        localMotionFrame = motionPayloadFromFrame({ active: false, items: [] }, false);
+        sendLocalMotionFrame();
+        hideEmotionEmoji(emotionEmoji);
+        status.textContent = emotionStatus("顔を検出中...");
         return;
       }
+
+      currentFaceBounds = faceBoundsFromLandmarks(landmarks);
+      if (emojiEffectActive()) {
+        clearCanvas(localCtx, localCanvas);
+      }
+      hideEmotionEmoji(emotionEmoji);
 
       updateParamCheckboxes(categories);
       if (!base.size && !calibrationActive()) startCalibration();
@@ -1733,12 +1908,17 @@
           sharpnessValues: previewSharpness,
           baseMap: base
         });
-        drawSpectrum(localCtx, localCanvas, preview, {
-          alpha: 0.24,
-          lineWidth: 2,
-          strokeStyle: "#111"
-        });
-        localMotionFrame = null;
+        if (shapeEffectActive()) {
+          drawSpectrum(localCtx, localCanvas, preview, {
+            alpha: 0.24,
+            lineWidth: 2,
+            strokeStyle: "#111"
+          });
+          localMotionFrame = null;
+        } else {
+          localMotionFrame = motionPayloadFromFrame({ active: false, items: [] }, true);
+          sendLocalMotionFrame();
+        }
         return;
       }
 
@@ -1748,14 +1928,126 @@
         sharpnessValues: currentSharpness,
         baseMap: base
       });
-      drawSpectrum(localCtx, localCanvas, frame, {
-        alpha: poseStable ? 0.94 : 0.58,
-        lineWidth: 4,
-        strokeStyle: poseStable ? "#00C948" : "#6d7782"
-      });
+      if (shapeEffectActive()) {
+        drawSpectrum(localCtx, localCanvas, frame, {
+          alpha: poseStable ? 0.94 : 0.58,
+          lineWidth: 4,
+          strokeStyle: poseStable ? "#00C948" : "#6d7782"
+        });
+      }
       localMotionFrame = motionPayloadFromFrame(frame, poseStable);
       sendLocalMotionFrame();
-      status.textContent = poseStable ? "検出中" : "顔の向きが大きいため、動きを少し抑えています。";
+      status.textContent = emotionStatus(poseStable ? "検出中" : "顔の向きが大きいため、動きを少し抑えています。");
+    }
+
+    function updateEmotionEstimate() {
+      const now = performance.now();
+      if (!faceApiReady || emotionDetecting || now - lastEmotionDetectedAt < EMOTION_DETECT_INTERVAL_MS) return;
+
+      emotionDetecting = true;
+      lastEmotionDetectedAt = now;
+      window.faceapi.detectSingleFace(video, faceApiDetectOptions).withFaceExpressions()
+        .then(result => {
+          updateDominantEmotion(result?.expressions);
+        })
+        .catch(error => {
+          currentEmotionName = "";
+          currentEmotionText = "";
+          console.warn("emotion detection failed", error);
+        })
+        .finally(() => {
+          emotionDetecting = false;
+        });
+    }
+
+    function updateDominantEmotion(expressions = {}) {
+      const entries = Object.entries(expressions);
+      if (!entries.length) {
+        currentEmotionName = "";
+        currentEmotionText = "";
+        return;
+      }
+
+      const [name, score] = entries.reduce((best, entry) => entry[1] > best[1] ? entry : best);
+      if (!Number.isFinite(score)) {
+        currentEmotionName = "";
+        currentEmotionText = "";
+        return;
+      }
+
+      currentEmotionName = name;
+      currentEmotionText = `${EMOTION_LABELS[name] || name} ${score.toFixed(2)}`;
+    }
+
+    function updateEmotionEmoji(landmarks = []) {
+      const bounds = faceBoundsFromLandmarks(landmarks);
+      renderEmotionEmoji(emotionEmoji, video, currentEmotionName, bounds, true);
+    }
+
+    function updateRemoteEmotionEmoji(emotion = {}) {
+      renderEmotionEmoji(remoteEmotionEmoji, remoteVideo, emotion?.name, emotion?.bounds, false);
+    }
+
+    function renderEmotionEmoji(target, media, emotionName, bounds, mirrored) {
+      const emoji = EMOTION_EMOJIS[emotionName];
+      if (!emoji || !bounds) {
+        hideEmotionEmoji(target);
+        return;
+      }
+
+      const position = videoPointToStage(media, bounds.cx, bounds.cy, mirrored);
+      const horizontalSize = Math.abs(videoPointToStage(media, bounds.maxX, bounds.cy, mirrored).x - videoPointToStage(media, bounds.minX, bounds.cy, mirrored).x);
+      const verticalSize = Math.abs(videoPointToStage(media, bounds.cx, bounds.maxY, mirrored).y - videoPointToStage(media, bounds.cx, bounds.minY, mirrored).y);
+      const emojiSize = clamp(Math.max(horizontalSize, verticalSize) * 1.2, 42, 640);
+      target.textContent = emoji;
+      target.style.left = `${position.x}px`;
+      target.style.top = `${position.y - emojiSize * 0.05}px`;
+      target.style.setProperty("--emotion-emoji-size", `${emojiSize}px`);
+      setVisible(target, true);
+    }
+
+    function hideEmotionEmoji(target = emotionEmoji) {
+      setVisible(target, false);
+    }
+
+    function faceBoundsFromLandmarks(landmarks = []) {
+      if (!landmarks.length) return null;
+
+      const bounds = landmarks.reduce((acc, landmark) => ({
+        minX: Math.min(acc.minX, landmark.x),
+        maxX: Math.max(acc.maxX, landmark.x),
+        minY: Math.min(acc.minY, landmark.y),
+        maxY: Math.max(acc.maxY, landmark.y)
+      }), { minX: 1, maxX: 0, minY: 1, maxY: 0 });
+
+      return {
+        ...bounds,
+        cx: (bounds.minX + bounds.maxX) / 2,
+        cy: (bounds.minY + bounds.maxY) / 2
+      };
+    }
+
+    function videoPointToStage(media, x, y, mirrored = false) {
+      const videoRect = media.getBoundingClientRect();
+      const stageRect = stage.getBoundingClientRect();
+      const videoWidth = media.videoWidth || videoRect.width;
+      const videoHeight = media.videoHeight || videoRect.height;
+      const scale = Math.max(videoRect.width / videoWidth, videoRect.height / videoHeight);
+      const drawnWidth = videoWidth * scale;
+      const drawnHeight = videoHeight * scale;
+      const offsetX = (videoRect.width - drawnWidth) / 2;
+      const offsetY = (videoRect.height - drawnHeight) / 2;
+      const mediaX = offsetX + clamp(x, 0, 1) * drawnWidth;
+      const displayX = mirrored ? videoRect.width - mediaX : mediaX;
+
+      return {
+        x: videoRect.left - stageRect.left + displayX,
+        y: videoRect.top - stageRect.top + offsetY + clamp(y, 0, 1) * drawnHeight
+      };
+    }
+
+    function emotionStatus(message) {
+      return currentEmotionText ? `${message} / 感情: ${currentEmotionText}` : message;
     }
 
     function startCalibration() {
@@ -2254,6 +2546,8 @@
     function resetAll() {
       waitForFaceCalibration();
       clearCanvas(localCtx, localCanvas);
+      clearCanvas(remoteCtx, remoteCanvas);
+      hideEmotionEmoji();
     }
 
     function resetCalibrationState() {
