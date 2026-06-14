@@ -270,9 +270,10 @@
       height: auto;
       padding: 0;
       background: #e5484d;
+      gap: 0;
     }
 
-    #callSelectedButton.calling-cancel img {
+    #callSelectedButton.calling-cancel .call-icon-phone {
       width: 34px;
       height: 34px;
       margin: 24px;
@@ -444,7 +445,8 @@
     <div id="remoteEmpty" class="remote-empty"></div>
     <div id="callAction" class="call-action hidden">
       <button id="callSelectedButton" type="button" disabled>
-        <img src="./icon_facetime.svg" alt="" aria-hidden="true" />
+        <img id="callFaceTimeIcon" src="./icon_facetime.svg" alt="" aria-hidden="true" />
+        <img id="callPhoneIcon" class="call-icon-phone hidden" src="./icon_phon.svg" alt="" aria-hidden="true" />
         <span>FaceTime</span>
       </button>
     </div>
@@ -560,7 +562,8 @@
     const remoteEmotionEmoji = $("remoteEmotionEmoji");
     const callAction = $("callAction");
     const callSelectedButton = $("callSelectedButton");
-    const callSelectedIcon = callSelectedButton.querySelector("img");
+    const callFaceTimeIcon = $("callFaceTimeIcon");
+    const callPhoneIcon = $("callPhoneIcon");
     const callSelectedLabel = callSelectedButton.querySelector("span");
     const outgoingOverlay = $("outgoingOverlay");
     const resetButton = $("resetButton");
@@ -992,8 +995,8 @@
       callSelectedButton.disabled = !available;
       callSelectedButton.classList.toggle("end-call", inCall);
       callSelectedButton.classList.toggle("calling-cancel", calling);
-      callSelectedIcon.src = calling ? "./icon_phon.svg" : "./icon_facetime.svg";
-      callSelectedIcon.classList.toggle("phone-icon-decline", calling);
+      setVisible(callFaceTimeIcon, !calling);
+      setVisible(callPhoneIcon, calling);
       callSelectedLabel.textContent = inCall ? "FaceTime 終了" : "FaceTime";
     }
 
@@ -1156,12 +1159,12 @@
       }
 
       const callId = currentCallId;
+      resetCallSession();
+
       await updateDoc(doc(db, "calls", callId), {
         status: "ended"
       });
       scheduleCallDeletion(callId);
-
-      resetCallSession();
     }
 
     function showCallState(statusText, partnerName) {
