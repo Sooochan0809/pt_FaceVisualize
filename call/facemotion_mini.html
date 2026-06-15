@@ -47,7 +47,7 @@
     }
 
     main.remote-active #video {
-      inset: auto 18px 18px auto;
+      inset: 18px 18px auto auto;
       z-index: 12;
       width: min(24dvw, 160px);
       height: auto;
@@ -75,10 +75,6 @@
       height: 100%;
       display: block;
       pointer-events: none;
-    }
-
-    main.remote-active canvas {
-      background: #f0f0f0df;
     }
 
     #localCanvas {
@@ -630,9 +626,9 @@
     const TERMINAL_CALL_DELETE_DELAY_MS = 15000;
     const ICE_FLUSH_DELAY_MS = 180;
     const EMOTION_DETECT_INTERVAL_MS = 200;
-    const OUTGOING_CALIBRATION_DELAY_MS = 200;
     const CLEANUP_CALL_DOCUMENTS_FROM_CLIENT = false;
     const CALLING_TEXT = "呼び出し中...";
+    const SHAPE_COLOR = "#FDD035";
     const CALL_STATUS_LABELS = {
       ringing: CALLING_TEXT,
       accepted: "通話中",
@@ -762,7 +758,8 @@
     let neutralPose = null;
     let smoothedLandmarks = null;
     let calibrationRequested = false;
-    let calibrationTimer = null;
+    let callConnectedCalibrationStarted = false;
+    let calibrationPreviewFrame = null;
 
     const base = new Map();
     const enabledParams = new Set();
@@ -1033,26 +1030,18 @@
 
     function setIncomingVisible(visible) {
       setVisible(incomingModal, visible);
-      stage.classList.toggle("incoming-active", visible);
       updateCallAction();
     }
 
     function setOutgoingCallingVisible(visible) {
       outgoingCalling = visible;
       setVisible(outgoingOverlay, visible);
-      stage.classList.toggle("calling-active", visible);
       updateCallAction();
     }
 
     async function startCall(calleeId, calleeName) {
       if (!currentUser || currentCallId) return;
-      scheduleFaceCalibration(OUTGOING_CALIBRATION_DELAY_MS);
-      try {
-        await ensureCameraStarted();
-      } catch (error) {
-        cancelFaceCalibration();
-        throw error;
-      }
+      await ensureCameraStarted();
 
       const peer = createPeerConnection("caller");
       addLocalVideoTrack(peer);
@@ -1225,7 +1214,6 @@
       incomingText.textContent = "FaceTimeビデオ";
       setIncomingVisible(true);
       startRingtone();
-      scheduleFaceCalibration();
       ensureCameraStarted().catch(showCameraError);
     }
 
@@ -1450,6 +1438,7 @@
         if (!rtcPeer) return;
         if (rtcPeer.connectionState === "connected") {
           remoteEmpty.hidden = true;
+          maybeStartConnectedCalibration();
         }
         if (["failed", "disconnected", "closed"].includes(rtcPeer.connectionState)) {
           remoteEmpty.hidden = true;
@@ -1481,6 +1470,7 @@
       setVisible(remoteVideo, true);
       stage.classList.add("remote-active");
       remoteEmpty.hidden = true;
+      maybeStartConnectedCalibration();
       remoteVideo.play().catch(error => console.warn("remote video play failed", error));
     }
 
@@ -1501,6 +1491,7 @@
       motionChannel.binaryType = "arraybuffer";
       motionChannel.onopen = () => {
         remoteEmpty.hidden = true;
+        maybeStartConnectedCalibration();
       };
       motionChannel.onmessage = event => {
         if (!currentCallId) return;
@@ -1615,6 +1606,15 @@
       pendingIceCandidates = [];
       pendingRemoteIceCandidates = [];
       processedRemoteCandidateCount = 0;
+      callConnectedCalibrationStarted = false;
+    }
+
+    function maybeStartConnectedCalibration() {
+      if (callConnectedCalibrationStarted || !currentCallId || !shapeEffectActive()) return;
+      if (rtcPeer?.connectionState !== "connected" || !remoteVideoActive()) return;
+
+      callConnectedCalibrationStarted = true;
+      waitForFaceCalibration();
     }
 
     function motionPayloadFromFrame(frame, poseStable) {
@@ -1687,11 +1687,14 @@
       }
 
       remoteEmpty.hidden = true;
-      const remoteFrame = spectrumFrameFromPayload(frame, remoteCanvas);
+      const remoteFrame = spectrumFrameFromPayload(frame, remoteCanvas, {
+        center: spectrumCenterFromBounds(frame?.emotion?.bounds, remoteVideo, remoteCanvas, false)
+      });
       drawSpectrum(remoteCtx, remoteCanvas, remoteFrame, {
-        alpha: frame.poseStable ? 0.94 : 0.24,
+        alpha: 0.94,
         lineWidth: 4,
-        strokeStyle: frame.poseStable ? "#1d64c8" : "#6d7782"
+        strokeStyle: SHAPE_COLOR,
+        fillStyle: SHAPE_COLOR
       });
     }
 
@@ -1705,6 +1708,7 @@
       prepareEffectMode();
 
       if (shapeEffectActive()) {
+        maybeStartConnectedCalibration();
         return;
       }
 
@@ -1736,13 +1740,12 @@
       clearDominantEmotion();
     }
 
-    function spectrumFrameFromPayload(frame, targetCanvas) {
+    function spectrumFrameFromPayload(frame, targetCanvas, options = {}) {
       const width = targetCanvas.width;
       const height = targetCanvas.height;
-      const cx = width / 2;
-      const cy = height / 2;
-      const baseRadius = Math.min(width, height) * 0.24;
-      const maxSpike = Math.min(width, height) * 0.17;
+      const { x: cx, y: cy } = options.center ?? { x: width / 2, y: height / 2 };
+      const baseRadius = Math.min(width, height) * 0.17;
+      const maxSpike = Math.min(width, height) * 0.12;
       const items = frame.items || [];
       const points = items.map(({ categoryName, label, amount = 0, sharpness = 0 }, index) => {
         const angle = index / items.length * Math.PI * 2 - Math.PI / 2;
@@ -1967,21 +1970,34 @@
 
       const activeCategories = selectedCategories(categories);
       const poseStable = isPoseStable(landmarks);
+      const spectrumCenter = spectrumCenterFromBounds(currentFaceBounds, video, localCanvas, true);
 
-      if (!base.size || calibrationActive()) {
-        const preview = updateSpectrumFrame(activeCategories, {
+      const preview = calibrationActive()
+        ? calibrationPreviewFrame ??= updateSpectrumFrame(activeCategories, {
           poseStable: true,
           values: previewSpectrum,
           sharpnessValues: previewSharpness,
-          baseMap: base
+          baseMap: base,
+          center: spectrumCenter
+        })
+        : updateSpectrumFrame(activeCategories, {
+          poseStable: true,
+          values: previewSpectrum,
+          sharpnessValues: previewSharpness,
+          baseMap: base,
+          center: spectrumCenter
         });
+
+      if (!base.size || calibrationActive()) {
         if (shapeEffectActive()) {
           drawSpectrum(localCtx, localCanvas, preview, {
             alpha: 0.24,
             lineWidth: 2,
-            strokeStyle: "#111"
+            strokeStyle: SHAPE_COLOR,
+            fillStyle: SHAPE_COLOR
           });
-          localMotionFrame = null;
+          localMotionFrame = motionPayloadFromFrame(preview, true);
+          sendLocalMotionFrame();
         } else {
           localMotionFrame = motionPayloadFromFrame({ active: false, items: [] }, true);
           sendLocalMotionFrame();
@@ -1993,13 +2009,15 @@
         poseStable,
         values: currentSpectrum,
         sharpnessValues: currentSharpness,
-        baseMap: base
+        baseMap: base,
+        center: spectrumCenter
       });
       if (shapeEffectActive()) {
         drawSpectrum(localCtx, localCanvas, frame, {
           alpha: poseStable ? 0.94 : 0.58,
           lineWidth: 4,
-          strokeStyle: poseStable ? "#00C948" : "#6d7782"
+          strokeStyle: SHAPE_COLOR,
+          fillStyle: SHAPE_COLOR
         });
       }
       localMotionFrame = motionPayloadFromFrame(frame, poseStable);
@@ -2070,6 +2088,19 @@
       setVisible(target, true);
     }
 
+    function spectrumCenterFromBounds(bounds, media, targetCanvas, mirrored = false) {
+      if (!bounds) return null;
+      const mediaRect = media.getBoundingClientRect();
+      if (!mediaRect.width || !mediaRect.height) return null;
+
+      const point = mediaPointToStage(media, bounds.cx, bounds.cy, mirrored);
+      const stageRect = stage.getBoundingClientRect();
+      return {
+        x: point.x * targetCanvas.width / stageRect.width,
+        y: point.y * targetCanvas.height / stageRect.height
+      };
+    }
+
     function hideEmotionEmoji(target) {
       setVisible(target, false);
     }
@@ -2092,6 +2123,10 @@
     }
 
     function videoPointToStage(media, x, y, mirrored = false) {
+      return mediaPointToStage(media, x, y, mirrored);
+    }
+
+    function mediaPointToStage(media, x, y, mirrored = false) {
       const videoRect = media.getBoundingClientRect();
       const stageRect = stage.getBoundingClientRect();
       const videoWidth = media.videoWidth || videoRect.width;
@@ -2114,30 +2149,15 @@
       return currentEmotionText ? `${message} / 感情: ${currentEmotionText}` : message;
     }
 
-    function scheduleFaceCalibration(delayMs = 0) {
-      clearScheduledCalibration();
-      if (!shapeEffectActive()) return;
-
-      calibrationTimer = window.setTimeout(() => {
-        calibrationTimer = null;
-        waitForFaceCalibration();
-      }, delayMs);
-    }
-
-    function clearScheduledCalibration() {
-      if (!calibrationTimer) return;
-      window.clearTimeout(calibrationTimer);
-      calibrationTimer = null;
-    }
-
     function cancelFaceCalibration() {
-      clearScheduledCalibration();
       calibrationRequested = false;
+      calibrationPreviewFrame = null;
     }
 
     function startCalibration() {
       resetVisualState();
       base.clear();
+      calibrationPreviewFrame = null;
       neutralPose = null;
       poseCalibration.samples = 0;
       poseCalibration.sum = null;
@@ -2176,6 +2196,7 @@
       writeCalibrationBase(base, calibration.stats, calibration.samples);
       neutralPose = finishPoseCalibration();
       calibrationRequested = false;
+      calibrationPreviewFrame = null;
       status.textContent = "キャリブレーション完了";
     }
 
@@ -2416,17 +2437,17 @@
         poseStable = true,
         values = currentSpectrum,
         sharpnessValues = currentSharpness,
-        baseMap = base
+        baseMap = base,
+        center = null
       } = options;
 
       if (categories.length < 3) return { active: false, points: [] };
 
       const width = localCanvas.width;
       const height = localCanvas.height;
-      const cx = width / 2;
-      const cy = height / 2;
-      const baseRadius = Math.min(width, height) * 0.24;
-      const maxSpike = Math.min(width, height) * 0.17;
+      const { x: cx, y: cy } = center ?? { x: width / 2, y: height / 2 };
+      const baseRadius = Math.min(width, height) * 0.17;
+      const maxSpike = Math.min(width, height) * 0.12;
       const ordered = orderedSpectrumCategories(categories);
       const calibrated = baseMap.size > 0;
 
@@ -2491,16 +2512,17 @@
       const {
         alpha = 1,
         lineWidth = 3,
-        strokeStyle = active ? "#999" : "#bbb"
+        strokeStyle = active ? "#999" : "#bbb",
+        fillStyle = active ? "#9999994d" : "#bbbbbb33"
       } = options;
 
       targetCtx.save();
-      targetCtx.globalAlpha *= alpha;
       targetCtx.lineWidth = lineWidth;
       targetCtx.lineJoin = "miter";
       targetCtx.miterLimit = 2.5;
       targetCtx.lineCap = "round";
       targetCtx.strokeStyle = strokeStyle;
+      targetCtx.fillStyle = fillStyle;
       targetCtx.beginPath();
 
       const start = midpoint(points[points.length - 1], points[0]);
@@ -2522,6 +2544,8 @@
       }
 
       targetCtx.closePath();
+      targetCtx.fill();
+      targetCtx.globalAlpha *= alpha;
       targetCtx.stroke();
       targetCtx.restore();
     }
@@ -2646,6 +2670,7 @@
       calibration.remaining = 0;
       calibration.samples = 0;
       calibration.stats.clear();
+      calibrationPreviewFrame = null;
       resetVisualState();
     }
 
