@@ -1,0 +1,2711 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Face Motion Mini</title>
+  <style>
+    :root {
+      --panel-bg: #1b2026dc;
+      --text: #111;
+      --bg: #f0f0f0;
+      --panel-border: #ffffff24;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100dvh;
+      overflow: hidden;
+      background: var(--bg);
+      color: var(--text);
+      font-family: "Yu Gothic Medium", "Yu Gothic", system-ui, sans-serif;
+    }
+
+    main {
+      position: relative;
+      width: 100dvw;
+      height: 100dvh;
+      overflow: hidden;
+      background: var(--bg);
+    }
+
+    #video {
+      position: absolute;
+      inset: 0;
+      z-index: 1;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      border-radius: 0;
+      background: #111;
+      transform: scaleX(-1);
+    }
+
+    main.remote-active #video {
+      inset: 18px 18px auto auto;
+      z-index: 12;
+      width: min(24dvw, 160px);
+      height: auto;
+      aspect-ratio: 3 / 4;
+      border-radius: 8px;
+    }
+
+    #remoteVideo {
+      position: absolute;
+      inset: 0;
+      z-index: 1;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      background: #111;
+      filter: brightness(1.08) saturate(0.82);
+      opacity: 0.88;
+    }
+
+    canvas {
+      position: absolute;
+      inset: 0;
+      z-index: 2;
+      width: 100%;
+      height: 100%;
+      display: block;
+      pointer-events: none;
+    }
+
+    #localCanvas {
+      z-index: 3;
+      opacity: 0;
+    }
+
+    #remoteCanvas {
+      z-index: 2;
+    }
+
+    #remoteEmotionEmoji {
+      position: absolute;
+      left: 0;
+      top: 0;
+      z-index: 13;
+      transform: translate(-50%, -50%);
+      font-size: var(--emotion-emoji-size, 72px);
+      line-height: 1;
+      pointer-events: none;
+      text-shadow: 0 4px 18px #00000045;
+      transition: left 90ms linear, top 90ms linear, opacity 120ms linear;
+    }
+
+    #hud {
+      position: absolute;
+      width: auto;
+      left: 16px;
+      top: 16px;
+      z-index: 10;
+      color: #f4f7fb;
+    }
+
+    #panelToggleButton {
+      position: absolute;
+      right: 16px;
+      top: 16px;
+      z-index: 20;
+      border: 0;
+      border-radius: 999px;
+      padding: 8px 12px;
+      background: #ffffff00;
+      color: #ffffff00;
+    }
+
+    .panel {
+      padding: 12px 14px;
+      margin-bottom: 8px;
+      border-radius: 8px;
+      background: var(--panel-bg);
+    }
+
+    .row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .auth-actions {
+      justify-content: flex-end;
+    }
+
+    .set-controls {
+      display: grid;
+      gap: 6px;
+      margin-top: 10px;
+    }
+
+    .set-controls label {
+      display: grid;
+      grid-template-columns: 7.5em 1fr;
+      gap: 8px;
+      align-items: center;
+      font-size: 13px;
+    }
+
+    select {
+      min-width: 0;
+      border: 1px solid #aaa;
+      border-radius: 6px;
+      padding: 6px 8px;
+      background: #fff;
+      color: #111;
+      font: inherit;
+      font-size: 13px;
+    }
+
+    button {
+      border: 1px solid #aaa;
+      border-radius: 6px;
+      padding: 7px 10px;
+      background: #fff;
+      color: #111;
+      font: inherit;
+      font-size: 13px;
+      cursor: pointer;
+    }
+
+    input {
+      min-width: 0;
+      border: 1px solid #aaa;
+      border-radius: 6px;
+      padding: 7px 9px;
+      background: #fff;
+      color: #111;
+      font: inherit;
+      font-size: 13px;
+    }
+
+    .auth-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 7px;
+      margin-top: 8px;
+    }
+
+    .call-meta {
+      display: grid;
+      gap: 4px;
+      margin-top: 8px;
+      color: #cbd5df;
+      font-size: 12px;
+    }
+
+    #usersList {
+      display: grid;
+      gap: 6px;
+      max-height: 24dvh;
+      overflow: auto;
+      margin-top: 8px;
+    }
+
+    .user-row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      padding-top: 6px;
+      border-top: 1px solid #ffffff24;
+      font-size: 12px;
+      cursor: pointer;
+    }
+
+    .user-row strong,
+    .user-row span {
+      display: block;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .user-row span,
+    .muted {
+      color: #cbd5df;
+    }
+
+    .call-action {
+      position: absolute;
+      left: 50%;
+      bottom: 28px;
+      z-index: 14;
+      transform: translateX(-50%);
+      display: grid;
+      place-items: center;
+    }
+
+    #callSelectedButton {
+      min-width: auto;
+      border: 0;
+      border-radius: 999px;
+      padding: 24px 48px;
+      background: #00C948;
+      color: #fff;
+      box-shadow: 0 14px 34px #00000035;
+      font-size: 1.6em;
+      font-weight: 500;
+      display: inline-flex;
+      gap: 10px;
+      align-items: center;
+      justify-content: center;
+    }
+
+    #callSelectedButton img {
+      width: 1.6em;
+      height: 1.6em;
+      display: block;
+    }
+
+    #callSelectedButton:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
+
+    #callSelectedButton.end-call {
+      background: #e5484d;
+    }
+
+    #callSelectedButton.calling-cancel {
+      min-width: 0;
+      width: auto;
+      height: auto;
+      padding: 0;
+      background: #e5484d;
+      gap: 0;
+    }
+
+    #callSelectedButton.calling-cancel .call-icon-phone {
+      width: 34px;
+      height: 34px;
+      margin: 24px;
+      transform: rotate(130deg);
+    }
+
+    #callSelectedButton.calling-cancel span {
+      display: none;
+    }
+
+    .modal,
+    .call-overlay {
+      position: fixed;
+      inset: 0;
+      background: #00000080;
+    }
+
+    .modal {
+      z-index: 30;
+      display: block;
+      padding: 20px;
+    }
+
+    .call-overlay {
+      z-index: 13;
+      pointer-events: none;
+    }
+
+    .incoming-number {
+      position: absolute;
+      left: 50%;
+      top: 28px;
+      transform: translateX(-50%);
+      color: #fff;
+      font-size: clamp(24px, 5vw, 48px);
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      text-shadow: 0 2px 18px #00000070;
+      white-space: nowrap;
+    }
+
+    .incoming-actions {
+      position: absolute;
+      left: 50%;
+      bottom: 28px;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 56px;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .incoming-action {
+      display: grid;
+      gap: 8px;
+      justify-items: center;
+      color: #fff;
+      font-size: 12px;
+      font-weight: 600;
+      text-shadow: 0 2px 12px #00000070;
+    }
+
+    .incoming-actions button {
+      width: auto;
+      height: auto;
+      border: 0;
+      border-radius: 999px;
+      padding: 0;
+      color: #fff;
+      box-shadow: 0 14px 34px #00000035;
+      display: inline-grid;
+      place-items: center;
+    }
+
+    .incoming-actions img {
+      width: 34px;
+      height: 34px;
+      display: block;
+      margin: 24px 24px;
+    }
+
+    #acceptButton {
+      background: #00C948;
+    }
+
+    #declineButton {
+      background: #e5484d;
+    }
+
+    .phone-icon-decline {
+      transform: rotate(130deg);
+    }
+
+    .incoming-hint {
+      position: absolute;
+      left: 50%;
+      top: 84px;
+      transform: translateX(-50%);
+      color: #ffffffd8;
+      font-size: 14px;
+      text-align: center;
+      text-shadow: 0 2px 12px #00000070;
+      white-space: nowrap;
+    }
+
+    .remote-empty {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      z-index: 4;
+      transform: translate(-50%, -50%);
+      color: #111;
+      font-size: clamp(28px, 8vw, 96px);
+      font-weight: 800;
+      opacity: 0.42;
+      pointer-events: none;
+      text-align: center;
+      text-shadow: 0 2px 14px #ffffffc8;
+      white-space: nowrap;
+    }
+
+    #status {
+      min-height: 1.6em;
+      margin-top: 8px;
+      color: #f4f7fb;
+      font-size: 13px;
+      line-height: 1.5;
+      white-space: pre-line;
+    }
+
+    #params {
+      max-height: min(42dvh, 360px);
+      overflow: auto;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+      gap: 5px 10px;
+      margin-top: 8px;
+      padding-top: 8px;
+      border-top: 1px solid #ffffff38;
+      font-size: 12px;
+    }
+
+    #params label {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      min-width: 0;
+    }
+
+    #params span {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .hidden {
+      display: none !important;
+    }
+  </style>
+</head>
+
+<body>
+  <main id="stage">
+    <video id="remoteVideo" autoplay playsinline class="hidden"></video>
+    <video id="video" autoplay playsinline muted></video>
+    <canvas id="remoteCanvas"></canvas>
+    <canvas id="localCanvas"></canvas>
+    <div id="remoteEmotionEmoji" class="hidden" aria-hidden="true"></div>
+    <div id="remoteEmpty" class="remote-empty"></div>
+    <div id="callAction" class="call-action hidden">
+      <button id="callSelectedButton" type="button" disabled>
+        <img id="callFaceTimeIcon" src="./icon_facetime.svg" alt="" aria-hidden="true" />
+        <img id="callPhoneIcon" class="call-icon-phone hidden" src="./icon_phon.svg" alt="" aria-hidden="true" />
+        <span>FaceTime</span>
+      </button>
+    </div>
+    <div id="outgoingOverlay" class="call-overlay hidden">
+      <div class="incoming-number">080-XXXX-XXXX</div>
+      <div class="incoming-hint">FaceTimeで発信中...</div>
+    </div>
+
+    <button id="panelToggleButton" type="button" aria-controls="hud" aria-expanded="true">Panel 非表示</button>
+
+    <section id="hud">
+      <div class="panel">
+        <div class="row">
+          <button id="resetButton" type="button">リセット</button>
+          <button id="paramToggleButton" type="button">パラメータ</button>
+          <button id="logoutButton" type="button" class="hidden">ログアウト</button>
+        </div>
+        <div class="set-controls">
+          <label>
+            <span>dataset</span>
+            <select id="paramSetSelect" aria-label="パラメーターセット"></select>
+          </label>
+          <label>
+            <span>motion gain</span>
+            <select id="motionGainSetSelect" aria-label="係数セット"></select>
+          </label>
+        </div>
+        <div id="status">WebCamを準備中...</div>
+        <div id="params" class="hidden"></div>
+      </div>
+      <div class="panel">
+        <div class="set-controls">
+          <label>
+            <span>effect</span>
+            <select id="effectModeSelect" aria-label="FaceTime中のエフェクト">
+              <option value="shape">図形</option>
+              <option value="emoji">顔文字</option>
+            </select>
+          </label>
+        </div>
+      </div>
+      <div class="panel">
+        <div id="authView" class="auth-grid">
+          <input id="emailInput" type="email" placeholder="email@example.com" />
+          <input id="passwordInput" type="password" placeholder="password" />
+          <input id="nameInput" type="text" placeholder="表示名" />
+          <div class="row auth-actions">
+            <button id="signupButton" type="button">新規登録</button>
+            <button id="loginButton" type="button">ログイン</button>
+          </div>
+        </div>
+        <div id="appView" class="hidden">
+          <div class="call-meta">
+            <span>ログイン中: <strong id="currentUserLabel">---</strong></span>
+            <span id="callStatus">未接続</span>
+            <span id="callPartnerLabel"></span>
+          </div>
+          <div id="usersList"></div>
+        </div>
+      </div>
+    </section>
+
+    <div id="incomingModal" class="modal hidden">
+      <div id="incomingNumber" class="incoming-number">080-XXXX-XXXX</div>
+      <div id="incomingText" class="incoming-hint">着信中</div>
+      <div class="incoming-actions">
+        <div class="incoming-action">
+          <button id="declineButton" type="button" aria-label="拒否">
+            <img class="phone-icon-decline" src="./icon_phon.svg" alt="" aria-hidden="true" />
+          </button>
+          <span>拒否</span>
+        </div>
+        <div class="incoming-action">
+          <button id="acceptButton" type="button" aria-label="応答">
+            <img src="./icon_phon.svg" alt="" aria-hidden="true" />
+          </button>
+          <span>応答</span>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script type="module">
+    import { FaceLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.34";
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-app.js";
+    import {
+      getAuth,
+      createUserWithEmailAndPassword,
+      signInWithEmailAndPassword,
+      signOut,
+      onAuthStateChanged,
+      setPersistence,
+      browserLocalPersistence
+    } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-auth.js";
+    import {
+      getFirestore,
+      collection,
+      doc,
+      setDoc,
+      addDoc,
+      updateDoc,
+      getDoc,
+      deleteDoc,
+      query,
+      where,
+      onSnapshot,
+      serverTimestamp,
+      arrayUnion
+    } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-firestore.js";
+
+    const $ = id => document.getElementById(id);
+    const stage = $("stage");
+    const video = $("video");
+    const remoteVideo = $("remoteVideo");
+    const localCanvas = $("localCanvas");
+    const remoteCanvas = $("remoteCanvas");
+    const localCtx = localCanvas.getContext("2d");
+    const remoteCtx = remoteCanvas.getContext("2d");
+    const remoteEmotionEmoji = $("remoteEmotionEmoji");
+    const hud = $("hud");
+    const panelToggleButton = $("panelToggleButton");
+    const callAction = $("callAction");
+    const callSelectedButton = $("callSelectedButton");
+    const callFaceTimeIcon = $("callFaceTimeIcon");
+    const callPhoneIcon = $("callPhoneIcon");
+    const callSelectedLabel = callSelectedButton.querySelector("span");
+    const outgoingOverlay = $("outgoingOverlay");
+    const resetButton = $("resetButton");
+    const paramToggleButton = $("paramToggleButton");
+    const logoutButton = $("logoutButton");
+    const authView = $("authView");
+    const appView = $("appView");
+    const emailInput = $("emailInput");
+    const passwordInput = $("passwordInput");
+    const nameInput = $("nameInput");
+    const signupButton = $("signupButton");
+    const loginButton = $("loginButton");
+    const currentUserLabel = $("currentUserLabel");
+    const usersList = $("usersList");
+    const callStatus = $("callStatus");
+    const callPartnerLabel = $("callPartnerLabel");
+    const incomingModal = $("incomingModal");
+    const incomingText = $("incomingText");
+    const acceptButton = $("acceptButton");
+    const declineButton = $("declineButton");
+    const remoteEmpty = $("remoteEmpty");
+    const paramSetSelect = $("paramSetSelect");
+    const motionGainSetSelect = $("motionGainSetSelect");
+    const effectModeSelect = $("effectModeSelect");
+    const status = $("status");
+    const params = $("params");
+    let auth = null;
+    let db = null;
+
+    const PARAM_SET_DIR = "../parameter";
+    const FACE_API_SCRIPT = "../modules/faceAPI/face-api.min.js";
+    const FACE_API_MODEL_DIR = "../modules/faceAPI/models";
+    const WARMUP_FRAMES = 20;
+    const CALIBRATION_FRAMES = 60;
+    const DEADZONE = 0.005;
+    const SPECTRUM_ZERO_THRESHOLD = 0.012;
+    const LANDMARK_SMOOTHING = 0.78;
+    const POSE_THRESHOLD = 0.38;
+    const ROLL_THRESHOLD = 0.28;
+    const UNSTABLE_POSE_GAIN = 0.45;
+    const MOTION_GAIN_MIN = 0;
+    const MOTION_GAIN_MAX = 2;
+    const INCOMING_CALL_GRACE_MS = 3000;
+    const TERMINAL_CALL_DELETE_DELAY_MS = 15000;
+    const ICE_FLUSH_DELAY_MS = 180;
+    const EMOTION_DETECT_INTERVAL_MS = 200;
+    const CLEANUP_CALL_DOCUMENTS_FROM_CLIENT = false;
+    const CALLING_TEXT = "呼び出し中...";
+    const SHAPE_COLOR = "#FDD035";
+    const CALL_STATUS_LABELS = {
+      ringing: CALLING_TEXT,
+      accepted: "通話中",
+      declined: "拒否されました",
+      ended: "FaceTime 終了"
+    };
+    const TERMINAL_CALL_STATUSES = new Set(["declined", "ended"]);
+    const EMOTION_LABELS = {
+      neutral: "中立",
+      happy: "喜び",
+      sad: "悲しみ",
+      angry: "怒り",
+      fearful: "恐れ",
+      disgusted: "嫌悪",
+      surprised: "驚き"
+    };
+    const EMOTION_EMOJIS = {
+      neutral: "😐",
+      happy: "😄",
+      sad: "😢",
+      angry: "😡",
+      fearful: "😱",
+      disgusted: "🙁",
+      surprised: "😯"
+    };
+    const EFFECT_MODES = {
+      shape: "shape",
+      emoji: "emoji"
+    };
+    const EFFECT_MODE_VALUES = new Set(Object.values(EFFECT_MODES));
+
+    const PARAM_LABELS = new Map([
+      ["browInnerUp", "眉上げ"],
+      ["browDownLeft", "左眉下げ"],
+      ["browDownRight", "右眉下げ"],
+      ["browOuterUpLeft", "左眉外上げ"],
+      ["browOuterUpRight", "右眉外上げ"],
+      ["eyeBlinkLeft", "左まばたき"],
+      ["eyeBlinkRight", "右まばたき"],
+      ["eyeSquintLeft", "左目細め"],
+      ["eyeSquintRight", "右目細め"],
+      ["eyeWideLeft", "左目開き"],
+      ["eyeWideRight", "右目開き"],
+      ["cheekPuff", "頬ふくらみ"],
+      ["cheekSquintLeft", "左頬"],
+      ["cheekSquintRight", "右頬"],
+      ["jawOpen", "口を開く"],
+      ["jawLeft", "顎左"],
+      ["jawRight", "顎右"],
+      ["mouthPucker", "口すぼめ"],
+      ["mouthFunnel", "口丸め"],
+      ["mouthSmileLeft", "左口角上げ"],
+      ["mouthSmileRight", "右口角上げ"],
+      ["mouthFrownLeft", "左口角下げ"],
+      ["mouthFrownRight", "右口角下げ"],
+      ["mouthLeft", "口を左へ"],
+      ["mouthRight", "口を右へ"],
+      ["mouthShrugUpper", "上唇上げ"],
+      ["mouthShrugLower", "下唇下げ"],
+      ["mouthUpperUpLeft", "左上唇"],
+      ["mouthUpperUpRight", "右上唇"],
+      ["mouthLowerDownLeft", "左下唇"],
+      ["mouthLowerDownRight", "右下唇"],
+      ["noseSneerLeft", "左鼻"],
+      ["noseSneerRight", "右鼻"]
+    ]);
+
+    const PARAM_ORDER = [
+      "browInnerUp",
+      "browOuterUpLeft",
+      "browDownLeft",
+      "eyeWideLeft",
+      "eyeBlinkLeft",
+      "eyeSquintLeft",
+      "cheekSquintLeft",
+      "mouthSmileLeft",
+      "mouthFrownLeft",
+      "mouthLeft",
+      "mouthLowerDownLeft",
+      "jawOpen",
+      "mouthPucker",
+      "mouthFunnel",
+      "mouthShrugUpper",
+      "mouthShrugLower",
+      "mouthLowerDownRight",
+      "mouthRight",
+      "mouthFrownRight",
+      "mouthSmileRight",
+      "cheekSquintRight",
+      "eyeSquintRight",
+      "eyeBlinkRight",
+      "eyeWideRight",
+      "browDownRight",
+      "browOuterUpRight"
+    ];
+
+    const DEFAULT_PARAM_NAMES = new Set([
+      "browInnerUp",
+      "browDownLeft",
+      "browDownRight",
+      "eyeBlinkLeft",
+      "eyeBlinkRight",
+      "cheekPuff",
+      "cheekSquintLeft",
+      "cheekSquintRight",
+      "jawOpen",
+      "mouthPucker",
+      "mouthSmileLeft",
+      "mouthSmileRight",
+      "mouthFrownLeft",
+      "mouthFrownRight",
+      "mouthShrugUpper",
+      "mouthShrugLower"
+    ]);
+
+    let faceLandmarker = null;
+    let faceApiReady = false;
+    let faceApiLoadPromise = null;
+    let faceApiDetectOptions = null;
+    let emotionDetecting = false;
+    let lastEmotionDetectedAt = 0;
+    let currentFaceBounds = null;
+    let currentEmotionName = "";
+    let currentEmotionText = "";
+    let running = false;
+    let loopToken = 0;
+    let neutralPose = null;
+    let smoothedLandmarks = null;
+    let calibrationRequested = false;
+    let callConnectedCalibrationStarted = false;
+    let calibrationPreviewFrame = null;
+
+    const base = new Map();
+    const enabledParams = new Set();
+    const detectedParamNames = new Set();
+    const paramInputs = new Map();
+    const motionGains = new Map();
+    const calibration = { warmup: 0, remaining: 0, samples: 0, stats: new Map() };
+    const poseCalibration = { samples: 0, sum: null };
+    const currentSpectrum = new Map();
+    const currentSharpness = new Map();
+    const previewSpectrum = new Map();
+    const previewSharpness = new Map();
+    const userNameCache = new Map();
+    let paramSets = {};
+    let activeParamSetName = "";
+    let motionGainSets = {};
+    let activeMotionGainSetName = "";
+    let activeEffectMode = EFFECT_MODES.shape;
+    let currentUser = null;
+    let currentCallId = null;
+    let selectedCallee = null;
+    let cameraReady = false;
+    let cameraStartPromise = null;
+    let outgoingCalling = false;
+    let incomingCallId = null;
+    let localMotionFrame = null;
+    let lastRemoteMotionFrame = null;
+    let lastMotionSentAt = 0;
+    let rtcPeer = null;
+    let motionChannel = null;
+    let rtcRole = "";
+    let rtcCallId = "";
+    let remoteDescriptionApplied = false;
+    let pendingIceCandidates = [];
+    let pendingRemoteIceCandidates = [];
+    let processedRemoteCandidateCount = 0;
+    let iceFlushTimer = null;
+    let audioContext = null;
+    let ringtoneTimer = null;
+    let ringtoneActive = false;
+    const scheduledCallDeletes = new Set();
+    let unsubscribeUsers = null;
+    let unsubscribeIncoming = null;
+    let unsubscribeCurrentCall = null;
+
+    resizeCanvas();
+    window.addEventListener("resize", resizeCanvas);
+    panelToggleButton.addEventListener("click", togglePanel);
+    resetButton.addEventListener("click", resetAll);
+    paramToggleButton.addEventListener("click", () => params.classList.toggle("hidden"));
+    paramSetSelect.addEventListener("change", () => applyParamSet(paramSetSelect.value));
+    motionGainSetSelect.addEventListener("change", () => applyMotionGainSet(motionGainSetSelect.value));
+    effectModeSelect.addEventListener("change", () => applyEffectMode(effectModeSelect.value));
+    signupButton.addEventListener("click", signup);
+    loginButton.addEventListener("click", login);
+    logoutButton.addEventListener("click", logout);
+    callSelectedButton.addEventListener("click", () => {
+      if (currentCallId) {
+        endCall().catch(showCallError);
+        return;
+      }
+      if (!selectedCallee) return;
+      startCall(selectedCallee.uid, selectedCallee.name).catch(showCallError);
+    });
+    acceptButton.addEventListener("click", () => acceptIncomingCall().catch(showCallError));
+    declineButton.addEventListener("click", () => declineIncomingCall().catch(showCallError));
+    ["pointerdown", "keydown"].forEach(eventName => {
+      window.addEventListener(eventName, unlockAudio, { once: true });
+    });
+    window.addEventListener("pagehide", () => {
+      stopRingtone();
+      cleanupListeners();
+      stopCamera();
+    });
+
+    await loadParameterControls();
+    if (await initializeFirebase()) initializeAuth();
+
+    async function initializeFirebase() {
+      try {
+        const { firebaseConfig } = await import("./firebase-config.js");
+        const app = initializeApp(firebaseConfig);
+        auth = getAuth(app);
+        await setPersistence(auth, browserLocalPersistence);
+        db = getFirestore(app);
+        return true;
+      } catch (error) {
+        console.warn("Firebase config was not loaded. Calling features are disabled.", error);
+        disableCallingFeatures("Firebase設定が見つからないため、ログイン/通話機能は無効です。");
+        return false;
+      }
+    }
+
+    function hasFirebase() {
+      return Boolean(auth && db);
+    }
+
+    function disableCallingFeatures(message) {
+      signupButton.disabled = true;
+      loginButton.disabled = true;
+      logoutButton.disabled = true;
+      callSelectedButton.disabled = true;
+      showSignedInView(false);
+      callStatus.textContent = message;
+      usersList.textContent = "";
+      updateCallAction();
+    }
+
+    function showSignedInView(signedIn) {
+      setVisible(authView, !signedIn);
+      setVisible(appView, signedIn);
+      setVisible(logoutButton, signedIn);
+    }
+
+    function togglePanel() {
+      const visible = hud.classList.contains("hidden");
+      setVisible(hud, visible);
+      panelToggleButton.setAttribute("aria-expanded", String(visible));
+      panelToggleButton.textContent = visible ? "Panel 非表示" : "Panel 表示";
+    }
+
+    function initializeAuth() {
+      if (!hasFirebase()) return;
+      onAuthStateChanged(auth, async user => {
+        cleanupListeners();
+
+        if (!user) {
+          resetAppState();
+          return;
+        }
+
+        currentUser = user;
+        showSignedInView(true);
+
+        const userSnap = await getDoc(doc(db, "users", user.uid));
+        const userData = userSnap.data();
+        currentUserLabel.textContent = userData?.name || user.email || "名前未設定";
+
+        if (!userSnap.exists()) {
+          await saveUser(user, nameInput.value.trim());
+        }
+        listenUsers();
+        listenIncomingCalls();
+        updateCallAction();
+      });
+    }
+
+    async function signup() {
+      if (!hasFirebase()) {
+        alert("Firebase設定がないため、新規登録できません");
+        return;
+      }
+
+      const email = emailInput.value.trim();
+      const password = passwordInput.value.trim();
+      const name = nameInput.value.trim();
+
+      if (!email || !password || !name) {
+        alert("メールアドレス、パスワード、表示名を入力してください");
+        return;
+      }
+
+      try {
+        const result = await createUserWithEmailAndPassword(auth, email, password);
+        await saveUser(result.user, name);
+      } catch (error) {
+        alert(`新規登録に失敗しました: ${error.code || error.message}`);
+      }
+    }
+
+    async function login() {
+      if (!hasFirebase()) {
+        alert("Firebase設定がないため、ログインできません");
+        return;
+      }
+
+      const email = emailInput.value.trim();
+      const password = passwordInput.value.trim();
+      const name = nameInput.value.trim();
+
+      if (!email || !password) {
+        alert("メールアドレスとパスワードを入力してください");
+        return;
+      }
+
+      try {
+        const result = await signInWithEmailAndPassword(auth, email, password);
+        if (name) await saveUser(result.user, name);
+      } catch (error) {
+        alert(`ログインに失敗しました: ${error.code || error.message}`);
+      }
+    }
+
+    async function logout() {
+      if (!auth) return;
+      cleanupListeners();
+      await signOut(auth);
+    }
+
+    async function saveUser(user, name) {
+      const data = {
+        uid: user.uid,
+        email: user.email
+      };
+
+      if (name) data.name = name;
+      await setDoc(doc(db, "users", user.uid), data, { merge: true });
+    }
+
+    function listenUsers() {
+      unsubscribeUsers = onSnapshot(collection(db, "users"), snapshot => {
+        usersList.innerHTML = "";
+        const seenUserIds = new Set();
+
+        snapshot.forEach(docSnap => {
+          const user = docSnap.data();
+          if (!currentUser || user.uid === currentUser.uid) return;
+          seenUserIds.add(user.uid);
+
+          const row = document.createElement("label");
+          row.className = "user-row";
+
+          const input = document.createElement("input");
+          input.type = "radio";
+          input.name = "callee";
+          input.checked = selectedCallee?.uid === user.uid;
+          input.addEventListener("change", () => {
+            if (input.checked) selectCallee(user);
+          });
+
+          const label = document.createElement("div");
+          const name = document.createElement("strong");
+          const email = document.createElement("span");
+          name.textContent = user.name || user.email || user.uid;
+          email.textContent = user.email || "";
+          label.append(name, email);
+
+          row.append(input, label);
+          usersList.append(row);
+        });
+
+        if (selectedCallee && !seenUserIds.has(selectedCallee.uid)) selectedCallee = null;
+        updateCallAction();
+      });
+    }
+
+    function selectCallee(user) {
+      selectedCallee = {
+        uid: user.uid,
+        name: user.name || user.email || user.uid
+      };
+      updateCallAction();
+      ensureCameraStarted().catch(showCameraError);
+    }
+
+    function updateCallAction() {
+      const inCall = Boolean(currentCallId);
+      const calling = Boolean(outgoingCalling && inCall);
+      const available = Boolean(currentUser && (inCall || selectedCallee && cameraReady));
+      setVisible(callAction, Boolean(currentUser && !incomingCallId));
+      callSelectedButton.disabled = !available;
+      callSelectedButton.classList.toggle("end-call", inCall);
+      callSelectedButton.classList.toggle("calling-cancel", calling);
+      setVisible(callFaceTimeIcon, !calling);
+      setVisible(callPhoneIcon, calling);
+      callSelectedLabel.textContent = inCall ? "FaceTime 終了" : "FaceTime";
+    }
+
+    function setIncomingVisible(visible) {
+      setVisible(incomingModal, visible);
+      updateCallAction();
+    }
+
+    function setOutgoingCallingVisible(visible) {
+      outgoingCalling = visible;
+      setVisible(outgoingOverlay, visible);
+      updateCallAction();
+    }
+
+    async function startCall(calleeId, calleeName) {
+      if (!currentUser || currentCallId) return;
+      await ensureCameraStarted();
+
+      const peer = createPeerConnection("caller");
+      addLocalVideoTrack(peer);
+      const channel = peer.createDataChannel("motion", { ordered: false, maxRetransmits: 0 });
+      attachMotionChannel(channel);
+      const offer = await peer.createOffer();
+      await peer.setLocalDescription(offer);
+
+      const callRef = await addDoc(collection(db, "calls"), {
+        callerId: currentUser.uid,
+        calleeId,
+        status: "ringing",
+        offer: {
+          type: offer.type,
+          sdp: offer.sdp
+        },
+        callerCandidates: [],
+        calleeCandidates: [],
+        clientCreatedAt: Date.now(),
+        createdAt: serverTimestamp()
+      });
+
+      currentCallId = callRef.id;
+      rtcCallId = callRef.id;
+      flushPendingIceCandidates().catch(error => console.warn("ICE candidate flush failed", error));
+      setOutgoingCallingVisible(true);
+      showCallState(CALLING_TEXT, calleeName);
+      listenCurrentCall(currentCallId);
+    }
+
+    function listenIncomingCalls() {
+      if (!currentUser) return;
+      const listenStartedAt = Date.now();
+
+      const incomingQuery = query(
+        collection(db, "calls"),
+        where("calleeId", "==", currentUser.uid),
+        where("status", "==", "ringing")
+      );
+
+      unsubscribeIncoming = onSnapshot(incomingQuery, async snapshot => {
+        if (snapshot.empty || currentCallId) {
+          clearIncomingCallNotice();
+          return;
+        }
+
+        const docSnap = snapshot.docs.find(candidate => isFreshIncomingCall(candidate.data(), listenStartedAt));
+        if (!docSnap) {
+          clearIncomingCallNotice();
+          snapshot.docs.forEach(candidate => scheduleCallDeletion(candidate.id));
+          return;
+        }
+
+        showIncomingCallNotice(docSnap.id);
+      });
+    }
+
+    function isFreshIncomingCall(call, listenStartedAt) {
+      const createdAt = call.createdAt?.toMillis?.() || call.clientCreatedAt;
+      if (!createdAt) return false;
+      return createdAt >= listenStartedAt - INCOMING_CALL_GRACE_MS;
+    }
+
+    async function acceptIncomingCall() {
+      if (!incomingCallId) return;
+      await ensureCameraStarted();
+
+      const callId = incomingCallId;
+      const callSnap = await getDoc(doc(db, "calls", callId));
+      const call = callSnap.data();
+      if (!call?.offer) return;
+
+      const peer = createPeerConnection("callee");
+      addLocalVideoTrack(peer);
+      peer.ondatachannel = event => attachMotionChannel(event.channel);
+      await peer.setRemoteDescription(new RTCSessionDescription(call.offer));
+      remoteDescriptionApplied = true;
+      const answer = await peer.createAnswer();
+      await peer.setLocalDescription(answer);
+
+      await updateDoc(doc(db, "calls", callId), {
+        status: "accepted",
+        answer: {
+          type: answer.type,
+          sdp: answer.sdp
+        }
+      });
+
+      currentCallId = callId;
+      rtcCallId = callId;
+      clearIncomingCallNotice({ cancelCalibration: false });
+
+      flushPendingIceCandidates().catch(error => console.warn("ICE candidate flush failed", error));
+      showCallState("通話中", await getUserName(call.callerId));
+      listenCurrentCall(callId);
+    }
+
+    async function declineIncomingCall() {
+      if (!incomingCallId) return;
+
+      const callId = incomingCallId;
+      await updateDoc(doc(db, "calls", callId), {
+        status: "declined"
+      });
+      scheduleCallDeletion(callId);
+
+      clearIncomingCallNotice();
+    }
+
+    function listenCurrentCall(callId) {
+      if (!callId) return;
+
+      unsubscribeCurrentCall = replaceSubscription(unsubscribeCurrentCall, () => {
+        return onSnapshot(doc(db, "calls", callId), async snapshot => {
+          const call = snapshot.data();
+          if (!call) {
+            if (currentCallId === callId || rtcCallId === callId) {
+              resetCallSession();
+            }
+            return;
+          }
+          if (!currentUser) return;
+
+          const partnerId = call.callerId === currentUser.uid ? call.calleeId : call.callerId;
+          callPartnerLabel.textContent = `相手: ${await getUserName(partnerId)}`;
+          updateCallStatus(call.status);
+          if (rtcRole === "caller" && call.answer && rtcPeer && !remoteDescriptionApplied) {
+            await rtcPeer.setRemoteDescription(new RTCSessionDescription(call.answer));
+            remoteDescriptionApplied = true;
+            flushPendingRemoteIceCandidates();
+          }
+          consumeRemoteIceCandidates(call);
+        });
+      });
+    }
+
+    async function endCall() {
+      if (!currentCallId) {
+        hideCallState();
+        return;
+      }
+
+      const callId = currentCallId;
+      resetCallSession();
+
+      await updateDoc(doc(db, "calls", callId), {
+        status: "ended"
+      });
+      scheduleCallDeletion(callId);
+    }
+
+    function showCallState(statusText, partnerName) {
+      callStatus.textContent = statusText;
+      callPartnerLabel.textContent = `相手: ${partnerName}`;
+      updateCallAction();
+      setRemoteEmptyText(statusText, shouldShowRemoteState(statusText));
+    }
+
+    function hideCallState() {
+      callStatus.textContent = "未接続";
+      callPartnerLabel.textContent = "";
+      updateCallAction();
+      resetRemoteDisplay();
+    }
+
+    function showIncomingCallNotice(callId) {
+      if (incomingCallId === callId) return;
+
+      incomingCallId = callId;
+      incomingText.textContent = "FaceTimeビデオ";
+      setIncomingVisible(true);
+      startRingtone();
+      ensureCameraStarted().catch(showCameraError);
+    }
+
+    function clearIncomingCallNotice({ cancelCalibration = true } = {}) {
+      incomingCallId = null;
+      setIncomingVisible(false);
+      stopRingtone();
+      if (cancelCalibration) cancelFaceCalibration();
+    }
+
+    function shouldShowRemoteState(statusText) {
+      return !outgoingCalling && statusText === CALLING_TEXT;
+    }
+
+    function setRemoteEmptyText(text = "", visible = false) {
+      remoteEmpty.textContent = text;
+      remoteEmpty.hidden = !visible;
+    }
+
+    function resetCallSession() {
+      currentCallId = null;
+      rtcCallId = "";
+      cancelFaceCalibration();
+      setOutgoingCallingVisible(false);
+      closePeerConnection();
+      hideCallState();
+    }
+
+    function resetRemoteDisplay() {
+      setRemoteEmptyText();
+      lastRemoteMotionFrame = null;
+      resetRemoteVideo();
+      clearCanvas(remoteCtx, remoteCanvas);
+    }
+
+    function updateCallStatus(callStatusValue) {
+      const label = CALL_STATUS_LABELS[callStatusValue];
+
+      if (label) callStatus.textContent = label;
+
+      if (callStatusValue === "accepted") {
+        setOutgoingCallingVisible(false);
+        setRemoteEmptyText();
+      }
+
+      if (TERMINAL_CALL_STATUSES.has(callStatusValue)) {
+        const terminalCallId = currentCallId || rtcCallId;
+        resetCallSession();
+        scheduleCallDeletion(terminalCallId);
+      }
+    }
+
+    async function getUserName(uid) {
+      if (userNameCache.has(uid)) return userNameCache.get(uid);
+
+      const snap = await getDoc(doc(db, "users", uid));
+      const data = snap.data();
+      const name = data?.name || data?.email || uid;
+      userNameCache.set(uid, name);
+      return name;
+    }
+
+    function resetAppState() {
+      currentUser = null;
+      incomingCallId = null;
+      selectedCallee = null;
+      applyEffectMode(EFFECT_MODES.shape);
+      currentUserLabel.textContent = "---";
+      usersList.innerHTML = "";
+      showSignedInView(false);
+      setIncomingVisible(false);
+      stopRingtone();
+      stopCamera();
+      resetCallSession();
+    }
+
+    function cleanupListeners() {
+      unsubscribeUsers = replaceSubscription(unsubscribeUsers);
+      unsubscribeIncoming = replaceSubscription(unsubscribeIncoming);
+      unsubscribeCurrentCall = replaceSubscription(unsubscribeCurrentCall);
+      stopRingtone();
+      closePeerConnection();
+    }
+
+    function replaceSubscription(unsubscribe, subscribe) {
+      if (unsubscribe) unsubscribe();
+      return subscribe ? subscribe() : null;
+    }
+
+    function setVisible(element, visible) {
+      element.classList.toggle("hidden", !visible);
+    }
+
+    function scheduleCallDeletion(callId) {
+      if (!CLEANUP_CALL_DOCUMENTS_FROM_CLIENT) return;
+      if (!callId || scheduledCallDeletes.has(callId)) return;
+
+      scheduledCallDeletes.add(callId);
+      window.setTimeout(async () => {
+        try {
+          await deleteDoc(doc(db, "calls", callId));
+        } catch (error) {
+          if (error?.code === "permission-denied") return;
+          console.warn("call cleanup failed", error);
+        } finally {
+          scheduledCallDeletes.delete(callId);
+        }
+      }, TERMINAL_CALL_DELETE_DELAY_MS);
+    }
+
+    function unlockAudio() {
+      try {
+        if (!ensureAudioContext()) return;
+        audioContext.resume?.();
+      } catch (error) {
+        console.warn("audio unlock failed", error);
+      }
+    }
+
+    function ensureAudioContext() {
+      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+      if (!AudioContextClass) return null;
+      audioContext ??= new AudioContextClass();
+      return audioContext;
+    }
+
+    function startRingtone() {
+      if (ringtoneActive) return;
+
+      ringtoneActive = true;
+      unlockAudio();
+      playRingtonePattern();
+      ringtoneTimer = window.setInterval(playRingtonePattern, 3200);
+    }
+
+    function stopRingtone() {
+      ringtoneActive = false;
+      if (ringtoneTimer) {
+        window.clearInterval(ringtoneTimer);
+        ringtoneTimer = null;
+      }
+    }
+
+    function playRingtonePattern() {
+      if (!ringtoneActive) return;
+
+      try {
+        if (!ensureAudioContext()) return;
+        if (audioContext.state === "suspended") audioContext.resume?.();
+
+        const now = audioContext.currentTime;
+        playRingTone(now, 0.42);
+        playRingTone(now + 0.62, 0.42);
+      } catch (error) {
+        stopRingtone();
+        console.warn("ringtone failed", error);
+      }
+    }
+
+    function playRingTone(startAt, duration) {
+      const output = audioContext.createGain();
+      const toneA = audioContext.createOscillator();
+      const toneB = audioContext.createOscillator();
+      const filter = audioContext.createBiquadFilter();
+
+      toneA.type = "sine";
+      toneB.type = "sine";
+      toneA.frequency.setValueAtTime(440, startAt);
+      toneB.frequency.setValueAtTime(480, startAt);
+      filter.type = "bandpass";
+      filter.frequency.setValueAtTime(920, startAt);
+      filter.Q.setValueAtTime(1.2, startAt);
+
+      output.gain.setValueAtTime(0.0001, startAt);
+      output.gain.exponentialRampToValueAtTime(0.09, startAt + 0.04);
+      output.gain.setValueAtTime(0.09, startAt + duration - 0.08);
+      output.gain.exponentialRampToValueAtTime(0.0001, startAt + duration);
+
+      toneA.connect(filter);
+      toneB.connect(filter);
+      filter.connect(output);
+      output.connect(audioContext.destination);
+
+      toneA.start(startAt);
+      toneB.start(startAt);
+      toneA.stop(startAt + duration + 0.03);
+      toneB.stop(startAt + duration + 0.03);
+
+      toneB.onended = () => {
+        toneA.disconnect();
+        toneB.disconnect();
+        filter.disconnect();
+        output.disconnect();
+      };
+    }
+
+    function createPeerConnection(role) {
+      if (typeof RTCPeerConnection !== "function") {
+        throw new Error("このブラウザではWebRTC DataChannelを利用できません");
+      }
+
+      closePeerConnection();
+      rtcRole = role;
+      rtcCallId = currentCallId || "";
+      remoteDescriptionApplied = false;
+      pendingIceCandidates = [];
+      pendingRemoteIceCandidates = [];
+      processedRemoteCandidateCount = 0;
+      rtcPeer = new RTCPeerConnection({
+        iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
+      });
+
+      rtcPeer.onicecandidate = event => {
+        if (event.candidate) queueOrSendIceCandidate(event.candidate);
+      };
+
+      rtcPeer.ontrack = event => {
+        attachRemoteVideoStream(event.streams[0]);
+      };
+
+      rtcPeer.onconnectionstatechange = () => {
+        if (!rtcPeer) return;
+        if (rtcPeer.connectionState === "connected") {
+          remoteEmpty.hidden = true;
+          maybeStartConnectedCalibration();
+        }
+        if (["failed", "disconnected", "closed"].includes(rtcPeer.connectionState)) {
+          remoteEmpty.hidden = true;
+        }
+      };
+
+      return rtcPeer;
+    }
+
+    function addLocalVideoTrack(peer) {
+      const stream = getLocalCameraStream();
+      const tracks = stream.getVideoTracks();
+      if (!tracks.length) throw new Error("送信できるカメラ映像がありません");
+      for (const track of tracks) {
+        peer.addTrack(track, stream);
+      }
+    }
+
+    function getLocalCameraStream() {
+      if (!(video.srcObject instanceof MediaStream)) {
+        throw new Error("カメラが開始されていません");
+      }
+      return video.srcObject;
+    }
+
+    function attachRemoteVideoStream(stream) {
+      if (!stream || remoteVideo.srcObject === stream) return;
+      remoteVideo.srcObject = stream;
+      setVisible(remoteVideo, true);
+      stage.classList.add("remote-active");
+      remoteEmpty.hidden = true;
+      maybeStartConnectedCalibration();
+      remoteVideo.play().catch(error => console.warn("remote video play failed", error));
+    }
+
+    function resetRemoteVideo() {
+      remoteVideo.srcObject = null;
+      setVisible(remoteVideo, false);
+      stage.classList.remove("remote-active");
+      hideEmotionEmoji(remoteEmotionEmoji);
+    }
+
+    function showCallError(error) {
+      callStatus.textContent = `通話エラー: ${error.message}`;
+      console.error(error);
+    }
+
+    function attachMotionChannel(channel) {
+      motionChannel = channel;
+      motionChannel.binaryType = "arraybuffer";
+      motionChannel.onopen = () => {
+        remoteEmpty.hidden = true;
+        maybeStartConnectedCalibration();
+      };
+      motionChannel.onmessage = event => {
+        if (!currentCallId) return;
+        try {
+          lastRemoteMotionFrame = JSON.parse(event.data);
+          drawRemoteMotionFrame(lastRemoteMotionFrame);
+        } catch (error) {
+          console.warn("motion frame parse failed", error);
+        }
+      };
+      motionChannel.onclose = () => {
+        if (motionChannel === channel) motionChannel = null;
+      };
+    }
+
+    function queueOrSendIceCandidate(candidate) {
+      const payload = normalizeIceCandidate(candidate);
+      if (!payload) return;
+
+      pendingIceCandidates.push(payload);
+      scheduleIceFlush();
+    }
+
+    function scheduleIceFlush() {
+      const callId = rtcCallId || currentCallId;
+      const role = rtcRole;
+      if (!callId || !role || iceFlushTimer) return;
+
+      iceFlushTimer = window.setTimeout(() => {
+        iceFlushTimer = null;
+        flushPendingIceCandidates().catch(error => console.warn("ICE candidate flush failed", error));
+      }, ICE_FLUSH_DELAY_MS);
+    }
+
+    async function flushPendingIceCandidates() {
+      if (iceFlushTimer) {
+        window.clearTimeout(iceFlushTimer);
+        iceFlushTimer = null;
+      }
+
+      const callId = rtcCallId || currentCallId;
+      const role = rtcRole;
+      if (!callId || !role || !pendingIceCandidates.length) return;
+
+      const pending = pendingIceCandidates;
+      pendingIceCandidates = [];
+      await updateDoc(doc(db, "calls", callId), {
+        [`${role}Candidates`]: arrayUnion(...pending)
+      });
+    }
+
+    function normalizeIceCandidate(candidate) {
+      const data = typeof candidate.toJSON === "function" ? candidate.toJSON() : candidate;
+      if (!data?.candidate) return null;
+
+      const normalized = {
+        candidate: String(data.candidate),
+        sdpMid: data.sdpMid == null ? "0" : String(data.sdpMid),
+        sdpMLineIndex: Number.isFinite(data.sdpMLineIndex) ? data.sdpMLineIndex : 0
+      };
+      if (data.usernameFragment != null) normalized.usernameFragment = String(data.usernameFragment);
+      return normalized;
+    }
+
+    function consumeRemoteIceCandidates(call) {
+      if (!rtcPeer || !rtcRole) return;
+
+      const remoteField = rtcRole === "caller" ? "calleeCandidates" : "callerCandidates";
+      const candidates = Array.isArray(call[remoteField]) ? call[remoteField] : [];
+      const newCandidates = candidates.slice(processedRemoteCandidateCount);
+      processedRemoteCandidateCount = candidates.length;
+
+      for (const candidate of newCandidates) addRemoteIceCandidate(candidate);
+    }
+
+    function addRemoteIceCandidate(candidate) {
+      if (!remoteDescriptionApplied) {
+        pendingRemoteIceCandidates.push(candidate);
+        return;
+      }
+
+      rtcPeer?.addIceCandidate(new RTCIceCandidate(candidate)).catch(error => {
+        console.warn("ICE candidate add failed", error);
+      });
+    }
+
+    function flushPendingRemoteIceCandidates() {
+      if (!remoteDescriptionApplied || !rtcPeer || !pendingRemoteIceCandidates.length) return;
+
+      const pending = pendingRemoteIceCandidates;
+      pendingRemoteIceCandidates = [];
+      for (const candidate of pending) addRemoteIceCandidate(candidate);
+    }
+
+    function closePeerConnection() {
+      if (iceFlushTimer) {
+        window.clearTimeout(iceFlushTimer);
+        iceFlushTimer = null;
+      }
+      motionChannel?.close?.();
+      rtcPeer?.close?.();
+      motionChannel = null;
+      rtcPeer = null;
+      resetRemoteVideo();
+      resetRtcState();
+    }
+
+    function resetRtcState() {
+      rtcRole = "";
+      rtcCallId = "";
+      remoteDescriptionApplied = false;
+      pendingIceCandidates = [];
+      pendingRemoteIceCandidates = [];
+      processedRemoteCandidateCount = 0;
+      callConnectedCalibrationStarted = false;
+    }
+
+    function maybeStartConnectedCalibration() {
+      if (callConnectedCalibrationStarted || !currentCallId || !shapeEffectActive()) return;
+      if (rtcPeer?.connectionState !== "connected" || !remoteVideoActive()) return;
+
+      callConnectedCalibrationStarted = true;
+      waitForFaceCalibration();
+    }
+
+    function motionPayloadFromFrame(frame, poseStable) {
+      return {
+        effectMode: activeEffectMode,
+        active: Boolean(frame.active),
+        poseStable: Boolean(poseStable),
+        sentAt: Date.now(),
+        emotion: emotionPayload(),
+        items: (shapeEffectActive() ? frame.items || [] : []).map(({ categoryName, label, amount, sharpness }) => ({
+          categoryName,
+          label,
+          amount: roundMotionValue(amount),
+          sharpness: roundMotionValue(sharpness)
+        }))
+      };
+    }
+
+    function emotionPayload() {
+      return {
+        name: currentEmotionName,
+        bounds: currentFaceBounds ? roundFaceBounds(currentFaceBounds) : null
+      };
+    }
+
+    function roundFaceBounds(bounds) {
+      return Object.fromEntries(Object.entries(bounds)
+        .map(([key, value]) => [key, roundMotionValue(value)]));
+    }
+
+    async function sendLocalMotionFrame() {
+      if (!currentUser || !currentCallId || !localMotionFrame) return;
+      if (motionChannel?.readyState !== "open") return;
+
+      const now = performance.now();
+      if (now - lastMotionSentAt < 33) return;
+      lastMotionSentAt = now;
+
+      try {
+        motionChannel.send(JSON.stringify(localMotionFrame));
+      } catch (error) {
+        console.warn("motion frame send failed", error);
+      }
+    }
+
+    function drawRemoteMotionFrame(frame = null) {
+      if (!currentCallId) {
+        resetRemoteDisplay();
+        return;
+      }
+
+      frame ??= lastRemoteMotionFrame;
+      clearCanvas(remoteCtx, remoteCanvas);
+
+      if (frameEffectMode(frame) === EFFECT_MODES.emoji) {
+        remoteEmpty.hidden = true;
+        if (remoteVideoActive()) {
+          updateRemoteEmotionEmoji(frame?.emotion);
+        } else {
+          hideEmotionEmoji(remoteEmotionEmoji);
+        }
+        return;
+      }
+
+      hideEmotionEmoji(remoteEmotionEmoji);
+
+      if (!frame?.items?.length) {
+        remoteEmpty.hidden = true;
+        return;
+      }
+
+      remoteEmpty.hidden = true;
+      const remoteFrame = spectrumFrameFromPayload(frame, remoteCanvas, {
+        center: spectrumCenterFromBounds(frame?.emotion?.bounds, remoteVideo, remoteCanvas, false)
+      });
+      drawSpectrum(remoteCtx, remoteCanvas, remoteFrame, {
+        alpha: 0.94,
+        lineWidth: 4,
+        strokeStyle: SHAPE_COLOR,
+        fillStyle: SHAPE_COLOR
+      });
+    }
+
+    function frameEffectMode(frame) {
+      return normalizeEffectMode(frame?.effectMode);
+    }
+
+    function applyEffectMode(mode) {
+      activeEffectMode = normalizeEffectMode(mode);
+      effectModeSelect.value = activeEffectMode;
+      prepareEffectMode();
+
+      if (shapeEffectActive()) {
+        maybeStartConnectedCalibration();
+        return;
+      }
+
+      clearCanvas(localCtx, localCanvas);
+    }
+
+    function shapeEffectActive() {
+      return activeEffectMode === EFFECT_MODES.shape;
+    }
+
+    function emojiEffectActive() {
+      return activeEffectMode === EFFECT_MODES.emoji;
+    }
+
+    function remoteVideoActive() {
+      return stage.classList.contains("remote-active") && remoteVideo.srcObject instanceof MediaStream;
+    }
+
+    function normalizeEffectMode(mode) {
+      return EFFECT_MODE_VALUES.has(mode) ? mode : EFFECT_MODES.shape;
+    }
+
+    function prepareEffectMode() {
+      if (emojiEffectActive()) {
+        setupEmotionEstimator();
+        return;
+      }
+
+      clearDominantEmotion();
+    }
+
+    function spectrumFrameFromPayload(frame, targetCanvas, options = {}) {
+      const width = targetCanvas.width;
+      const height = targetCanvas.height;
+      const { x: cx, y: cy } = options.center ?? { x: width / 2, y: height / 2 };
+      const baseRadius = Math.min(width, height) * 0.17;
+      const maxSpike = Math.min(width, height) * 0.12;
+      const items = frame.items || [];
+      const points = items.map(({ categoryName, label, amount = 0, sharpness = 0 }, index) => {
+        const angle = index / items.length * Math.PI * 2 - Math.PI / 2;
+        const radius = baseRadius + clamp(Number(amount), -1, 1) * maxSpike;
+        return {
+          x: cx + Math.cos(angle) * radius,
+          y: cy + Math.sin(angle) * radius,
+          sharpness: clamp(Number(sharpness), 0, 1),
+          categoryName,
+          label
+        };
+      });
+
+      return { active: Boolean(frame.active), points };
+    }
+
+    function roundMotionValue(value) {
+      return Math.round(Number(value || 0) * 10000) / 10000;
+    }
+
+    async function setupFaceLandmarker() {
+      if (faceLandmarker) return faceLandmarker;
+
+      status.textContent = "MediaPipeを読み込み中...";
+      const fileset = await FilesetResolver.forVisionTasks(
+        "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.34/wasm"
+      );
+
+      faceLandmarker = await FaceLandmarker.createFromOptions(fileset, {
+        baseOptions: {
+          modelAssetPath: "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/latest/face_landmarker.task"
+        },
+        runningMode: "VIDEO",
+        numFaces: 1,
+        outputFaceBlendshapes: true
+      });
+
+      return faceLandmarker;
+    }
+
+    async function setupEmotionEstimator() {
+      if (faceApiReady) return true;
+      if (faceApiLoadPromise) return faceApiLoadPromise;
+
+      faceApiLoadPromise = (async () => {
+        const faceapi = await loadFaceApi();
+        if (!faceapi) throw new Error("face-apiを読み込めません");
+
+        await Promise.all([
+          faceapi.nets.tinyFaceDetector.loadFromUri(FACE_API_MODEL_DIR),
+          faceapi.nets.faceExpressionNet.loadFromUri(FACE_API_MODEL_DIR)
+        ]);
+        faceApiDetectOptions = new faceapi.TinyFaceDetectorOptions({
+          inputSize: 160,
+          scoreThreshold: 0.5
+        });
+        faceApiReady = true;
+        return true;
+      })().catch(error => {
+        clearDominantEmotion();
+        console.warn("emotion estimator setup failed", error);
+        return false;
+      }).finally(() => {
+        faceApiLoadPromise = null;
+      });
+
+      return faceApiLoadPromise;
+    }
+
+    function loadFaceApi() {
+      if (window.faceapi) return Promise.resolve(window.faceapi);
+
+      return new Promise((resolve, reject) => {
+        const script = document.createElement("script");
+        script.src = FACE_API_SCRIPT;
+        script.onload = () => resolve(window.faceapi);
+        script.onerror = () => reject(new Error("face-api.min.jsを読み込めません"));
+        document.head.appendChild(script);
+      });
+    }
+
+    async function startCamera() {
+      stopLoop();
+      stopCamera({ cancelCalibration: false });
+      await setupFaceLandmarker();
+
+      const stream = await openUserFacingCamera();
+      video.srcObject = stream;
+
+      await video.play();
+      cameraReady = true;
+      cameraStartPromise = null;
+      updateCallAction();
+      startLoop();
+      prepareEffectMode();
+    }
+
+    async function ensureCameraStarted() {
+      if (cameraReady) return;
+      if (cameraStartPromise) return cameraStartPromise;
+      status.textContent = "WebCamを準備中...";
+      cameraStartPromise = startCamera().catch(error => {
+        cameraReady = false;
+        cameraStartPromise = null;
+        updateCallAction();
+        throw error;
+      });
+      return cameraStartPromise;
+    }
+
+    async function openUserFacingCamera() {
+      if (!navigator.mediaDevices?.getUserMedia) {
+        throw new Error("このURLではカメラAPIを利用できません");
+      }
+
+      const preferredConstraints = {
+        video: {
+          facingMode: { ideal: "user" },
+          width: { ideal: 640 },
+          height: { ideal: 480 }
+        },
+        audio: false
+      };
+
+      try {
+        return await navigator.mediaDevices.getUserMedia(preferredConstraints);
+      } catch (error) {
+        if (!shouldFallbackCamera(error)) throw error;
+        return navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: "user",
+            width: { ideal: 640 },
+            height: { ideal: 480 }
+          },
+          audio: false
+        });
+      }
+    }
+
+    function shouldFallbackCamera(error) {
+      return ["OverconstrainedError", "ConstraintNotSatisfiedError", "NotFoundError"].includes(error?.name);
+    }
+
+    function showCameraError(error) {
+      const secureHint = location.protocol === "https:" || location.hostname === "localhost" || location.hostname === "127.0.0.1"
+        ? ""
+        : "\nHTTPSまたはlocalhost上で実行してください。";
+      status.textContent = `カメラを開始できません: ${error.message || error.name}${secureHint}`;
+    }
+
+    function stopCamera({ cancelCalibration = true } = {}) {
+      const cameraStream = video.srcObject instanceof MediaStream ? video.srcObject : null;
+      if (cameraStream) cameraStream.getTracks().forEach(track => track.stop());
+      video.srcObject = null;
+      cameraReady = false;
+      cameraStartPromise = null;
+      currentFaceBounds = null;
+      clearDominantEmotion();
+      if (cancelCalibration) cancelFaceCalibration();
+      updateCallAction();
+    }
+
+    function startLoop() {
+      if (running) return;
+      running = true;
+      requestAnimationFrame(() => loop(++loopToken));
+    }
+
+    function stopLoop() {
+      running = false;
+      loopToken++;
+    }
+
+    function loop(token) {
+      if (!running || token !== loopToken) return;
+      detectAndRender();
+      requestAnimationFrame(() => loop(token));
+    }
+
+    function detectAndRender() {
+      if (!faceLandmarker || video.readyState < 2) return;
+
+      const result = faceLandmarker.detectForVideo(video, performance.now());
+      const landmarks = smoothLandmarks(result.faceLandmarks?.[0] ?? []);
+      const hasFace = Boolean(landmarks.length);
+
+      if (!hasFace) {
+        if (shapeEffectActive() && (base.size || calibrationActive())) waitForFaceCalibration();
+        currentFaceBounds = null;
+        if (shapeEffectActive()) {
+          drawNoFace(localCtx, localCanvas);
+        } else {
+          clearCanvas(localCtx, localCanvas);
+        }
+        localMotionFrame = motionPayloadFromFrame({ active: false, items: [] }, false);
+        sendLocalMotionFrame();
+        status.textContent = emotionStatus("顔を検出中...");
+        return;
+      }
+
+      currentFaceBounds = faceBoundsFromLandmarks(landmarks);
+      if (emojiEffectActive()) {
+        updateEmotionEstimate();
+        clearCanvas(localCtx, localCanvas);
+        localMotionFrame = motionPayloadFromFrame({ active: false, items: [] }, true);
+        sendLocalMotionFrame();
+        status.textContent = emotionStatus("検出中");
+        return;
+      }
+
+      const categories = normalizeCategories(result.faceBlendshapes?.[0]?.categories ?? []);
+      if (!categories.length) {
+        drawNoFace(localCtx, localCanvas);
+        localMotionFrame = null;
+        status.textContent = "顔を検出中...";
+        return;
+      }
+
+      updateParamCheckboxes(categories);
+      if (calibrationRequested && !base.size && !calibrationActive()) startCalibration();
+      updateCalibration(categories, landmarks);
+
+      const activeCategories = selectedCategories(categories);
+      const poseStable = isPoseStable(landmarks);
+      const spectrumCenter = spectrumCenterFromBounds(currentFaceBounds, video, localCanvas, true);
+
+      const preview = calibrationActive()
+        ? calibrationPreviewFrame ??= updateSpectrumFrame(activeCategories, {
+          poseStable: true,
+          values: previewSpectrum,
+          sharpnessValues: previewSharpness,
+          baseMap: base,
+          center: spectrumCenter
+        })
+        : updateSpectrumFrame(activeCategories, {
+          poseStable: true,
+          values: previewSpectrum,
+          sharpnessValues: previewSharpness,
+          baseMap: base,
+          center: spectrumCenter
+        });
+
+      if (!base.size || calibrationActive()) {
+        if (shapeEffectActive()) {
+          drawSpectrum(localCtx, localCanvas, preview, {
+            alpha: 0.24,
+            lineWidth: 2,
+            strokeStyle: SHAPE_COLOR,
+            fillStyle: SHAPE_COLOR
+          });
+          localMotionFrame = motionPayloadFromFrame(preview, true);
+          sendLocalMotionFrame();
+        } else {
+          localMotionFrame = motionPayloadFromFrame({ active: false, items: [] }, true);
+          sendLocalMotionFrame();
+        }
+        return;
+      }
+
+      const frame = updateSpectrumFrame(activeCategories, {
+        poseStable,
+        values: currentSpectrum,
+        sharpnessValues: currentSharpness,
+        baseMap: base,
+        center: spectrumCenter
+      });
+      if (shapeEffectActive()) {
+        drawSpectrum(localCtx, localCanvas, frame, {
+          alpha: poseStable ? 0.94 : 0.58,
+          lineWidth: 4,
+          strokeStyle: SHAPE_COLOR,
+          fillStyle: SHAPE_COLOR
+        });
+      }
+      localMotionFrame = motionPayloadFromFrame(frame, poseStable);
+      sendLocalMotionFrame();
+      status.textContent = emotionStatus(poseStable ? "検出中" : "顔の向きが大きいため、動きを少し抑えています。");
+    }
+
+    function updateEmotionEstimate() {
+      const now = performance.now();
+      if (!faceApiReady || emotionDetecting || now - lastEmotionDetectedAt < EMOTION_DETECT_INTERVAL_MS) return;
+
+      emotionDetecting = true;
+      lastEmotionDetectedAt = now;
+      window.faceapi.detectSingleFace(video, faceApiDetectOptions).withFaceExpressions()
+        .then(result => {
+          updateDominantEmotion(result?.expressions);
+        })
+        .catch(error => {
+          clearDominantEmotion();
+          console.warn("emotion detection failed", error);
+        })
+        .finally(() => {
+          emotionDetecting = false;
+        });
+    }
+
+    function updateDominantEmotion(expressions = {}) {
+      const entries = Object.entries(expressions);
+      if (!entries.length) {
+        clearDominantEmotion();
+        return;
+      }
+
+      const [name, score] = entries.reduce((best, entry) => entry[1] > best[1] ? entry : best);
+      if (!Number.isFinite(score)) {
+        clearDominantEmotion();
+        return;
+      }
+
+      currentEmotionName = name;
+      currentEmotionText = `${EMOTION_LABELS[name] || name} ${score.toFixed(2)}`;
+    }
+
+    function clearDominantEmotion() {
+      currentEmotionName = "";
+      currentEmotionText = "";
+    }
+
+    function updateRemoteEmotionEmoji(emotion = {}) {
+      renderEmotionEmoji(remoteEmotionEmoji, remoteVideo, emotion?.name, emotion?.bounds, false);
+    }
+
+    function renderEmotionEmoji(target, media, emotionName, bounds, mirrored) {
+      const emoji = EMOTION_EMOJIS[emotionName];
+      if (!emoji || !bounds) {
+        hideEmotionEmoji(target);
+        return;
+      }
+
+      const position = videoPointToStage(media, bounds.cx, bounds.cy, mirrored);
+      const horizontalSize = Math.abs(videoPointToStage(media, bounds.maxX, bounds.cy, mirrored).x - videoPointToStage(media, bounds.minX, bounds.cy, mirrored).x);
+      const verticalSize = Math.abs(videoPointToStage(media, bounds.cx, bounds.maxY, mirrored).y - videoPointToStage(media, bounds.cx, bounds.minY, mirrored).y);
+      const emojiSize = clamp(Math.max(horizontalSize, verticalSize) * 1.2, 42, 640);
+      target.textContent = emoji;
+      target.style.left = `${position.x}px`;
+      target.style.top = `${position.y - emojiSize * 0.05}px`;
+      target.style.setProperty("--emotion-emoji-size", `${emojiSize}px`);
+      setVisible(target, true);
+    }
+
+    function spectrumCenterFromBounds(bounds, media, targetCanvas, mirrored = false) {
+      if (!bounds) return null;
+      const mediaRect = media.getBoundingClientRect();
+      if (!mediaRect.width || !mediaRect.height) return null;
+
+      const point = mediaPointToStage(media, bounds.cx, bounds.cy, mirrored);
+      const stageRect = stage.getBoundingClientRect();
+      return {
+        x: point.x * targetCanvas.width / stageRect.width,
+        y: point.y * targetCanvas.height / stageRect.height
+      };
+    }
+
+    function hideEmotionEmoji(target) {
+      setVisible(target, false);
+    }
+
+    function faceBoundsFromLandmarks(landmarks = []) {
+      if (!landmarks.length) return null;
+
+      const bounds = landmarks.reduce((acc, landmark) => ({
+        minX: Math.min(acc.minX, landmark.x),
+        maxX: Math.max(acc.maxX, landmark.x),
+        minY: Math.min(acc.minY, landmark.y),
+        maxY: Math.max(acc.maxY, landmark.y)
+      }), { minX: 1, maxX: 0, minY: 1, maxY: 0 });
+
+      return {
+        ...bounds,
+        cx: (bounds.minX + bounds.maxX) / 2,
+        cy: (bounds.minY + bounds.maxY) / 2
+      };
+    }
+
+    function videoPointToStage(media, x, y, mirrored = false) {
+      return mediaPointToStage(media, x, y, mirrored);
+    }
+
+    function mediaPointToStage(media, x, y, mirrored = false) {
+      const videoRect = media.getBoundingClientRect();
+      const stageRect = stage.getBoundingClientRect();
+      const videoWidth = media.videoWidth || videoRect.width;
+      const videoHeight = media.videoHeight || videoRect.height;
+      const scale = Math.max(videoRect.width / videoWidth, videoRect.height / videoHeight);
+      const drawnWidth = videoWidth * scale;
+      const drawnHeight = videoHeight * scale;
+      const offsetX = (videoRect.width - drawnWidth) / 2;
+      const offsetY = (videoRect.height - drawnHeight) / 2;
+      const mediaX = offsetX + clamp(x, 0, 1) * drawnWidth;
+      const displayX = mirrored ? videoRect.width - mediaX : mediaX;
+
+      return {
+        x: videoRect.left - stageRect.left + displayX,
+        y: videoRect.top - stageRect.top + offsetY + clamp(y, 0, 1) * drawnHeight
+      };
+    }
+
+    function emotionStatus(message) {
+      return currentEmotionText ? `${message} / 感情: ${currentEmotionText}` : message;
+    }
+
+    function cancelFaceCalibration() {
+      calibrationRequested = false;
+      calibrationPreviewFrame = null;
+    }
+
+    function startCalibration() {
+      resetVisualState();
+      base.clear();
+      calibrationPreviewFrame = null;
+      neutralPose = null;
+      poseCalibration.samples = 0;
+      poseCalibration.sum = null;
+      Object.assign(calibration, {
+        warmup: WARMUP_FRAMES,
+        remaining: CALIBRATION_FRAMES,
+        samples: 0
+      });
+      calibration.stats.clear();
+      status.textContent = "正面を向いて、なるべく無表情で待ってください。";
+    }
+
+    function waitForFaceCalibration() {
+      calibrationRequested = true;
+      resetCalibrationState();
+      status.textContent = "顔を検出中...";
+    }
+
+    function updateCalibration(categories, landmarks) {
+      if (!calibrationActive()) return;
+
+      if (calibration.warmup > 0) {
+        calibration.warmup--;
+        status.textContent = `準備中 ${calibration.warmup}`;
+        return;
+      }
+
+      accumulateCategoryStats(calibration.stats, categories);
+      addPoseCalibrationSample(landmarks);
+      calibration.samples++;
+      calibration.remaining--;
+      status.textContent = `キャリブレーション中 ${calibration.remaining}`;
+
+      if (calibration.remaining > 0) return;
+
+      writeCalibrationBase(base, calibration.stats, calibration.samples);
+      neutralPose = finishPoseCalibration();
+      calibrationRequested = false;
+      calibrationPreviewFrame = null;
+      status.textContent = "キャリブレーション完了";
+    }
+
+    function calibrationActive() {
+      return calibration.warmup > 0 || calibration.remaining > 0;
+    }
+
+    function normalizeCategories(categories) {
+      return categories
+        .filter(category => category.categoryName && category.categoryName !== "_neutral")
+        .map(({ categoryName, score }) => ({ categoryName, score }));
+    }
+
+    function selectedCategories(categories) {
+      return categories.filter(({ categoryName }) => enabledParams.has(categoryName));
+    }
+
+    function updateParamCheckboxes(categories) {
+      for (const { categoryName } of categories) {
+        if (detectedParamNames.has(categoryName)) continue;
+
+        const defaultEnabled = savedParamEnabled(categoryName);
+        if (defaultEnabled) enabledParams.add(categoryName);
+        detectedParamNames.add(categoryName);
+
+        const label = document.createElement("label");
+        const input = document.createElement("input");
+        const span = document.createElement("span");
+
+        input.type = "checkbox";
+        input.checked = defaultEnabled;
+        span.textContent = paramLabel(categoryName);
+        span.title = categoryName;
+        input.addEventListener("change", () => {
+          setParamEnabled(categoryName, input.checked);
+        });
+
+        paramInputs.set(categoryName, input);
+        label.append(input, span);
+        params.append(label);
+      }
+    }
+
+    function paramLabel(categoryName) {
+      return PARAM_LABELS.get(categoryName) ?? categoryName;
+    }
+
+    async function loadParameterControls() {
+      const [loadedParamSets, loadedMotionGainSets] = await Promise.all([
+        loadParamSets(),
+        loadMotionGainSets()
+      ]);
+
+      paramSets = loadedParamSets;
+      motionGainSets = loadedMotionGainSets;
+      renderParamSetOptions();
+      renderMotionGainSetOptions();
+    }
+
+    async function loadParamSets() {
+      return loadSequentialSets({
+        fileNameForIndex: datasetName,
+        errorLabel: "parameter",
+        normalize: (stored, name) => stored?.[name] ?? stored,
+        validate: validParamSet
+      });
+    }
+
+    function validParamSet(value) {
+      return value && typeof value === "object" && !Array.isArray(value);
+    }
+
+    function renderParamSetOptions(selectedName = activeParamSetName) {
+      const names = Object.keys(paramSets).sort((a, b) => a.localeCompare(b, "ja", { numeric: true }));
+      paramSetSelect.replaceChildren(new Option("セットなし", ""));
+
+      for (const name of names) {
+        paramSetSelect.appendChild(new Option(name, name));
+      }
+
+      activeParamSetName = names.includes(selectedName) ? selectedName : "";
+      paramSetSelect.value = activeParamSetName;
+    }
+
+    function applyParamSet(name) {
+      activeParamSetName = name;
+
+      for (const [categoryName, input] of paramInputs) {
+        input.checked = savedParamEnabled(categoryName);
+        setParamEnabled(categoryName, input.checked);
+      }
+
+      resetVisualState();
+      status.textContent = name ? `${name} を適用しました` : "パラメーターセットを解除しました";
+    }
+
+    function savedParamEnabled(categoryName) {
+      const paramSet = paramSets[activeParamSetName];
+      return paramSet && categoryName in paramSet ? Boolean(paramSet[categoryName]) : DEFAULT_PARAM_NAMES.has(categoryName);
+    }
+
+    function setParamEnabled(categoryName, enabled) {
+      if (enabled) {
+        enabledParams.add(categoryName);
+        return;
+      }
+
+      enabledParams.delete(categoryName);
+      currentSpectrum.delete(categoryName);
+      currentSharpness.delete(categoryName);
+      previewSpectrum.delete(categoryName);
+      previewSharpness.delete(categoryName);
+    }
+
+    function datasetName(index) {
+      return `dataset${String(index).padStart(2, "0")}`;
+    }
+
+    async function loadMotionGainSets() {
+      return loadSequentialSets({
+        fileNameForIndex: index => `${motionGainSetName(index)}.json`,
+        errorLabel: "係数セット",
+        normalize: normalizeMotionGainSet,
+        validate: validMotionGainSet
+      });
+    }
+
+    async function loadSequentialSets({ fileNameForIndex, errorLabel, normalize, validate }) {
+      try {
+        const sets = {};
+
+        for (let index = 1; index <= 99; index++) {
+          const fileName = fileNameForIndex(index);
+          const response = await fetch(`${PARAM_SET_DIR}/${fileName}`, { cache: "no-store" });
+          if (response.status === 404) break;
+          if (!response.ok) throw new Error(`${fileName}: HTTP ${response.status}`);
+
+          const text = await response.text();
+          if (!text.trim()) continue;
+
+          const key = fileName.replace(/\.json$/, "");
+          const set = normalize(JSON.parse(text), key);
+          if (validate(set)) sets[key] = set;
+        }
+
+        return sets;
+      } catch (error) {
+        status.textContent = `${errorLabel}を読み込めません: ${error.message}`;
+        return {};
+      }
+    }
+
+    function validMotionGainSet(value) {
+      return value && typeof value === "object" && !Array.isArray(value)
+        && Object.keys(value).length > 0
+        && Object.values(value).every(gain => Number.isFinite(gain));
+    }
+
+    function renderMotionGainSetOptions(selectedName = activeMotionGainSetName) {
+      const names = Object.keys(motionGainSets).sort((a, b) => a.localeCompare(b, "ja", { numeric: true }));
+      motionGainSetSelect.replaceChildren(new Option("係数なし", ""));
+
+      for (const name of names) {
+        motionGainSetSelect.appendChild(new Option(name, name));
+      }
+
+      activeMotionGainSetName = names.includes(selectedName) ? selectedName : "";
+      motionGainSetSelect.value = activeMotionGainSetName;
+    }
+
+    function applyMotionGainSet(name) {
+      activeMotionGainSetName = name;
+      motionGains.clear();
+
+      const gainSet = motionGainSets[name];
+      if (gainSet) {
+        for (const [categoryName, gain] of Object.entries(gainSet)) {
+          motionGains.set(categoryName, clamp(gain, MOTION_GAIN_MIN, MOTION_GAIN_MAX));
+        }
+      }
+
+      resetVisualState();
+      status.textContent = name ? `${name} を適用しました` : "係数を解除しました";
+    }
+
+    function normalizeMotionGainSet(stored) {
+      const source = stored?.gains ?? stored;
+      if (!source || typeof source !== "object" || Array.isArray(source)) return null;
+
+      return Object.fromEntries(Object.entries(source)
+        .map(([categoryName, gain]) => [categoryName, Number(gain)])
+        .filter(([, gain]) => Number.isFinite(gain)));
+    }
+
+    function motionGainSetName(index) {
+      return `motionGainSet${String(index).padStart(2, "0")}`;
+    }
+
+    function motionGain(categoryName) {
+      return motionGains.get(categoryName) ?? 1;
+    }
+
+    function accumulateCategoryStats(stats, categories) {
+      for (const { categoryName, score } of categories) {
+        const stat = stats.get(categoryName) ?? { sum: 0, sq: 0 };
+        stat.sum += score;
+        stat.sq += score * score;
+        stats.set(categoryName, stat);
+      }
+    }
+
+    function writeCalibrationBase(targetBase, stats, sampleCount) {
+      if (!sampleCount) return;
+
+      for (const [categoryName, { sum, sq }] of stats) {
+        const mean = sum / sampleCount;
+        const variance = Math.max(sq / sampleCount - mean * mean, 0);
+        targetBase.set(categoryName, {
+          mean,
+          dead: Math.max(Math.sqrt(variance) * 3, DEADZONE)
+        });
+      }
+    }
+
+    function calibratedScore(categoryName, score, poseStable, baseMap = base) {
+      const entry = baseMap.get(categoryName);
+      if (!entry) return 0;
+
+      const { mean, dead } = entry;
+      const diff = score - mean;
+      if (Math.abs(diff) <= dead) return 0;
+      const value = diff > 0 ? diff - dead : diff + dead;
+      return poseStable ? value : value * UNSTABLE_POSE_GAIN;
+    }
+
+    function updateSpectrumFrame(categories, options = {}) {
+      const {
+        poseStable = true,
+        values = currentSpectrum,
+        sharpnessValues = currentSharpness,
+        baseMap = base,
+        center = null
+      } = options;
+
+      if (categories.length < 3) return { active: false, points: [] };
+
+      const width = localCanvas.width;
+      const height = localCanvas.height;
+      const { x: cx, y: cy } = center ?? { x: width / 2, y: height / 2 };
+      const baseRadius = Math.min(width, height) * 0.17;
+      const maxSpike = Math.min(width, height) * 0.12;
+      const ordered = orderedSpectrumCategories(categories);
+      const calibrated = baseMap.size > 0;
+
+      const points = ordered.map(({ categoryName, score }, index) => {
+        const rawValue = calibrated ? calibratedScore(categoryName, score, poseStable, baseMap) * motionGain(categoryName) : 0;
+        const value = Math.abs(rawValue) < SPECTRUM_ZERO_THRESHOLD ? 0 : rawValue;
+        const previous = values.get(categoryName) ?? 0;
+        const smoothed = previous * 0.82 + value * 0.18;
+        const rawSpeed = Math.max(Math.abs(smoothed - previous) - 0.002, 0);
+        const previousSharpness = sharpnessValues.get(categoryName) ?? 0;
+        const changeSharpness = Math.min(rawSpeed * 180, 1);
+        const sharpness = value === 0 ? previousSharpness * 0.82 : Math.max(previousSharpness, changeSharpness);
+
+        values.set(categoryName, smoothed);
+        sharpnessValues.set(categoryName, sharpness);
+
+        const angle = index / ordered.length * Math.PI * 2 - Math.PI / 2;
+        const amount = clamp(smoothed * 18, -1, 1);
+        const radius = baseRadius + amount * maxSpike;
+        return {
+          x: cx + Math.cos(angle) * radius,
+          y: cy + Math.sin(angle) * radius,
+          amount,
+          sharpness,
+          categoryName,
+          label: paramLabel(categoryName)
+        };
+      });
+
+      return {
+        active: calibrated,
+        points,
+        items: points.map(({ categoryName, label, amount, sharpness }) => ({ categoryName, label, amount, sharpness }))
+      };
+    }
+
+    function orderedSpectrumCategories(categories) {
+      const byName = new Map(categories.map(category => [category.categoryName, category]));
+      const orderedNames = [
+        ...PARAM_ORDER.filter(categoryName => byName.has(categoryName)),
+        ...categories
+          .map(({ categoryName }) => categoryName)
+          .filter(categoryName => !PARAM_ORDER.includes(categoryName))
+          .sort((a, b) => a.localeCompare(b))
+      ];
+
+      return orderedNames.map(categoryName => byName.get(categoryName)).filter(Boolean);
+    }
+
+    function drawSpectrum(targetCtx, targetCanvas, frame, options = {}) {
+      clearCanvas(targetCtx, targetCanvas);
+      drawSpectrumPath(targetCtx, frame.points, frame.active, options);
+    }
+
+    function drawNoFace(targetCtx, targetCanvas) {
+      clearCanvas(targetCtx, targetCanvas);
+    }
+
+    function drawSpectrumPath(targetCtx, points, active, options = {}) {
+      if (points.length < 3) return;
+
+      const {
+        alpha = 1,
+        lineWidth = 3,
+        strokeStyle = active ? "#999" : "#bbb",
+        fillStyle = active ? "#9999994d" : "#bbbbbb33"
+      } = options;
+
+      targetCtx.save();
+      targetCtx.lineWidth = lineWidth;
+      targetCtx.lineJoin = "miter";
+      targetCtx.miterLimit = 2.5;
+      targetCtx.lineCap = "round";
+      targetCtx.strokeStyle = strokeStyle;
+      targetCtx.fillStyle = fillStyle;
+      targetCtx.beginPath();
+
+      const start = midpoint(points[points.length - 1], points[0]);
+      targetCtx.moveTo(start.x, start.y);
+
+      for (let i = 0; i < points.length; i++) {
+        const previous = points[(i - 1 + points.length) % points.length];
+        const current = points[i];
+        const next = points[(i + 1) % points.length];
+        const previousMid = midpoint(previous, current);
+        const nextMid = midpoint(current, next);
+        const sharpness = current.sharpness ?? 0;
+        const control = {
+          x: current.x * sharpness + previousMid.x * (1 - sharpness),
+          y: current.y * sharpness + previousMid.y * (1 - sharpness)
+        };
+
+        targetCtx.quadraticCurveTo(control.x, control.y, nextMid.x, nextMid.y);
+      }
+
+      targetCtx.closePath();
+      targetCtx.fill();
+      targetCtx.globalAlpha *= alpha;
+      targetCtx.stroke();
+      targetCtx.restore();
+    }
+
+    function isPoseStable(landmarks = []) {
+      if (!base.size || !neutralPose) return true;
+      const pose = getPose(landmarks);
+      if (!pose) return false;
+
+      const dPose = poseDiff(pose, neutralPose);
+      const dRoll = Math.abs(angleDiff(pose.roll, neutralPose.roll));
+      return dPose < POSE_THRESHOLD && dRoll < ROLL_THRESHOLD;
+    }
+
+    function addPoseCalibrationSample(landmarks = []) {
+      const pose = getPose(landmarks);
+      if (!pose) return;
+
+      poseCalibration.sum ??= { scale: 0, yaw: 0, pitch: 0, roll: 0 };
+      for (const key of Object.keys(poseCalibration.sum)) {
+        poseCalibration.sum[key] += pose[key];
+      }
+      poseCalibration.samples++;
+    }
+
+    function finishPoseCalibration() {
+      if (!poseCalibration.samples || !poseCalibration.sum) return null;
+      return Object.fromEntries(
+        Object.entries(poseCalibration.sum).map(([key, value]) => [key, value / poseCalibration.samples])
+      );
+    }
+
+    function getPose(landmarks = []) {
+      const leftEye = averageLandmarks(landmarks, [33, 133]);
+      const rightEye = averageLandmarks(landmarks, [263, 362]);
+      const nose = landmarks[1];
+      if (!leftEye || !rightEye || !nose) return null;
+
+      const eyeCenter = midpoint(leftEye, rightEye);
+      const eyeDistance = Math.hypot(rightEye.x - leftEye.x, rightEye.y - leftEye.y);
+      if (!Number.isFinite(eyeDistance) || eyeDistance <= 0.001) return null;
+
+      const roll = Math.atan2(rightEye.y - leftEye.y, rightEye.x - leftEye.x);
+      const noseVector = rotatePoint({ x: nose.x - eyeCenter.x, y: nose.y - eyeCenter.y }, -roll);
+
+      return {
+        scale: eyeDistance,
+        yaw: noseVector.x / eyeDistance,
+        pitch: noseVector.y / eyeDistance,
+        roll
+      };
+    }
+
+    function poseDiff(pose, basePose) {
+      const scale = Math.max(basePose.scale, 0.001);
+      return (
+        Math.abs(Math.log(Math.max(pose.scale, 0.001) / scale)) +
+        Math.abs(pose.yaw - basePose.yaw) +
+        Math.abs(pose.pitch - basePose.pitch)
+      );
+    }
+
+    function angleDiff(value, baseValue) {
+      return Math.atan2(Math.sin(value - baseValue), Math.cos(value - baseValue));
+    }
+
+    function averageLandmarks(landmarks, indices) {
+      const points = indices.map(index => landmarks[index]).filter(Boolean);
+      if (!points.length) return null;
+      return {
+        x: points.reduce((sum, point) => sum + point.x, 0) / points.length,
+        y: points.reduce((sum, point) => sum + point.y, 0) / points.length
+      };
+    }
+
+    function rotatePoint(point, angle) {
+      const cos = Math.cos(angle);
+      const sin = Math.sin(angle);
+      return {
+        x: point.x * cos - point.y * sin,
+        y: point.x * sin + point.y * cos
+      };
+    }
+
+    function smoothLandmarks(landmarks = []) {
+      if (!landmarks.length) {
+        smoothedLandmarks = null;
+        return [];
+      }
+
+      if (!smoothedLandmarks || smoothedLandmarks.length !== landmarks.length) {
+        smoothedLandmarks = landmarks.map(point => ({ ...point }));
+        return smoothedLandmarks;
+      }
+
+      const currentWeight = 1 - LANDMARK_SMOOTHING;
+      smoothedLandmarks = landmarks.map((point, index) => {
+        const previous = smoothedLandmarks[index];
+        return {
+          x: previous.x * LANDMARK_SMOOTHING + point.x * currentWeight,
+          y: previous.y * LANDMARK_SMOOTHING + point.y * currentWeight,
+          z: (previous.z ?? point.z ?? 0) * LANDMARK_SMOOTHING + (point.z ?? previous.z ?? 0) * currentWeight
+        };
+      });
+
+      return smoothedLandmarks;
+    }
+
+    function resetAll() {
+      waitForFaceCalibration();
+      clearCanvas(localCtx, localCanvas);
+      clearCanvas(remoteCtx, remoteCanvas);
+      hideEmotionEmoji(remoteEmotionEmoji);
+    }
+
+    function resetCalibrationState() {
+      base.clear();
+      neutralPose = null;
+      poseCalibration.samples = 0;
+      poseCalibration.sum = null;
+      calibration.warmup = 0;
+      calibration.remaining = 0;
+      calibration.samples = 0;
+      calibration.stats.clear();
+      calibrationPreviewFrame = null;
+      resetVisualState();
+    }
+
+    function resetVisualState() {
+      [currentSpectrum, currentSharpness, previewSpectrum, previewSharpness].forEach(map => map.clear());
+    }
+
+    function resizeCanvas() {
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const width = Math.max(1, Math.round(window.innerWidth * dpr));
+      const height = Math.max(1, Math.round(window.innerHeight * dpr));
+      for (const targetCanvas of [localCanvas, remoteCanvas]) {
+        if (targetCanvas.width !== width || targetCanvas.height !== height) {
+          targetCanvas.width = width;
+          targetCanvas.height = height;
+        }
+      }
+      drawRemoteMotionFrame();
+    }
+
+    function midpoint(a, b) {
+      return {
+        x: (a.x + b.x) / 2,
+        y: (a.y + b.y) / 2
+      };
+    }
+
+    function clamp(value, min, max) {
+      return Math.min(Math.max(value, min), max);
+    }
+
+    function clearCanvas(targetCtx, targetCanvas) {
+      targetCtx.clearRect(0, 0, targetCanvas.width, targetCanvas.height);
+    }
+  </script>
+</body>
+
+</html>
