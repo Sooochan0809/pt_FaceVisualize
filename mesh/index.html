@@ -1,0 +1,1144 @@
+<!doctype html>
+<html lang="ja">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>MediaPipe Blendshape Motion Gain</title>
+    <style>
+        :root {
+            color-scheme: dark;
+            --bg: #0f0f10;
+            --panel: rgba(18, 18, 19, .88);
+            --panel-strong: rgba(32, 32, 34, .92);
+            --line: rgba(255, 255, 255, .12);
+            --text: #eeeeee;
+            --muted: #a6a6a6;
+            --accent: #d8d8d8;
+            --accent-2: #8f8f8f;
+            --danger: #d9a0a0;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            overflow: hidden;
+            background: var(--bg);
+            color: var(--text);
+            font: 14px/1.45 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        }
+
+        .stage {
+            position: fixed;
+            inset: 0;
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            align-items: center;
+            justify-items: center;
+            gap: 10px;
+            padding: 78px 14px 14px;
+            background: #0f0f10;
+        }
+
+        .view,
+        .panel {
+            position: relative;
+            width: 100%;
+            max-width: calc((100vh - 92px) * 3 / 5);
+            max-height: calc(100vh - 92px);
+            min-height: 0;
+            overflow: hidden;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            background: #070707;
+            aspect-ratio: 3 / 5;
+        }
+
+        .view-title {
+            position: absolute;
+            top: 9px;
+            left: 9px;
+            z-index: 1;
+            border: 1px solid rgba(255, 255, 255, .13);
+            border-radius: 6px;
+            background: rgba(14, 14, 15, .72);
+            color: var(--text);
+            font-size: 11px;
+            font-weight: 700;
+            padding: 4px 7px;
+            pointer-events: none;
+        }
+
+        video,
+        canvas {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transform: scaleX(-1);
+        }
+
+        video {
+            opacity: 1;
+            filter: saturate(.86) contrast(1.08);
+        }
+
+        canvas {
+            pointer-events: none;
+        }
+
+        .topbar,
+        .panel {
+            z-index: 2;
+            border: 1px solid var(--line);
+            background: var(--panel);
+            box-shadow: 0 18px 48px rgba(0, 0, 0, .28);
+            backdrop-filter: blur(14px);
+        }
+
+        .topbar {
+            position: fixed;
+            top: 14px;
+            left: 14px;
+            right: 14px;
+            min-height: 52px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 14px;
+            flex-wrap: wrap;
+            padding: 10px 12px;
+            border-radius: 8px;
+        }
+
+        .title {
+            display: flex;
+            align-items: baseline;
+            gap: 10px;
+            min-width: 180px;
+            white-space: nowrap;
+        }
+
+        h1 {
+            margin: 0;
+            font-size: 15px;
+            font-weight: 700;
+            letter-spacing: 0;
+        }
+
+        .status {
+            color: var(--muted);
+            font-size: 12px;
+        }
+
+        .actions {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+            gap: 8px;
+            min-width: min(100%, 320px);
+        }
+
+        button {
+            min-height: 34px;
+            appearance: none;
+            border: 1px solid var(--line);
+            border-radius: 6px;
+            background: var(--panel-strong);
+            color: var(--text);
+            font: 600 13px/1 system-ui, sans-serif;
+            padding: 8px 11px;
+            cursor: pointer;
+        }
+
+        button:hover {
+            border-color: rgba(255, 255, 255, .24);
+            background: rgba(46, 46, 48, .96);
+        }
+
+        button:disabled {
+            cursor: not-allowed;
+            opacity: .56;
+        }
+
+        .panel {
+            overflow: auto;
+        }
+
+        .controls {
+            display: grid;
+            gap: 13px;
+            padding: 42px 14px 14px;
+            border-bottom: 1px solid var(--line);
+        }
+
+        .control {
+            display: grid;
+            grid-template-columns: 98px 1fr 46px;
+            align-items: center;
+            gap: 10px;
+        }
+
+        label {
+            color: var(--muted);
+            font-size: 12px;
+            font-weight: 700;
+        }
+
+        input[type="range"] {
+            width: 100%;
+            accent-color: var(--accent);
+        }
+
+        .value {
+            color: var(--text);
+            font-variant-numeric: tabular-nums;
+            text-align: right;
+        }
+
+        .toggles {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+
+        .check {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            min-height: 34px;
+            color: var(--text);
+            border: 1px solid var(--line);
+            border-radius: 6px;
+            padding: 7px 9px;
+            background: rgba(255, 255, 255, .035);
+            font-size: 12px;
+            font-weight: 700;
+        }
+
+        .check input {
+            accent-color: var(--accent);
+        }
+
+        .meters {
+            display: grid;
+            gap: 9px;
+            padding: 12px 14px 14px;
+        }
+
+        .meter {
+            display: grid;
+            grid-template-columns: 112px 1fr 42px;
+            align-items: center;
+            gap: 9px;
+            min-height: 20px;
+        }
+
+        .name {
+            overflow: hidden;
+            color: var(--muted);
+            font-size: 11px;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .track {
+            position: relative;
+            height: 7px;
+            overflow: hidden;
+            border-radius: 999px;
+            background: rgba(255, 255, 255, .09);
+        }
+
+        .bar {
+            position: absolute;
+            inset: 0 auto 0 0;
+            width: 0%;
+            border-radius: inherit;
+            background: rgba(230, 230, 230, .72);
+        }
+
+        .score {
+            color: var(--text);
+            font-size: 11px;
+            font-variant-numeric: tabular-nums;
+            text-align: right;
+        }
+
+        .empty {
+            color: var(--muted);
+            padding: 4px 0;
+            font-size: 12px;
+        }
+
+        @media (max-width: 760px) {
+            body {
+                overflow: auto;
+            }
+
+            .topbar {
+                position: relative;
+                inset: auto;
+                margin: 10px;
+                align-items: stretch;
+                flex-direction: column;
+            }
+
+            .actions {
+                justify-content: flex-start;
+                min-width: 0;
+            }
+
+            .stage {
+                position: relative;
+                grid-template-columns: 1fr;
+                height: auto;
+                min-height: 0;
+                padding: 0 10px 10px;
+            }
+
+            .view,
+            .panel {
+                width: min(100%, 320px);
+                max-height: none;
+                min-height: 0;
+            }
+
+            .panel {
+                margin: 0;
+            }
+
+            video,
+            canvas {
+                width: 100%;
+                height: 100%;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="topbar">
+        <div class="title">
+            <h1>Blendshape Motion Gain</h1>
+            <span id="status" class="status">待機中</span>
+        </div>
+        <div class="actions">
+            <button id="neutralButton" type="button" disabled>Capture Neutral</button>
+            <button id="resetButton" type="button">Reset</button>
+        </div>
+    </div>
+
+    <main class="stage">
+        <section class="view">
+            <div class="view-title">Original Webcam</div>
+            <video id="video" autoplay playsinline muted></video>
+        </section>
+        <section class="view">
+            <div class="view-title">Warped Webcam</div>
+            <canvas id="warpedCanvas"></canvas>
+        </section>
+        <section class="view">
+            <div class="view-title">Facial Patch</div>
+            <canvas id="faceCanvas"></canvas>
+        </section>
+        <aside class="panel">
+            <div class="view-title">Controls</div>
+            <section class="controls">
+                <div class="control">
+                    <label for="gain">Gain</label>
+                    <input id="gain" type="range" min="0" max="3" step="0.05" value="1.5" />
+                    <span id="gainValue" class="value">1.50</span>
+                </div>
+                <div class="control">
+                    <label for="smoothing">Smoothing</label>
+                    <input id="smoothing" type="range" min="0" max="0.9" step="0.05" value="0.35" />
+                    <span id="smoothingValue" class="value">0.35</span>
+                </div>
+                <div class="control">
+                    <label for="meshGain">Mesh</label>
+                    <input id="meshGain" type="range" min="0" max="2.5" step="0.05" value="1.2" />
+                    <span id="meshGainValue" class="value">1.20</span>
+                </div>
+                <div class="toggles">
+                    <label class="check"><input id="useNeutral" type="checkbox" checked /> neutral基準</label>
+                    <label class="check"><input id="showGuides" type="checkbox" checked /> Guide Lines</label>
+                </div>
+            </section>
+            <section id="meters" class="meters">
+                <div class="empty">Webcamを開始するとブレンドシェイプ値が表示されます。</div>
+            </section>
+        </aside>
+    </main>
+
+    <script type="module">
+        import {
+            DrawingUtils,
+            FaceLandmarker,
+            FilesetResolver
+        } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.18/vision_bundle.mjs";
+
+        const MODEL_URL = "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/latest/face_landmarker.task";
+        const WASM_URL = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.18/wasm";
+        const ACTIVE_BLENDSHAPE_COUNT = 24;
+
+        const GROUP_GAIN = {
+            brow: ["browDownLeft", "browDownRight", "browInnerUp", "browOuterUpLeft", "browOuterUpRight"],
+            eye: ["eyeBlinkLeft", "eyeBlinkRight", "eyeLookDownLeft", "eyeLookDownRight", "eyeLookInLeft", "eyeLookInRight", "eyeLookOutLeft", "eyeLookOutRight", "eyeLookUpLeft", "eyeLookUpRight", "eyeSquintLeft", "eyeSquintRight", "eyeWideLeft", "eyeWideRight"],
+            mouth: ["jawForward", "jawLeft", "jawOpen", "jawRight", "mouthClose", "mouthDimpleLeft", "mouthDimpleRight", "mouthFrownLeft", "mouthFrownRight", "mouthFunnel", "mouthLeft", "mouthLowerDownLeft", "mouthLowerDownRight", "mouthPressLeft", "mouthPressRight", "mouthPucker", "mouthRight", "mouthRollLower", "mouthRollUpper", "mouthShrugLower", "mouthShrugUpper", "mouthSmileLeft", "mouthSmileRight", "mouthStretchLeft", "mouthStretchRight", "mouthUpperUpLeft", "mouthUpperUpRight"],
+            cheek: ["cheekPuff", "cheekSquintLeft", "cheekSquintRight"],
+            nose: ["noseSneerLeft", "noseSneerRight"]
+        };
+        const POSE_ANCHOR_INDEXES = [
+            10, 151, 9, 8, 168, 6, 197, 195, 5, 4,
+            33, 133, 362, 263, 234, 454, 93, 323, 152, 175
+        ];
+        const INNER_MOUTH_INDEXES = [
+            78, 95, 88, 178, 87, 14, 317, 402, 318, 324,
+            308, 415, 310, 311, 312, 13, 82, 81, 80, 191
+        ];
+        const EYE_RINGS = [
+            [33, 7, 163, 144, 145, 153, 154, 155, 133, 173, 157, 158, 159, 160, 161, 246],
+            [362, 382, 381, 380, 374, 373, 390, 249, 263, 466, 388, 387, 386, 385, 384, 398]
+        ];
+        const BLINK_SAFE_INDEXES = new Set(EYE_RINGS.flat());
+
+        const video = document.getElementById("video");
+        const warpedCanvas = document.getElementById("warpedCanvas");
+        const faceCanvas = document.getElementById("faceCanvas");
+        let canvas = warpedCanvas;
+        let ctx = warpedCanvas.getContext("2d");
+        const warpedCtx = ctx;
+        const faceCtx = faceCanvas.getContext("2d");
+        const drawingUtils = new DrawingUtils(warpedCtx);
+        const status = document.getElementById("status");
+        const neutralButton = document.getElementById("neutralButton");
+        const resetButton = document.getElementById("resetButton");
+        const meters = document.getElementById("meters");
+        const gain = document.getElementById("gain");
+        const smoothing = document.getElementById("smoothing");
+        const meshGain = document.getElementById("meshGain");
+        const useNeutral = document.getElementById("useNeutral");
+        const showGuides = document.getElementById("showGuides");
+        const gainValue = document.getElementById("gainValue");
+        const smoothingValue = document.getElementById("smoothingValue");
+        const meshGainValue = document.getElementById("meshGainValue");
+
+        let faceLandmarker = null;
+        let stream = null;
+        let animationFrameId = 0;
+        let lastVideoTime = -1;
+        let latestCategories = [];
+        let neutralScores = new Map();
+        let smoothedScores = new Map();
+        let neutralLandmarks = null;
+        let meterRows = new Map();
+        let faceTriangles = null;
+        let smoothedDisplayLandmarks = null;
+
+        function setStatus(message, isError = false) {
+            status.textContent = message;
+            status.style.color = isError ? "var(--danger)" : "var(--muted)";
+        }
+
+        function updateControlLabels() {
+            gainValue.textContent = Number(gain.value).toFixed(2);
+            smoothingValue.textContent = Number(smoothing.value).toFixed(2);
+            meshGainValue.textContent = Number(meshGain.value).toFixed(2);
+        }
+
+        function withRenderTarget(targetCanvas, targetCtx, draw) {
+            const previousCanvas = canvas;
+            const previousCtx = ctx;
+            canvas = targetCanvas;
+            ctx = targetCtx;
+            draw();
+            canvas = previousCanvas;
+            ctx = previousCtx;
+        }
+
+        function clamp01(value) {
+            return Math.min(1, Math.max(0, value));
+        }
+
+        function groupMultiplier(categoryName) {
+            if (categoryName === "eyeBlinkLeft" || categoryName === "eyeBlinkRight") {
+                return 0;
+            }
+
+            for (const [groupName, names] of Object.entries(GROUP_GAIN)) {
+                if (names.includes(categoryName)) {
+                    return groupName === "mouth" ? 1.08 : 1;
+                }
+            }
+
+            return 1;
+        }
+
+        function transformedScore(categoryName, score) {
+            const base = useNeutral.checked ? (neutralScores.get(categoryName) ?? 0) : 0;
+            const multiplier = groupMultiplier(categoryName);
+            const scaled = multiplier === 0
+                ? score
+                : base + (score - base) * Number(gain.value) * multiplier;
+            const previous = smoothedScores.get(categoryName) ?? scaled;
+            const eased = previous + (scaled - previous) * (1 - Number(smoothing.value));
+            const clamped = clamp01(eased);
+            smoothedScores.set(categoryName, clamped);
+            return clamped;
+        }
+
+        function captureNeutral() {
+            if (!latestCategories.length || !latestLandmarkSnapshot) {
+                setStatus("顔検出後にneutralを取得してください", true);
+                return;
+            }
+
+            neutralScores = new Map(latestCategories.map((category) => [category.categoryName, category.score]));
+            neutralLandmarks = latestLandmarkSnapshot;
+            smoothedScores.clear();
+            setStatus("neutralを更新しました");
+        }
+
+        function resetParameters() {
+            gain.value = "1";
+            smoothing.value = "0.35";
+            meshGain.value = "1";
+            useNeutral.checked = true;
+            showGuides.checked = true;
+            neutralScores.clear();
+            neutralLandmarks = null;
+            smoothedScores.clear();
+            smoothedDisplayLandmarks = null;
+            updateControlLabels();
+            setStatus(stream ? "トラッキング中" : "待機中");
+        }
+
+        function ensureCanvasSize() {
+            const width = video.videoWidth || 1280;
+            const height = video.videoHeight || 720;
+
+            for (const targetCanvas of [warpedCanvas, faceCanvas]) {
+                if (targetCanvas.width !== width || targetCanvas.height !== height) {
+                    targetCanvas.width = width;
+                    targetCanvas.height = height;
+                }
+            }
+        }
+
+        function estimatePoseTransform(sourceLandmarks, targetLandmarks) {
+            const pairs = POSE_ANCHOR_INDEXES
+                .map((index) => [sourceLandmarks[index], targetLandmarks[index]])
+                .filter(([source, target]) => source && target);
+
+            if (pairs.length < 3) {
+                return null;
+            }
+
+            const sourceCenter = pairs.reduce(
+                (center, [source]) => ({
+                    x: center.x + source.x / pairs.length,
+                    y: center.y + source.y / pairs.length,
+                    z: center.z + source.z / pairs.length
+                }),
+                { x: 0, y: 0, z: 0 }
+            );
+            const targetCenter = pairs.reduce(
+                (center, [, target]) => ({
+                    x: center.x + target.x / pairs.length,
+                    y: center.y + target.y / pairs.length,
+                    z: center.z + target.z / pairs.length
+                }),
+                { x: 0, y: 0, z: 0 }
+            );
+
+            let denominator = 0;
+            let rotateScaleX = 0;
+            let rotateScaleY = 0;
+
+            for (const [source, target] of pairs) {
+                const sx = source.x - sourceCenter.x;
+                const sy = source.y - sourceCenter.y;
+                const tx = target.x - targetCenter.x;
+                const ty = target.y - targetCenter.y;
+
+                denominator += sx * sx + sy * sy;
+                rotateScaleX += sx * tx + sy * ty;
+                rotateScaleY += sx * ty - sy * tx;
+            }
+
+            if (denominator < 0.000001) {
+                return null;
+            }
+
+            const a = rotateScaleX / denominator;
+            const b = rotateScaleY / denominator;
+            const scale = Math.hypot(a, b) || 1;
+
+            return { a, b, scale, sourceCenter, targetCenter };
+        }
+
+        function applyPoseTransform(point, transform) {
+            const x = point.x - transform.sourceCenter.x;
+            const y = point.y - transform.sourceCenter.y;
+
+            return {
+                x: transform.targetCenter.x + transform.a * x - transform.b * y,
+                y: transform.targetCenter.y + transform.b * x + transform.a * y,
+                z: transform.targetCenter.z + (point.z - transform.sourceCenter.z) * transform.scale
+            };
+        }
+
+        function expressionWeight(index, point, transform) {
+            if (BLINK_SAFE_INDEXES.has(index)) {
+                return 0;
+            }
+
+            const x = (point.x - transform.targetCenter.x) / transform.scale;
+            const y = (point.y - transform.targetCenter.y) / transform.scale;
+            const radius = Math.hypot(x * 0.85, y);
+
+            if (radius > 0.72) {
+                return 0.15;
+            }
+
+            if (radius > 0.58) {
+                return 0.45;
+            }
+
+            return 1;
+        }
+
+        function distance(a, b) {
+            return Math.hypot(a.x - b.x, a.y - b.y, (a.z ?? 0) - (b.z ?? 0));
+        }
+
+        function poseStability(landmarks) {
+            const left = landmarks[234];
+            const right = landmarks[454];
+            const nose = landmarks[1] ?? landmarks[4];
+            const top = landmarks[10];
+            const bottom = landmarks[152];
+
+            if (!left || !right || !nose || !top || !bottom) {
+                return 1;
+            }
+
+            const width = Math.max(distance(left, right), 0.0001);
+            const height = Math.max(distance(top, bottom), 0.0001);
+            const midX = (left.x + right.x) / 2;
+            const yawByNose = Math.abs(nose.x - midX) / width;
+            const yawByDepth = Math.abs((left.z ?? 0) - (right.z ?? 0)) / width;
+            const pitchByDepth = Math.abs((top.z ?? 0) - (bottom.z ?? 0)) / height;
+            const instability = Math.max(0, yawByNose - 0.08) * 1.8
+                + Math.max(0, yawByDepth - 0.16) * 0.9
+                + Math.max(0, pitchByDepth - 0.2) * 0.55;
+
+            return Math.max(0.28, Math.min(1, 1 - instability));
+        }
+
+        function limitExpressionDelta(point, base, transform, weight) {
+            const dx = point.x - base.x;
+            const dy = point.y - base.y;
+            const dz = point.z - base.z;
+            const length = Math.hypot(dx, dy, dz);
+            const maxLength = transform.scale * (0.055 + weight * 0.065);
+
+            if (length <= maxLength || length < 0.000001) {
+                return point;
+            }
+
+            const ratio = maxLength / length;
+            return {
+                x: base.x + dx * ratio,
+                y: base.y + dy * ratio,
+                z: base.z + dz * ratio
+            };
+        }
+
+        function smoothLandmarks(landmarks) {
+            if (!smoothedDisplayLandmarks || smoothedDisplayLandmarks.length !== landmarks.length) {
+                smoothedDisplayLandmarks = landmarks.map((point) => ({ ...point }));
+                return landmarks;
+            }
+
+            const alpha = 0.42;
+            smoothedDisplayLandmarks = landmarks.map((point, index) => {
+                const previous = smoothedDisplayLandmarks[index];
+                return {
+                    x: previous.x + (point.x - previous.x) * alpha,
+                    y: previous.y + (point.y - previous.y) * alpha,
+                    z: previous.z + (point.z - previous.z) * alpha
+                };
+            });
+
+            return smoothedDisplayLandmarks;
+        }
+
+        function adjustedLandmarks(landmarks) {
+            if (!neutralLandmarks || neutralLandmarks.length !== landmarks.length) {
+                smoothedDisplayLandmarks = null;
+                return landmarks;
+            }
+
+            const amount = 1 + (Number(meshGain.value) - 1) * poseStability(landmarks);
+            const poseTransform = estimatePoseTransform(neutralLandmarks, landmarks);
+
+            if (!poseTransform) {
+                smoothedDisplayLandmarks = null;
+                return landmarks;
+            }
+
+            return landmarks.map((point, index) => {
+                const base = neutralLandmarks[index];
+                const poseMatchedBase = applyPoseTransform(base, poseTransform);
+                const weight = expressionWeight(index, poseMatchedBase, poseTransform);
+                const weightedAmount = 1 + (amount - 1) * weight;
+                const adjustedPoint = {
+                    x: poseMatchedBase.x + (point.x - poseMatchedBase.x) * weightedAmount,
+                    y: poseMatchedBase.y + (point.y - poseMatchedBase.y) * weightedAmount,
+                    z: poseMatchedBase.z + (point.z - poseMatchedBase.z) * weightedAmount
+                };
+                const limitedPoint = limitExpressionDelta(adjustedPoint, poseMatchedBase, poseTransform, weight);
+
+                return limitedPoint;
+            });
+        }
+
+        function connectorIndexes(connector) {
+            const start = connector.start ?? connector[0];
+            const end = connector.end ?? connector[1];
+            return [start, end];
+        }
+
+        function createFaceTriangles() {
+            const adjacency = new Map();
+            const edges = FaceLandmarker.FACE_LANDMARKS_TESSELATION;
+
+            for (const connector of edges) {
+                const [start, end] = connectorIndexes(connector);
+                if (!adjacency.has(start)) {
+                    adjacency.set(start, new Set());
+                }
+                if (!adjacency.has(end)) {
+                    adjacency.set(end, new Set());
+                }
+                adjacency.get(start).add(end);
+                adjacency.get(end).add(start);
+            }
+
+            const triangles = [];
+            const seen = new Set();
+
+            for (const [a, neighbors] of adjacency) {
+                for (const b of neighbors) {
+                    for (const c of adjacency.get(b) ?? []) {
+                        if (a === b || b === c || c === a || !neighbors.has(c)) {
+                            continue;
+                        }
+
+                        const sorted = [a, b, c].sort((x, y) => x - y);
+                        const key = sorted.join("-");
+
+                        if (!seen.has(key)) {
+                            seen.add(key);
+                            triangles.push(sorted);
+                        }
+                    }
+                }
+            }
+
+            return triangles;
+        }
+
+        function toPixel(point) {
+            return {
+                x: point.x * canvas.width,
+                y: point.y * canvas.height
+            };
+        }
+
+        function triangleArea(a, b, c) {
+            return Math.abs((b.x - a.x) * (c.y - a.y) - (c.x - a.x) * (b.y - a.y));
+        }
+
+        function cross(origin, a, b) {
+            return (a.x - origin.x) * (b.y - origin.y) - (a.y - origin.y) * (b.x - origin.x);
+        }
+
+        function convexHull(points) {
+            const sortedPoints = [...points].sort((a, b) => a.x - b.x || a.y - b.y);
+
+            if (sortedPoints.length <= 3) {
+                return sortedPoints;
+            }
+
+            const lower = [];
+            const upper = [];
+
+            for (const point of sortedPoints) {
+                while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], point) <= 0) {
+                    lower.pop();
+                }
+                lower.push(point);
+            }
+
+            for (const point of [...sortedPoints].reverse()) {
+                while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], point) <= 0) {
+                    upper.pop();
+                }
+                upper.push(point);
+            }
+
+            lower.pop();
+            upper.pop();
+            return lower.concat(upper);
+        }
+
+        function expandedPolygon(points, amount) {
+            const center = points.reduce(
+                (accumulator, point) => ({
+                    x: accumulator.x + point.x / points.length,
+                    y: accumulator.y + point.y / points.length
+                }),
+                { x: 0, y: 0 }
+            );
+
+            return points.map((point) => ({
+                x: center.x + (point.x - center.x) * amount,
+                y: center.y + (point.y - center.y) * amount
+            }));
+        }
+
+        function addPolygonPath(path, points) {
+            if (points.length < 3) {
+                return;
+            }
+
+            path.moveTo(points[0].x, points[0].y);
+
+            for (const point of points.slice(1)) {
+                path.lineTo(point.x, point.y);
+            }
+
+            path.closePath();
+        }
+
+        function fillClipWithSoftVideo() {
+            ctx.save();
+            ctx.filter = "blur(12px)";
+            ctx.globalAlpha = 0.96;
+            ctx.drawImage(video, -10, -10, canvas.width + 20, canvas.height + 20);
+            ctx.restore();
+        }
+
+        function cutOutSourceOverflow(sourceLandmarks, targetLandmarks) {
+            const sourceHull = expandedPolygon(convexHull(sourceLandmarks.map(toPixel)), 1.04);
+            const targetHull = expandedPolygon(convexHull(targetLandmarks.map(toPixel)), 1.02);
+
+            if (sourceHull.length < 3 || targetHull.length < 3) {
+                return;
+            }
+
+            const path = new Path2D();
+            addPolygonPath(path, sourceHull);
+            addPolygonPath(path, targetHull);
+
+            ctx.save();
+            ctx.clip(path, "evenodd");
+            fillClipWithSoftVideo();
+            ctx.restore();
+        }
+
+        function expandedTriangle(points, amount = 1.012) {
+            const center = polygonCenter(points);
+            return points.map((point) => ({
+                x: center.x + (point.x - center.x) * amount,
+                y: center.y + (point.y - center.y) * amount
+            }));
+        }
+
+        function drawWarpTriangle(sourceTriangle, targetTriangle) {
+            const [s0, s1, s2] = sourceTriangle;
+            const [t0, t1, t2] = expandedTriangle(targetTriangle);
+            const denominator = s0.x * (s1.y - s2.y) + s1.x * (s2.y - s0.y) + s2.x * (s0.y - s1.y);
+
+            if (Math.abs(denominator) < 0.0001 || triangleArea(t0, t1, t2) < 0.01) {
+                return;
+            }
+
+            const a = (t0.x * (s1.y - s2.y) + t1.x * (s2.y - s0.y) + t2.x * (s0.y - s1.y)) / denominator;
+            const b = (t0.y * (s1.y - s2.y) + t1.y * (s2.y - s0.y) + t2.y * (s0.y - s1.y)) / denominator;
+            const c = (t0.x * (s2.x - s1.x) + t1.x * (s0.x - s2.x) + t2.x * (s1.x - s0.x)) / denominator;
+            const d = (t0.y * (s2.x - s1.x) + t1.y * (s0.x - s2.x) + t2.y * (s1.x - s0.x)) / denominator;
+            const e = (t0.x * (s1.x * s2.y - s2.x * s1.y) + t1.x * (s2.x * s0.y - s0.x * s2.y) + t2.x * (s0.x * s1.y - s1.x * s0.y)) / denominator;
+            const f = (t0.y * (s1.x * s2.y - s2.x * s1.y) + t1.y * (s2.x * s0.y - s0.x * s2.y) + t2.y * (s0.x * s1.y - s1.x * s0.y)) / denominator;
+
+            ctx.save();
+            ctx.beginPath();
+            ctx.moveTo(t0.x, t0.y);
+            ctx.lineTo(t1.x, t1.y);
+            ctx.lineTo(t2.x, t2.y);
+            ctx.closePath();
+            ctx.clip();
+            ctx.setTransform(a, b, c, d, e, f);
+            ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = "high";
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            ctx.restore();
+        }
+
+        function polygonCenter(points) {
+            return points.reduce(
+                (center, point) => ({
+                    x: center.x + point.x / points.length,
+                    y: center.y + point.y / points.length
+                }),
+                { x: 0, y: 0 }
+            );
+        }
+
+        function landmarkRingToPixels(landmarks, indexes) {
+            return indexes.map((index) => landmarks[index]).filter(Boolean).map(toPixel);
+        }
+
+        function drawWarpedRingInterior(sourceLandmarks, targetLandmarks, indexes) {
+            const sourceRing = landmarkRingToPixels(sourceLandmarks, indexes);
+            const targetRing = landmarkRingToPixels(targetLandmarks, indexes);
+
+            if (sourceRing.length !== indexes.length || targetRing.length !== indexes.length) {
+                return;
+            }
+
+            const sourceCenter = polygonCenter(sourceRing);
+            const targetCenter = polygonCenter(targetRing);
+
+            const path = new Path2D();
+            addPolygonPath(path, targetRing);
+            ctx.save();
+            ctx.clip(path);
+            fillClipWithSoftVideo();
+            ctx.restore();
+
+            for (let i = 0; i < sourceRing.length; i++) {
+                const nextIndex = (i + 1) % sourceRing.length;
+                drawWarpTriangle(
+                    [sourceCenter, sourceRing[i], sourceRing[nextIndex]],
+                    [targetCenter, targetRing[i], targetRing[nextIndex]]
+                );
+            }
+        }
+
+        function drawWarpedMouthInterior(sourceLandmarks, targetLandmarks) {
+            drawWarpedRingInterior(sourceLandmarks, targetLandmarks, INNER_MOUTH_INDEXES);
+        }
+
+        function drawWarpedEyeInteriors(sourceLandmarks, targetLandmarks) {
+            for (const indexes of EYE_RINGS) {
+                drawWarpedRingInterior(sourceLandmarks, targetLandmarks, indexes);
+            }
+        }
+
+        function drawWarpedVideo(sourceLandmarks, targetLandmarks) {
+            faceTriangles ??= createFaceTriangles();
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            cutOutSourceOverflow(sourceLandmarks, targetLandmarks);
+
+            for (const triangle of faceTriangles) {
+                const sourceTriangle = triangle.map((index) => toPixel(sourceLandmarks[index]));
+                const targetTriangle = triangle.map((index) => toPixel(targetLandmarks[index]));
+                drawWarpTriangle(sourceTriangle, targetTriangle);
+            }
+
+            drawWarpedMouthInterior(sourceLandmarks, targetLandmarks);
+            drawWarpedEyeInteriors(sourceLandmarks, targetLandmarks);
+        }
+
+        function drawFacialPatchFromWarped(targetLandmarks) {
+            const hull = expandedPolygon(convexHull(targetLandmarks.map(toPixel)), 1.01);
+
+            if (hull.length < 3) {
+                return;
+            }
+
+            ctx.save();
+            const path = new Path2D();
+            addPolygonPath(path, hull);
+            ctx.clip(path);
+            ctx.drawImage(warpedCanvas, 0, 0, canvas.width, canvas.height);
+            ctx.restore();
+        }
+
+        function updateMeters(categories) {
+            const activeCategories = categories
+                .filter((category) => category.categoryName !== "_neutral")
+                .map((category) => ({
+                    name: category.categoryName,
+                    scaled: transformedScore(category.categoryName, category.score)
+                }))
+                .sort((a, b) => b.scaled - a.scaled)
+                .slice(0, ACTIVE_BLENDSHAPE_COUNT);
+
+            const activeNames = new Set(activeCategories.map((category) => category.name));
+
+            for (const [name, row] of meterRows) {
+                if (!activeNames.has(name)) {
+                    row.remove();
+                    meterRows.delete(name);
+                }
+            }
+
+            if (!activeCategories.length) {
+                meters.innerHTML = '<div class="empty">ブレンドシェイプを検出中です。</div>';
+                return;
+            }
+
+            const empty = meters.querySelector(".empty");
+            empty?.remove();
+
+            for (const category of activeCategories) {
+                let row = meterRows.get(category.name);
+
+                if (!row) {
+                    row = document.createElement("div");
+                    row.className = "meter";
+                    row.innerHTML = `
+                        <span class="name"></span>
+                        <span class="track">
+                            <span class="bar"></span>
+                        </span>
+                        <span class="score"></span>
+                    `;
+                    row.querySelector(".name").textContent = category.name;
+                    meterRows.set(category.name, row);
+                    meters.append(row);
+                }
+
+                row.querySelector(".bar").style.width = `${category.scaled * 100}%`;
+                row.querySelector(".score").textContent = category.scaled.toFixed(2);
+                meters.append(row);
+            }
+        }
+
+        let latestLandmarkSnapshot = null;
+
+        function drawFace(landmarks) {
+            ensureCanvasSize();
+            warpedCtx.clearRect(0, 0, warpedCanvas.width, warpedCanvas.height);
+            faceCtx.clearRect(0, 0, faceCanvas.width, faceCanvas.height);
+
+            const displayLandmarks = smoothLandmarks(adjustedLandmarks(landmarks));
+
+            withRenderTarget(warpedCanvas, warpedCtx, () => {
+                drawWarpedVideo(landmarks, displayLandmarks);
+            });
+
+            withRenderTarget(faceCanvas, faceCtx, () => {
+                drawFacialPatchFromWarped(displayLandmarks);
+            });
+
+            if (showGuides.checked) {
+                drawingUtils.drawConnectors(displayLandmarks, FaceLandmarker.FACE_LANDMARKS_TESSELATION, {
+                    color: "rgba(255, 255, 255, 0.10)",
+                    lineWidth: 1
+                });
+                drawingUtils.drawConnectors(displayLandmarks, FaceLandmarker.FACE_LANDMARKS_CONTOURS, {
+                    color: "rgba(255, 255, 255, 0.48)",
+                    lineWidth: 2
+                });
+                drawingUtils.drawConnectors(displayLandmarks, FaceLandmarker.FACE_LANDMARKS_IRISES, {
+                    color: "rgba(255, 255, 255, 0.42)",
+                    lineWidth: 1
+                });
+            }
+        }
+
+        async function createLandmarker() {
+            if (faceLandmarker) {
+                return faceLandmarker;
+            }
+
+            setStatus("MediaPipeを読み込み中");
+            const vision = await FilesetResolver.forVisionTasks(WASM_URL);
+            faceLandmarker = await FaceLandmarker.createFromOptions(vision, {
+                baseOptions: {
+                    modelAssetPath: MODEL_URL,
+                    delegate: "GPU"
+                },
+                runningMode: "VIDEO",
+                numFaces: 1,
+                outputFaceBlendshapes: true
+            });
+
+            return faceLandmarker;
+        }
+
+        async function startWebcam() {
+            try {
+                await createLandmarker();
+                setStatus("Webcamを起動中");
+                stream = await navigator.mediaDevices.getUserMedia({
+                    video: {
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 },
+                        facingMode: "user"
+                    },
+                    audio: false
+                });
+
+                video.srcObject = stream;
+                await video.play();
+                neutralButton.disabled = false;
+                setStatus("トラッキング中");
+                animationFrameId = requestAnimationFrame(loop);
+            } catch (error) {
+                console.error(error);
+                setStatus("起動に失敗しました", true);
+            }
+        }
+
+        function loop() {
+            if (video.currentTime !== lastVideoTime) {
+                lastVideoTime = video.currentTime;
+                const result = faceLandmarker.detectForVideo(video, performance.now());
+                const landmarks = result.faceLandmarks?.[0];
+                const categories = result.faceBlendshapes?.[0]?.categories;
+
+                if (landmarks && categories) {
+                    latestLandmarkSnapshot = landmarks.map((point) => ({ x: point.x, y: point.y, z: point.z }));
+                    latestCategories = categories;
+                    drawFace(landmarks);
+                    updateMeters(categories);
+                } else {
+                    warpedCtx.clearRect(0, 0, warpedCanvas.width, warpedCanvas.height);
+                    faceCtx.clearRect(0, 0, faceCanvas.width, faceCanvas.height);
+                    setStatus("顔を探しています");
+                }
+            }
+
+            animationFrameId = requestAnimationFrame(loop);
+        }
+
+        neutralButton.addEventListener("click", captureNeutral);
+        resetButton.addEventListener("click", resetParameters);
+        [gain, smoothing, meshGain].forEach((input) => {
+            input.addEventListener("input", updateControlLabels);
+        });
+        useNeutral.addEventListener("change", () => smoothedScores.clear());
+
+        addEventListener("beforeunload", () => {
+            cancelAnimationFrame(animationFrameId);
+            stream?.getTracks().forEach((track) => track.stop());
+        });
+
+        updateControlLabels();
+        startWebcam();
+    </script>
+</body>
+
+</html>
