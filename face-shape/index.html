@@ -1,0 +1,878 @@
+<!doctype html>
+<html lang="ja">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>かおのかたち</title>
+    <style>
+        :root {
+            --ink: #202124;
+            --muted: #6b7078;
+            --paper: #f5f5f2;
+            --panel: rgba(255, 255, 255, 0.86);
+            --line: rgba(32, 33, 36, 0.14);
+            --accent: #0d6b61;
+            --accent-soft: #dff3ef;
+            --warn: #8e4b00;
+            --danger: #a9423d;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        html,
+        body {
+            width: 100%;
+            height: 100%;
+        }
+
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: var(--paper);
+            color: var(--ink);
+            font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif;
+        }
+
+        #app {
+            min-height: 100%;
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) 320px;
+        }
+
+        #stage {
+            position: relative;
+            min-height: 100vh;
+            overflow: hidden;
+            background:
+                radial-gradient(circle at 50% 40%, rgba(255, 255, 255, .9), rgba(245, 245, 242, .45) 42%, rgba(225, 230, 226, .6)),
+                var(--paper);
+        }
+
+        #artboard {
+            display: block;
+            width: 100%;
+            height: 100vh;
+        }
+
+        #headline {
+            position: absolute;
+            top: 24px;
+            left: 28px;
+            max-width: 520px;
+            pointer-events: none;
+        }
+
+        #headline h1 {
+            margin: 0 0 8px;
+            font-size: clamp(21px, 2.6vw, 34px);
+            letter-spacing: .04em;
+            font-weight: 650;
+        }
+
+        #headline p {
+            margin: 0;
+            color: var(--muted);
+            font-size: 14px;
+            line-height: 1.65;
+        }
+
+        #status {
+            position: absolute;
+            left: 28px;
+            bottom: 26px;
+            max-width: min(670px, calc(100vw - 60px));
+            padding: 12px 15px;
+            border: 1px solid var(--line);
+            border-radius: 12px;
+            background: rgba(255, 255, 255, .73);
+            backdrop-filter: blur(10px);
+            font-size: 14px;
+            line-height: 1.5;
+            transition: color .2s ease, background .2s ease;
+        }
+
+        #status[data-tone="ready"] {
+            color: var(--accent);
+        }
+
+        #status[data-tone="warn"] {
+            color: var(--warn);
+        }
+
+        #status[data-tone="error"] {
+            color: var(--danger);
+        }
+
+        #videoWrap {
+            position: absolute;
+            right: 20px;
+            bottom: 20px;
+            width: min(28vw, 290px);
+            aspect-ratio: 16 / 10;
+            overflow: hidden;
+            border-radius: 14px;
+            border: 1px solid rgba(255, 255, 255, .55);
+            background: #121313;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, .15);
+            opacity: 0;
+            transform: translateY(12px);
+            pointer-events: none;
+            transition: opacity .25s ease, transform .25s ease;
+        }
+
+        #videoWrap.is-visible {
+            opacity: .74;
+            transform: translateY(0);
+        }
+
+        #webcam {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transform: scaleX(-1);
+        }
+
+        #controls {
+            height: 100vh;
+            overflow-y: auto;
+            padding: 23px 20px 32px;
+            border-left: 1px solid var(--line);
+            background: var(--panel);
+            backdrop-filter: blur(15px);
+        }
+
+        .control-title {
+            margin: 0 0 5px;
+            font-size: 18px;
+            font-weight: 700;
+        }
+
+        .control-subtitle {
+            margin: 0 0 18px;
+            font-size: 12px;
+            color: var(--muted);
+            line-height: 1.65;
+        }
+
+        .section {
+            margin-top: 18px;
+            padding-top: 18px;
+            border-top: 1px solid var(--line);
+        }
+
+        .section h2 {
+            margin: 0 0 9px;
+            font-size: 12px;
+            letter-spacing: .08em;
+            color: var(--muted);
+            font-weight: 700;
+        }
+
+        .buttons {
+            display: grid;
+            gap: 9px;
+        }
+
+        button {
+            width: 100%;
+            appearance: none;
+            border: 1px solid var(--line);
+            border-radius: 10px;
+            padding: 11px 12px;
+            background: rgba(255, 255, 255, .92);
+            color: var(--ink);
+            font: inherit;
+            font-size: 14px;
+            text-align: left;
+            cursor: pointer;
+            transition: transform .12s ease, background .12s ease, border-color .12s ease;
+        }
+
+        button:hover:not(:disabled) {
+            transform: translateY(-1px);
+            border-color: rgba(13, 107, 97, .5);
+        }
+
+        button:disabled {
+            opacity: .45;
+            cursor: not-allowed;
+        }
+
+        button.primary {
+            background: var(--accent);
+            color: white;
+            border-color: var(--accent);
+        }
+
+        button.active {
+            background: var(--accent-soft);
+            border-color: rgba(13, 107, 97, .45);
+            color: #07443d;
+        }
+
+        .legend {
+            display: grid;
+            gap: 9px;
+            font-size: 12px;
+            line-height: 1.55;
+            color: #4e5258;
+        }
+
+        .legend-row {
+            display: grid;
+            grid-template-columns: 12px 1fr;
+            gap: 8px;
+            align-items: start;
+        }
+
+        .dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 999px;
+            margin-top: 4px;
+        }
+
+        .dot.a {
+            background: #4684c5;
+        }
+
+        .dot.b {
+            background: #e28359;
+        }
+
+        .dot.shared {
+            background: #6250a6;
+        }
+
+        #manualPanel {
+            display: none;
+        }
+
+        #manualPanel.is-visible {
+            display: block;
+        }
+
+        .person-control {
+            padding: 10px 0 6px;
+        }
+
+        .person-control+.person-control {
+            border-top: 1px dashed var(--line);
+            margin-top: 7px;
+        }
+
+        .person-control strong {
+            display: block;
+            margin-bottom: 8px;
+            font-size: 13px;
+        }
+
+        label.range-row {
+            display: grid;
+            grid-template-columns: 1fr 74px;
+            gap: 10px;
+            align-items: center;
+            margin: 8px 0;
+            font-size: 12px;
+            color: #50545a;
+        }
+
+        input[type="range"] {
+            width: 100%;
+            accent-color: var(--accent);
+        }
+
+        output {
+            font-variant-numeric: tabular-nums;
+            text-align: right;
+            color: var(--muted);
+        }
+
+        #metrics {
+            font-size: 12px;
+            color: var(--muted);
+            line-height: 1.7;
+            white-space: pre-line;
+        }
+
+        .small-note {
+            margin: 9px 0 0;
+            color: var(--muted);
+            font-size: 12px;
+            line-height: 1.65;
+        }
+
+        .svg-label {
+            font-size: 14px;
+            letter-spacing: .09em;
+            fill: #565a61;
+            text-anchor: middle;
+            transition: opacity .2s ease;
+        }
+
+        .svg-caption {
+            font-size: 13px;
+            letter-spacing: .08em;
+            fill: #6f7379;
+            text-anchor: middle;
+        }
+
+        @media (max-width: 850px) {
+            body {
+                overflow: auto;
+            }
+
+            #app {
+                grid-template-columns: 1fr;
+            }
+
+            #stage {
+                min-height: 75vh;
+            }
+
+            #controls {
+                height: auto;
+                border-left: none;
+                border-top: 1px solid var(--line);
+            }
+
+            #artboard {
+                height: 75vh;
+                min-height: 560px;
+            }
+
+            #videoWrap {
+                width: 180px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <main id="app">
+        <section id="stage" aria-label="共有図形の表示領域">
+            <div id="headline">
+                <h1>かおのかたち</h1>
+                <p>二人の顔の動きが、別々の図形から、ひとつの共有形態へ変わります。</p>
+            </div>
+
+            <svg id="artboard" viewBox="0 0 1200 720" role="img" aria-label="二人の顔の動きから生じる抽象図形">
+                <defs>
+                    <filter id="goo" x="-35%" y="-35%" width="170%" height="170%" color-interpolation-filters="sRGB">
+                        <feGaussianBlur in="SourceGraphic" stdDeviation="13" result="blur" />
+                        <feColorMatrix in="blur" mode="matrix" values="1 0 0 0 0
+                      0 1 0 0 0
+                      0 0 1 0 0
+                      0 0 0 24 -11" result="goo" />
+                        <feComposite in="SourceGraphic" in2="goo" operator="atop" />
+                    </filter>
+                    <linearGradient id="fillA" x1="0" y1="0" x2="1" y2="1">
+                        <stop offset="0" stop-color="#5e96d3" />
+                        <stop offset="1" stop-color="#356aa8" />
+                    </linearGradient>
+                    <linearGradient id="fillB" x1="1" y1="0" x2="0" y2="1">
+                        <stop offset="0" stop-color="#ed9c77" />
+                        <stop offset="1" stop-color="#ca6645" />
+                    </linearGradient>
+                    <linearGradient id="fillShared" x1="0" y1="0" x2="1" y2="1">
+                        <stop offset="0" stop-color="#5b80c4" />
+                        <stop offset=".5" stop-color="#8b66ad" />
+                        <stop offset="1" stop-color="#d17a5a" />
+                    </linearGradient>
+                    <filter id="softShadow" x="-25%" y="-25%" width="150%" height="150%">
+                        <feGaussianBlur in="SourceAlpha" stdDeviation="12" result="blur" />
+                        <feOffset dy="12" result="offset" />
+                        <feColorMatrix in="offset" type="matrix"
+                            values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 .18 0" />
+                        <feMerge>
+                            <feMergeNode />
+                            <feMergeNode in="SourceGraphic" />
+                        </feMerge>
+                    </filter>
+                </defs>
+
+                <g filter="url(#softShadow)">
+                    <g id="meltGroup" filter="url(#goo)">
+                        <path id="bridge" fill="url(#fillShared)" opacity="0"></path>
+                        <path id="blobA" fill="url(#fillA)"></path>
+                        <path id="blobB" fill="url(#fillB)"></path>
+                    </g>
+                </g>
+
+                <g id="labels">
+                    <text id="labelA" class="svg-label" x="300" y="600">A</text>
+                    <text id="labelB" class="svg-label" x="900" y="600">B</text>
+                    <text id="sharedCaption" class="svg-caption" x="600" y="155" opacity="0">共有形態</text>
+                </g>
+            </svg>
+
+            <div id="status" data-tone="warn"></div>
+
+            <div id="videoWrap" aria-hidden="true">
+                <video id="webcam" playsinline muted></video>
+            </div>
+        </section>
+
+        <aside id="controls">
+            <h2 class="control-title">パイロット版</h2>
+            <p class="control-subtitle">最小構成：二人の活動量で近づき、二人の差異で接触部の形が変わる。</p>
+
+            <div class="buttons">
+                <button id="cameraButton" class="primary">カメラを始める</button>
+                <button id="calibrateButton" disabled>ニュートラルを記録する（約1.2秒）</button>
+                <button id="stopButton" disabled>カメラを止める</button>
+                <button id="manualButton">テストモードを使う</button>
+            </div>
+
+            <section class="section">
+                <h2>この試作で確認すること</h2>
+                <div class="legend">
+                    <div class="legend-row"><span class="dot a"></span><span>Aの動きは、Aの図形の大きさ・縦の伸びを変える。</span></div>
+                    <div class="legend-row"><span class="dot b"></span><span>Bの動きは、Bの図形の大きさ・縦の伸びを変える。</span></div>
+                    <div class="legend-row"><span class="dot shared"></span><span>二人がともに動くと、接触部が現れ、図形が一つに見え始める。</span>
+                    </div>
+                </div>
+            </section>
+
+            <section id="manualPanel" class="section">
+                <h2>テスト入力</h2>
+                <div class="person-control">
+                    <strong>A</strong>
+                    <label class="range-row"><span>口の開き</span><input id="aJaw" type="range" min="0" max="1" step="0.01"
+                            value="0"><output id="aJawOut">0.00</output></label>
+                    <label class="range-row"><span>眉の上がり</span><input id="aBrow" type="range" min="0" max="1"
+                            step="0.01" value="0"><output id="aBrowOut">0.00</output></label>
+                </div>
+                <div class="person-control">
+                    <strong>B</strong>
+                    <label class="range-row"><span>口の開き</span><input id="bJaw" type="range" min="0" max="1" step="0.01"
+                            value="0"><output id="bJawOut">0.00</output></label>
+                    <label class="range-row"><span>眉の上がり</span><input id="bBrow" type="range" min="0" max="1"
+                            step="0.01" value="0"><output id="bBrowOut">0.00</output></label>
+                </div>
+                <p class="small-note">スライダーで、同調・差異・片方だけの動きを試せます。これはカメラなしで図形の挙動を確認するための補助です。</p>
+            </section>
+
+            <section class="section">
+                <h2>状態</h2>
+                <div id="metrics">A: --\nB: --\n共有: --</div>
+                <p class="small-note">二人が横並びでカメラに入り、途中で位置を入れ替えない前提です。</p>
+            </section>
+
+            <section class="section">
+                <h2>パイロット版のルール</h2>
+                <p class="small-note">同じ動きは「成功」、異なる動きは「失敗」ではありません。似ている／異なることは、接触部の別の形として現れます。</p>
+            </section>
+        </aside>
+    </main>
+
+    <script type="module">
+        import {
+            FaceLandmarker,
+            FilesetResolver
+        } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/vision_bundle.mjs";
+
+        const MODEL_ASSET_PATH = "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/latest/face_landmarker.task";
+        const WASM_ROOT = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm";
+        const FRAME_RATE = 60;
+        const FRAME_INTERVAL = 1000 / FRAME_RATE;
+
+        const $ = (selector) => document.querySelector(selector);
+        const clamp = (value, min = 0, max = 1) => Math.min(Math.max(value, min), max);
+        const lerp = (from, to, amount) => from + (to - from) * amount;
+        const average = (values) => values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
+        const calculateActivity = (jaw, brow) => clamp((jaw * 0.68) + (brow * 0.55));
+        const emptyFeatures = () => ({ jaw: 0, brow: 0, activity: 0 });
+
+        const elements = {
+            video: $("#webcam"),
+            videoWrap: $("#videoWrap"),
+            status: $("#status"),
+            cameraButton: $("#cameraButton"),
+            calibrateButton: $("#calibrateButton"),
+            stopButton: $("#stopButton"),
+            manualButton: $("#manualButton"),
+            manualPanel: $("#manualPanel"),
+            metrics: $("#metrics"),
+            blobA: $("#blobA"),
+            blobB: $("#blobB"),
+            bridge: $("#bridge"),
+            labelA: $("#labelA"),
+            labelB: $("#labelB"),
+            sharedCaption: $("#sharedCaption"),
+            aJaw: $("#aJaw"),
+            aBrow: $("#aBrow"),
+            bJaw: $("#bJaw"),
+            bBrow: $("#bBrow"),
+            aJawOut: $("#aJawOut"),
+            aBrowOut: $("#aBrowOut"),
+            bJawOut: $("#bJawOut"),
+            bBrowOut: $("#bBrowOut")
+        };
+
+        const app = {
+            faceLandmarker: null,
+            stream: null,
+            cameraRunning: false,
+            manualMode: false,
+            lastVideoTime: -1,
+            lastFrameAt: 0,
+            latestFaces: [],
+            baselines: { A: null, B: null },
+            calibration: { active: false, startedAt: 0, samplesA: [], samplesB: [] },
+            target: {
+                A: emptyFeatures(),
+                B: emptyFeatures()
+            },
+            current: {
+                A: emptyFeatures(),
+                B: emptyFeatures()
+            }
+        };
+
+        function resetTargets() {
+            app.target.A = emptyFeatures();
+            app.target.B = emptyFeatures();
+        }
+
+        function setStatus(message, tone = "warn") {
+            elements.status.textContent = message;
+            elements.status.dataset.tone = tone;
+        }
+
+        function updateButtonState() {
+            elements.cameraButton.disabled = app.cameraRunning;
+            elements.stopButton.disabled = !app.cameraRunning;
+            elements.calibrateButton.disabled = !app.cameraRunning || app.latestFaces.length < 2 || app.calibration.active;
+            elements.manualButton.classList.toggle("active", app.manualMode);
+            elements.manualButton.textContent = app.manualMode ? "テストモードを終了する" : "テストモードを使う";
+        }
+
+        function getCategoryScore(categories, name) {
+            const category = categories?.find((item) => item.categoryName === name);
+            return category?.score ?? 0;
+        }
+
+        function extractFaceFeature(result, index) {
+            const categories = result.faceBlendshapes?.[index]?.categories ?? [];
+            const landmark = result.faceLandmarks?.[index]?.[1];
+            const jaw = getCategoryScore(categories, "jawOpen");
+            const brow = (
+                getCategoryScore(categories, "browInnerUp") +
+                getCategoryScore(categories, "browOuterUpLeft") +
+                getCategoryScore(categories, "browOuterUpRight")
+            ) / 3;
+            return { x: landmark?.x ?? 0.5, jaw, brow };
+        }
+
+        function sortFacesForMirroredPreview(faces) {
+            // プレビュー映像は鏡像なので、画面上の左→右に合わせて生データのxを降順に扱う。
+            return [...faces].sort((a, b) => b.x - a.x);
+        }
+
+        function normalizedFeatures(face, baseline) {
+            const neutral = baseline ?? { jaw: 0.02, brow: 0.02 };
+            const jaw = clamp((face.jaw - neutral.jaw) / 0.42);
+            const brow = clamp((face.brow - neutral.brow) / 0.30);
+            const activity = calculateActivity(jaw, brow);
+            return { jaw, brow, activity };
+        }
+
+        function setTargetsFromFaces(faces) {
+            if (faces.length < 2) {
+                resetTargets();
+                return;
+            }
+
+            const [left, right] = sortFacesForMirroredPreview(faces);
+
+            if (app.calibration.active) {
+                app.calibration.samplesA.push({ jaw: left.jaw, brow: left.brow });
+                app.calibration.samplesB.push({ jaw: right.jaw, brow: right.brow });
+                const elapsed = performance.now() - app.calibration.startedAt;
+                setStatus(`ニュートラルを記録しています… ${Math.min(100, Math.round(elapsed / 12))}%`, "ready");
+                if (elapsed >= 1200) {
+                    app.baselines.A = {
+                        jaw: average(app.calibration.samplesA.map((item) => item.jaw)),
+                        brow: average(app.calibration.samplesA.map((item) => item.brow))
+                    };
+                    app.baselines.B = {
+                        jaw: average(app.calibration.samplesB.map((item) => item.jaw)),
+                        brow: average(app.calibration.samplesB.map((item) => item.brow))
+                    };
+                    app.calibration.active = false;
+                    setStatus("記録しました。二人で顔を動かして、図形が近づき方・溶け方を試してください。", "ready");
+                }
+            }
+
+            app.target.A = normalizedFeatures(left, app.baselines.A);
+            app.target.B = normalizedFeatures(right, app.baselines.B);
+        }
+
+        async function createLandmarker() {
+            if (app.faceLandmarker) return;
+            setStatus("顔の動きを読む準備をしています…", "warn");
+            const vision = await FilesetResolver.forVisionTasks(WASM_ROOT);
+            const options = (delegate) => ({
+                baseOptions: {
+                    modelAssetPath: MODEL_ASSET_PATH,
+                    delegate
+                },
+                runningMode: "VIDEO",
+                numFaces: 2,
+                outputFaceBlendshapes: true,
+                minFaceDetectionConfidence: 0.55,
+                minFacePresenceConfidence: 0.55,
+                minTrackingConfidence: 0.55
+            });
+
+            try {
+                app.faceLandmarker = await FaceLandmarker.createFromOptions(vision, options("GPU"));
+            } catch (gpuError) {
+                console.warn("GPU delegate was unavailable. Falling back to CPU.", gpuError);
+                app.faceLandmarker = await FaceLandmarker.createFromOptions(vision, options("CPU"));
+            }
+        }
+
+        async function startCamera() {
+            try {
+                app.manualMode = false;
+                elements.manualPanel.classList.remove("is-visible");
+                await createLandmarker();
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: {
+                        facingMode: "user",
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 },
+                        frameRate: { ideal: FRAME_RATE, max: FRAME_RATE }
+                    },
+                    audio: false
+                });
+                app.stream = stream;
+                elements.video.srcObject = stream;
+                await elements.video.play();
+                app.cameraRunning = true;
+                app.lastVideoTime = -1;
+                elements.videoWrap.classList.add("is-visible");
+                setStatus("二人が横並びでカメラに入ったら、「ニュートラルを記録する」を押してください。", "ready");
+                updateButtonState();
+            } catch (error) {
+                console.error(error);
+                setStatus(`カメラを開始できませんでした。${error?.message ?? "ブラウザのカメラ権限を確認してください。"}`, "error");
+                updateButtonState();
+            }
+        }
+
+        function stopCamera() {
+            app.stream?.getTracks().forEach((track) => track.stop());
+            app.stream = null;
+            elements.video.srcObject = null;
+            app.cameraRunning = false;
+            app.latestFaces = [];
+            app.calibration = { active: false, startedAt: 0, samplesA: [], samplesB: [] };
+            resetTargets();
+            elements.videoWrap.classList.remove("is-visible");
+            setStatus("カメラを停止しました。必要ならテストモードで形の変化を確認できます。", "warn");
+            updateButtonState();
+        }
+
+        function startCalibration() {
+            if (app.latestFaces.length < 2) {
+                setStatus("二人の顔が同時に認識されてから、もう一度押してください。", "warn");
+                return;
+            }
+            app.calibration = { active: true, startedAt: performance.now(), samplesA: [], samplesB: [] };
+            updateButtonState();
+        }
+
+        function toggleManualMode() {
+            app.manualMode = !app.manualMode;
+            elements.manualPanel.classList.toggle("is-visible", app.manualMode);
+            if (app.manualMode) {
+                updateManualTargets();
+                setStatus("テストモードです。二人のスライダーを動かして、同調・差異・片側だけの変化を確認してください。", "ready");
+            } else if (!app.cameraRunning) {
+                setStatus("テストモードを終了しました。カメラを始めるか、再度テストモードを使ってください。", "warn");
+            }
+            updateButtonState();
+        }
+
+        function updateManualTargets() {
+            const aJaw = Number(elements.aJaw.value);
+            const aBrow = Number(elements.aBrow.value);
+            const bJaw = Number(elements.bJaw.value);
+            const bBrow = Number(elements.bBrow.value);
+            elements.aJawOut.value = aJaw.toFixed(2);
+            elements.aBrowOut.value = aBrow.toFixed(2);
+            elements.bJawOut.value = bJaw.toFixed(2);
+            elements.bBrowOut.value = bBrow.toFixed(2);
+
+            if (!app.manualMode) return;
+            app.target.A = { jaw: aJaw, brow: aBrow, activity: calculateActivity(aJaw, aBrow) };
+            app.target.B = { jaw: bJaw, brow: bBrow, activity: calculateActivity(bJaw, bBrow) };
+        }
+
+        function smoothState() {
+            for (const key of ["A", "B"]) {
+                const current = app.current[key];
+                const target = app.target[key];
+                current.jaw = lerp(current.jaw, target.jaw, 0.16);
+                current.brow = lerp(current.brow, target.brow, 0.14);
+                current.activity = lerp(current.activity, target.activity, 0.12);
+            }
+        }
+
+        function point(x, y) { return { x, y }; }
+
+        function smoothClosedPath(points) {
+            const midpoint = (a, b) => point((a.x + b.x) / 2, (a.y + b.y) / 2);
+            const start = midpoint(points[points.length - 1], points[0]);
+            let d = `M ${start.x.toFixed(1)} ${start.y.toFixed(1)} `;
+            for (let i = 0; i < points.length; i += 1) {
+                const current = points[i];
+                const next = points[(i + 1) % points.length];
+                const nextMid = midpoint(current, next);
+                d += `Q ${current.x.toFixed(1)} ${current.y.toFixed(1)} ${nextMid.x.toFixed(1)} ${nextMid.y.toFixed(1)} `;
+            }
+            return `${d}Z`;
+        }
+
+        function createBlobPath({ cx, cy, radius, jaw, brow, otherJaw, otherBrow, side, fusion }) {
+            const points = [];
+            const count = 26;
+            const isA = side === "A";
+            const innerAngle = isA ? 0 : Math.PI;
+
+            for (let index = 0; index < count; index += 1) {
+                const angle = (Math.PI * 2 * index) / count;
+                const cos = Math.cos(angle);
+                const sin = Math.sin(angle);
+                const topness = clamp((-sin + 0.15) / 1.15);
+                const innerness = Math.max(0, Math.cos(angle - innerAngle));
+                const outerness = Math.max(0, Math.cos(angle - (innerAngle + Math.PI)));
+
+                const baseX = radius * (1 + 0.08 * Math.sin(angle * 3 + brow * 2.6));
+                const baseY = radius * (1.02 + jaw * 0.9);
+                const browBulge = brow * radius * 0.40 * topness;
+                const innerCross = fusion * ((otherJaw * 0.25) + (otherBrow * 0.38)) * radius * innerness;
+                const outerEase = fusion * otherJaw * 0.08 * radius * outerness;
+                const ripples = radius * 0.05 * Math.sin(angle * 4 + jaw * 5.4 + brow * 2.1);
+
+                points.push(point(
+                    cx + cos * (baseX + innerCross - outerEase + ripples),
+                    cy + sin * (baseY + browBulge + ripples)
+                ));
+            }
+            return smoothClosedPath(points);
+        }
+
+        function bridgePath({ xA, xB, cy, height, shift, fusion }) {
+            const leftX = xA + 70;
+            const rightX = xB - 70;
+            const topLeft = cy - height / 2;
+            const bottomLeft = cy + height / 2;
+            const topRight = cy - height / 2 + shift;
+            const bottomRight = cy + height / 2 + shift;
+            const curve = (rightX - leftX) * (0.25 + fusion * 0.25);
+            return [
+                `M ${leftX.toFixed(1)} ${topLeft.toFixed(1)}`,
+                `C ${(leftX + curve).toFixed(1)} ${(topLeft - height * .25).toFixed(1)}, ${(rightX - curve).toFixed(1)} ${(topRight - height * .25).toFixed(1)}, ${rightX.toFixed(1)} ${topRight.toFixed(1)}`,
+                `L ${rightX.toFixed(1)} ${bottomRight.toFixed(1)}`,
+                `C ${(rightX - curve).toFixed(1)} ${(bottomRight + height * .25).toFixed(1)}, ${(leftX + curve).toFixed(1)} ${(bottomLeft + height * .25).toFixed(1)}, ${leftX.toFixed(1)} ${bottomLeft.toFixed(1)}`,
+                "Z"
+            ].join(" ");
+        }
+
+        function renderArtwork() {
+            const A = app.current.A;
+            const B = app.current.B;
+            const joint = clamp(Math.min(A.activity, B.activity) * 1.55);
+            const difference = clamp((Math.abs(A.jaw - B.jaw) + Math.abs(A.brow - B.brow)) * 0.68);
+            const cx = 600;
+            const cy = 390;
+            const distance = lerp(520, 168, joint);
+            const xA = cx - distance / 2;
+            const xB = cx + distance / 2;
+            const radiusA = 104 + A.activity * 66;
+            const radiusB = 104 + B.activity * 66;
+            const bridgeHeight = joint > 0.035 ? 18 + joint * 128 + difference * 48 : 0;
+            const bridgeShift = ((A.jaw - B.jaw) * 72) + ((A.brow - B.brow) * 42);
+
+            elements.blobA.setAttribute("d", createBlobPath({
+                cx: xA, cy, radius: radiusA,
+                jaw: A.jaw, brow: A.brow,
+                otherJaw: B.jaw, otherBrow: B.brow,
+                side: "A", fusion: joint
+            }));
+            elements.blobB.setAttribute("d", createBlobPath({
+                cx: xB, cy, radius: radiusB,
+                jaw: B.jaw, brow: B.brow,
+                otherJaw: A.jaw, otherBrow: A.brow,
+                side: "B", fusion: joint
+            }));
+            elements.bridge.setAttribute("d", bridgePath({ xA, xB, cy, height: bridgeHeight, shift: bridgeShift, fusion: joint }));
+            elements.bridge.setAttribute("opacity", joint > 0.025 ? String(clamp(joint * 1.2)) : "0");
+            elements.labelA.setAttribute("x", xA.toFixed(1));
+            elements.labelB.setAttribute("x", xB.toFixed(1));
+            elements.labelA.setAttribute("opacity", String(1 - joint * 0.92));
+            elements.labelB.setAttribute("opacity", String(1 - joint * 0.92));
+            elements.sharedCaption.setAttribute("opacity", String(clamp((joint - .18) * 1.5)));
+
+            elements.metrics.textContent = [
+                `A  活動量 ${A.activity.toFixed(2)}  口 ${A.jaw.toFixed(2)}  眉 ${A.brow.toFixed(2)}`,
+                `B  活動量 ${B.activity.toFixed(2)}  口 ${B.jaw.toFixed(2)}  眉 ${B.brow.toFixed(2)}`,
+                `共有  融合 ${joint.toFixed(2)}  差異 ${difference.toFixed(2)}`
+            ].join("\n");
+        }
+
+        function detectFaces() {
+            if (app.manualMode || !app.cameraRunning || !app.faceLandmarker || elements.video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return;
+            if (elements.video.currentTime === app.lastVideoTime) return;
+
+            try {
+                const result = app.faceLandmarker.detectForVideo(elements.video, performance.now());
+                app.lastVideoTime = elements.video.currentTime;
+                const faces = (result.faceLandmarks ?? []).map((_, index) => extractFaceFeature(result, index));
+                app.latestFaces = faces;
+
+                if (faces.length >= 2) {
+                    setTargetsFromFaces(faces);
+                    if (!app.calibration.active && !app.baselines.A) {
+                        setStatus("二人を認識しました。「ニュートラルを記録する」を押してください。", "ready");
+                    }
+                } else if (!app.calibration.active) {
+                    resetTargets();
+                    setStatus("二人の顔が同時に見える位置へ移動してください。横並びで、顔が重ならないようにしてください。", "warn");
+                }
+                updateButtonState();
+            } catch (error) {
+                console.warn("Face detection error", error);
+            }
+        }
+
+        function renderLoop(timestamp) {
+            requestAnimationFrame(renderLoop);
+            if (timestamp - app.lastFrameAt < FRAME_INTERVAL) return;
+            app.lastFrameAt = timestamp - ((timestamp - app.lastFrameAt) % FRAME_INTERVAL);
+
+            detectFaces();
+            smoothState();
+            renderArtwork();
+        }
+
+        elements.cameraButton.addEventListener("click", startCamera);
+        elements.stopButton.addEventListener("click", stopCamera);
+        elements.calibrateButton.addEventListener("click", startCalibration);
+        elements.manualButton.addEventListener("click", toggleManualMode);
+        [elements.aJaw, elements.aBrow, elements.bJaw, elements.bBrow].forEach((input) => input.addEventListener("input", updateManualTargets));
+
+        updateManualTargets();
+        updateButtonState();
+        requestAnimationFrame(renderLoop);
+    </script>
+</body>
+
+</html>
