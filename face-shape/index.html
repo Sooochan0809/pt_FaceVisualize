@@ -173,19 +173,6 @@
             margin: 0 auto;
         }
 
-        .control-title {
-            margin: 0 0 5px;
-            font-size: 18px;
-            font-weight: 700;
-        }
-
-        .control-subtitle {
-            margin: 0 0 18px;
-            font-size: 12px;
-            color: var(--muted);
-            line-height: 1.65;
-        }
-
         .section {
             margin-top: 18px;
             padding-top: 18px;
@@ -472,7 +459,7 @@
                     </linearGradient>
                     <linearGradient id="fillShared" x1="0" y1="0" x2="1" y2="0">
                         <stop id="fillSharedLeft" offset="0" stop-color="#5b80c4" />
-                        <stop id="fillSharedCenter" offset=".5" stop-color="#8b66ad" />
+                        <stop offset=".5" stop-color="#8b66ad" />
                         <stop id="fillSharedRight" offset="1" stop-color="#d17a5a" />
                     </linearGradient>
                     <filter id="softShadow" x="-25%" y="-25%" width="150%" height="150%">
@@ -530,69 +517,9 @@
 
             <section id="manualPanel" class="section">
                 <h2>テスト入力</h2>
-                <div class="person-control">
-                    <strong>A</strong>
-                    <label class="range-row"><span>口の開き</span><input id="aJaw" type="range" min="0" max="1" step="0.01"
-                            value="0"><output id="aJawOut">0.00</output></label>
-                    <label class="range-row"><span>眉の上がり</span><input id="aBrow" type="range" min="0" max="1"
-                            step="0.01" value="0"><output id="aBrowOut">0.00</output></label>
-                    <label class="range-row"><span>眉の下がり</span><input id="aBrowDown" type="range" min="0" max="1"
-                            step="0.01" value="0"><output id="aBrowDownOut">0.00</output></label>
-                    <label class="range-row"><span>笑顔</span><input id="aSmile" type="range" min="0" max="1"
-                            step="0.01" value="0"><output id="aSmileOut">0.00</output></label>
-                    <label class="range-row"><span>口角下げ</span><input id="aFrown" type="range" min="0" max="1"
-                            step="0.01" value="0"><output id="aFrownOut">0.00</output></label>
-                    <label class="range-row"><span>口すぼめ</span><input id="aPucker" type="range" min="0" max="1"
-                            step="0.01" value="0"><output id="aPuckerOut">0.00</output></label>
-                    <label class="range-row"><span>まばたき</span><input id="aBlink" type="range" min="0" max="1"
-                            step="0.01" value="0"><output id="aBlinkOut">0.00</output></label>
-                    <label class="range-row"><span>目細め</span><input id="aSquint" type="range" min="0" max="1"
-                            step="0.01" value="0"><output id="aSquintOut">0.00</output></label>
-                    <label class="range-row"><span>視線・左右</span><input id="aGazeX" type="range" min="-1" max="1"
-                            step="0.01" value="0"><output id="aGazeXOut">0.00</output></label>
-                    <label class="range-row"><span>視線・上下</span><input id="aGazeY" type="range" min="-1" max="1"
-                            step="0.01" value="0"><output id="aGazeYOut">0.00</output></label>
-                    <label class="range-row"><span>口を押さえる</span><input id="aMouthPress" type="range" min="0" max="1"
-                            step="0.01" value="0"><output id="aMouthPressOut">0.00</output></label>
-                    <label class="range-row"><span>口を横へ伸ばす</span><input id="aMouthStretch" type="range" min="0" max="1"
-                            step="0.01" value="0"><output id="aMouthStretchOut">0.00</output></label>
-                    <label class="range-row"><span>唇の巻き込み</span><input id="aMouthRoll" type="range" min="0" max="1"
-                            step="0.01" value="0"><output id="aMouthRollOut">0.00</output></label>
-                    <label class="range-row"><span>口の左右移動</span><input id="aMouthShift" type="range" min="-1" max="1"
-                            step="0.01" value="0"><output id="aMouthShiftOut">0.00</output></label>
-                </div>
-                <div class="person-control">
-                    <strong>B</strong>
-                    <label class="range-row"><span>口の開き</span><input id="bJaw" type="range" min="0" max="1" step="0.01"
-                            value="0"><output id="bJawOut">0.00</output></label>
-                    <label class="range-row"><span>眉の上がり</span><input id="bBrow" type="range" min="0" max="1"
-                            step="0.01" value="0"><output id="bBrowOut">0.00</output></label>
-                    <label class="range-row"><span>眉の下がり</span><input id="bBrowDown" type="range" min="0" max="1"
-                            step="0.01" value="0"><output id="bBrowDownOut">0.00</output></label>
-                    <label class="range-row"><span>笑顔</span><input id="bSmile" type="range" min="0" max="1"
-                            step="0.01" value="0"><output id="bSmileOut">0.00</output></label>
-                    <label class="range-row"><span>口角下げ</span><input id="bFrown" type="range" min="0" max="1"
-                            step="0.01" value="0"><output id="bFrownOut">0.00</output></label>
-                    <label class="range-row"><span>口すぼめ</span><input id="bPucker" type="range" min="0" max="1"
-                            step="0.01" value="0"><output id="bPuckerOut">0.00</output></label>
-                    <label class="range-row"><span>まばたき</span><input id="bBlink" type="range" min="0" max="1"
-                            step="0.01" value="0"><output id="bBlinkOut">0.00</output></label>
-                    <label class="range-row"><span>目細め</span><input id="bSquint" type="range" min="0" max="1"
-                            step="0.01" value="0"><output id="bSquintOut">0.00</output></label>
-                    <label class="range-row"><span>視線・左右</span><input id="bGazeX" type="range" min="-1" max="1"
-                            step="0.01" value="0"><output id="bGazeXOut">0.00</output></label>
-                    <label class="range-row"><span>視線・上下</span><input id="bGazeY" type="range" min="-1" max="1"
-                            step="0.01" value="0"><output id="bGazeYOut">0.00</output></label>
-                    <label class="range-row"><span>口を押さえる</span><input id="bMouthPress" type="range" min="0" max="1"
-                            step="0.01" value="0"><output id="bMouthPressOut">0.00</output></label>
-                    <label class="range-row"><span>口を横へ伸ばす</span><input id="bMouthStretch" type="range" min="0" max="1"
-                            step="0.01" value="0"><output id="bMouthStretchOut">0.00</output></label>
-                    <label class="range-row"><span>唇の巻き込み</span><input id="bMouthRoll" type="range" min="0" max="1"
-                            step="0.01" value="0"><output id="bMouthRollOut">0.00</output></label>
-                    <label class="range-row"><span>口の左右移動</span><input id="bMouthShift" type="range" min="-1" max="1"
-                            step="0.01" value="0"><output id="bMouthShiftOut">0.00</output></label>
-                </div>
-                <p class="small-note">これらのスライダーは38項目へのショートカットです。カメラなしで結合と分離の挙動を確認できます。</p>
+                <div id="manualControlsA" class="person-control"></div>
+                <div id="manualControlsB" class="person-control"></div>
+                <p class="small-note">dataset02で有効な38項目の補正後の値（-1〜1）を直接操作します。</p>
             </section>
 
             <section class="section">
@@ -655,22 +582,7 @@
             "mouthSmileRight", "mouthStretchLeft", "mouthStretchRight", "mouthUpperUpLeft", "mouthUpperUpRight"
         ];
         const BLENDSHAPE_GAIN = 12;
-        const FEATURE_KEYS = [
-            "jaw", "brow", "browDown", "smile", "frown", "pucker",
-            "blink", "squint", "gazeX", "gazeY", "mouthPress", "mouthStretch", "mouthRoll", "mouthShift"
-        ];
-        const SIGNED_FEATURES = new Set(["gazeX", "gazeY", "mouthShift"]);
-        const FEATURE_RANGES = {
-            jaw: 0.42, brow: 0.30, browDown: 0.38, smile: 0.45, frown: 0.42, pucker: 0.50,
-            blink: 0.72, squint: 0.45, gazeX: 0.45, gazeY: 0.45,
-            mouthPress: 0.50, mouthStretch: 0.50, mouthRoll: 0.50, mouthShift: 0.45
-        };
-        const calculateActivity = ({ jaw, brow, browDown, smile, frown, pucker, blink, squint, gazeX, gazeY, mouthPress, mouthStretch, mouthRoll, mouthShift }) => clamp(
-            jaw * 0.18 + brow * 0.09 + browDown * 0.08 + smile * 0.13 + frown * 0.08 + pucker * 0.10 +
-            blink * 0.07 + squint * 0.08 + Math.abs(gazeX) * 0.05 + Math.abs(gazeY) * 0.05 +
-            mouthPress * 0.08 + mouthStretch * 0.10 + mouthRoll * 0.07 + Math.abs(mouthShift) * 0.06
-        );
-        const emptyFeatures = () => Object.fromEntries([...FEATURE_KEYS.map((key) => [key, 0]), ["activity", 0]]);
+        const emptyMotion = () => ({ activity: 0 });
 
         const elements = {
             app: $("#app"),
@@ -694,67 +606,40 @@
             fillBInner: $("#fillBInner"),
             fillBOuter: $("#fillBOuter"),
             fillSharedLeft: $("#fillSharedLeft"),
-            fillSharedCenter: $("#fillSharedCenter"),
             fillSharedRight: $("#fillSharedRight"),
             labelA: $("#labelA"),
-            labelB: $("#labelB"),
-            aJaw: $("#aJaw"),
-            aBrow: $("#aBrow"),
-            aBrowDown: $("#aBrowDown"),
-            aSmile: $("#aSmile"),
-            aFrown: $("#aFrown"),
-            aPucker: $("#aPucker"),
-            aBlink: $("#aBlink"),
-            aSquint: $("#aSquint"),
-            aGazeX: $("#aGazeX"),
-            aGazeY: $("#aGazeY"),
-            aMouthPress: $("#aMouthPress"),
-            aMouthStretch: $("#aMouthStretch"),
-            aMouthRoll: $("#aMouthRoll"),
-            aMouthShift: $("#aMouthShift"),
-            bJaw: $("#bJaw"),
-            bBrow: $("#bBrow"),
-            bBrowDown: $("#bBrowDown"),
-            bSmile: $("#bSmile"),
-            bFrown: $("#bFrown"),
-            bPucker: $("#bPucker"),
-            bBlink: $("#bBlink"),
-            bSquint: $("#bSquint"),
-            bGazeX: $("#bGazeX"),
-            bGazeY: $("#bGazeY"),
-            bMouthPress: $("#bMouthPress"),
-            bMouthStretch: $("#bMouthStretch"),
-            bMouthRoll: $("#bMouthRoll"),
-            bMouthShift: $("#bMouthShift"),
-            aJawOut: $("#aJawOut"),
-            aBrowOut: $("#aBrowOut"),
-            aBrowDownOut: $("#aBrowDownOut"),
-            aSmileOut: $("#aSmileOut"),
-            aFrownOut: $("#aFrownOut"),
-            aPuckerOut: $("#aPuckerOut"),
-            aBlinkOut: $("#aBlinkOut"),
-            aSquintOut: $("#aSquintOut"),
-            aGazeXOut: $("#aGazeXOut"),
-            aGazeYOut: $("#aGazeYOut"),
-            aMouthPressOut: $("#aMouthPressOut"),
-            aMouthStretchOut: $("#aMouthStretchOut"),
-            aMouthRollOut: $("#aMouthRollOut"),
-            aMouthShiftOut: $("#aMouthShiftOut"),
-            bJawOut: $("#bJawOut"),
-            bBrowOut: $("#bBrowOut"),
-            bBrowDownOut: $("#bBrowDownOut"),
-            bSmileOut: $("#bSmileOut"),
-            bFrownOut: $("#bFrownOut"),
-            bPuckerOut: $("#bPuckerOut"),
-            bBlinkOut: $("#bBlinkOut"),
-            bSquintOut: $("#bSquintOut"),
-            bGazeXOut: $("#bGazeXOut"),
-            bGazeYOut: $("#bGazeYOut"),
-            bMouthPressOut: $("#bMouthPressOut"),
-            bMouthStretchOut: $("#bMouthStretchOut"),
-            bMouthRollOut: $("#bMouthRollOut"),
-            bMouthShiftOut: $("#bMouthShiftOut"),
+            labelB: $("#labelB")
         };
+
+        const manualControls = Object.fromEntries(["A", "B"].map((person) => {
+            const prefix = person.toLowerCase();
+            const container = $(`#manualControls${person}`);
+            const heading = document.createElement("strong");
+            heading.textContent = person;
+            const controls = Object.fromEntries(ENABLED_BLENDSHAPES.map((name) => {
+                const suffix = `${name[0].toUpperCase()}${name.slice(1)}`;
+                const label = document.createElement("label");
+                const text = document.createElement("span");
+                const input = document.createElement("input");
+                const output = document.createElement("output");
+                label.className = "range-row";
+                text.textContent = name;
+                Object.assign(input, { id: `${prefix}${suffix}`, type: "range", min: -1, max: 1, step: 0.01, value: 0 });
+                output.id = `${prefix}${suffix}Out`;
+                output.value = "0.00";
+                label.append(text, input, output);
+                container.append(label);
+                return [name, { input, output }];
+            }));
+            container.prepend(heading);
+            return [person, controls];
+        }));
+        const createCalibration = (active = false) => ({
+            active,
+            startedAt: active ? performance.now() : 0,
+            samplesA: [],
+            samplesB: []
+        });
 
         const app = {
             faceLandmarker: null,
@@ -766,7 +651,7 @@
             lastFrameAt: 0,
             latestFaces: [],
             baselines: { A: null, B: null },
-            calibration: { active: false, startedAt: 0, samplesA: [], samplesB: [] },
+            calibration: createCalibration(),
             fusionLockedUntil: 0,
             fusionLockActive: false,
             fusion: 0,
@@ -776,18 +661,18 @@
             blendshapeRows: { A: new Map(), B: new Map() },
             lastMonitorAt: 0,
             target: {
-                A: emptyFeatures(),
-                B: emptyFeatures()
+                A: emptyMotion(),
+                B: emptyMotion()
             },
             current: {
-                A: emptyFeatures(),
-                B: emptyFeatures()
+                A: emptyMotion(),
+                B: emptyMotion()
             }
         };
 
         function resetTargets() {
-            app.target.A = emptyFeatures();
-            app.target.B = emptyFeatures();
+            app.target.A = emptyMotion();
+            app.target.B = emptyMotion();
             app.blendshapeTarget.A = {};
             app.blendshapeTarget.B = {};
         }
@@ -856,80 +741,16 @@
             }
         }
 
-        function getCategoryScore(categories, name) {
-            const category = categories?.find((item) => item.categoryName === name);
-            return category?.score ?? 0;
-        }
-
         function extractEnabledBlendshapes(categories) {
-            return Object.fromEntries(ENABLED_BLENDSHAPES.map((name) => [name, getCategoryScore(categories, name)]));
+            const scores = new Map(categories.map(({ categoryName, score }) => [categoryName, score]));
+            return Object.fromEntries(ENABLED_BLENDSHAPES.map((name) => [name, scores.get(name) ?? 0]));
         }
 
-        function extractFaceFeature(result, index) {
+        function extractFaceInput(result, index) {
             const categories = result.faceBlendshapes?.[index]?.categories ?? [];
             const landmark = result.faceLandmarks?.[index]?.[1];
-            const jaw = getCategoryScore(categories, "jawOpen");
-            const brow = (
-                getCategoryScore(categories, "browInnerUp") +
-                getCategoryScore(categories, "browOuterUpLeft") +
-                getCategoryScore(categories, "browOuterUpRight")
-            ) / 3;
-            const browDown = (
-                getCategoryScore(categories, "browDownLeft") +
-                getCategoryScore(categories, "browDownRight")
-            ) / 2;
-            const smile = (
-                getCategoryScore(categories, "mouthSmileLeft") +
-                getCategoryScore(categories, "mouthSmileRight")
-            ) / 2;
-            const frown = getCategoryScore(categories, "mouthFrownRight");
-            const pucker = Math.max(
-                getCategoryScore(categories, "mouthPucker"),
-                getCategoryScore(categories, "mouthFunnel")
-            );
-            const blink = (
-                getCategoryScore(categories, "eyeBlinkLeft") +
-                getCategoryScore(categories, "eyeBlinkRight")
-            ) / 2;
-            const squint = (
-                getCategoryScore(categories, "eyeSquintLeft") +
-                getCategoryScore(categories, "eyeSquintRight")
-            ) / 2;
-            const gazeRight = average([
-                getCategoryScore(categories, "eyeLookInLeft"),
-                getCategoryScore(categories, "eyeLookOutRight")
-            ]);
-            const gazeLeft = average([
-                getCategoryScore(categories, "eyeLookOutLeft"),
-                getCategoryScore(categories, "eyeLookInRight")
-            ]);
-            const gazeUp = average([
-                getCategoryScore(categories, "eyeLookUpLeft"),
-                getCategoryScore(categories, "eyeLookUpRight")
-            ]);
-            const gazeDown = average([
-                getCategoryScore(categories, "eyeLookDownLeft"),
-                getCategoryScore(categories, "eyeLookDownRight")
-            ]);
-            const gazeX = gazeRight - gazeLeft;
-            const gazeY = gazeUp - gazeDown;
-            const mouthPress = average([
-                getCategoryScore(categories, "mouthPressLeft"),
-                getCategoryScore(categories, "mouthPressRight")
-            ]);
-            const mouthStretch = average([
-                getCategoryScore(categories, "mouthStretchLeft"),
-                getCategoryScore(categories, "mouthStretchRight")
-            ]);
-            const mouthRoll = Math.max(
-                getCategoryScore(categories, "mouthRollLower"),
-                getCategoryScore(categories, "mouthRollUpper")
-            );
-            const mouthShift = getCategoryScore(categories, "mouthRight") - getCategoryScore(categories, "mouthLeft");
             return {
                 x: landmark?.x ?? 0.5,
-                jaw, brow, browDown, smile, frown, pucker, blink, squint,
-                gazeX, gazeY, mouthPress, mouthStretch, mouthRoll, mouthShift,
                 blendshapes: extractEnabledBlendshapes(categories)
             };
         }
@@ -939,35 +760,9 @@
             return [...faces].sort((a, b) => b.x - a.x);
         }
 
-        function normalizedFeatures(face, baseline) {
-            const neutral = baseline ?? Object.fromEntries(FEATURE_KEYS.map((key) => [key, { mean: 0.02, dead: 0.01 }]));
-            const features = Object.fromEntries(FEATURE_KEYS.map((key) => {
-                const entry = neutral[key] ?? { mean: 0, dead: 0.01 };
-                const mean = typeof entry === "number" ? entry : entry.mean;
-                const dead = typeof entry === "number" ? 0.01 : entry.dead;
-                const difference = face[key] - mean;
-                const motion = SIGNED_FEATURES.has(key)
-                    ? Math.sign(difference) * Math.max(Math.abs(difference) - dead, 0)
-                    : Math.max(difference - dead, 0);
-                return [key, SIGNED_FEATURES.has(key)
-                    ? clamp(motion / FEATURE_RANGES[key], -1, 1)
-                    : clamp(motion / FEATURE_RANGES[key])];
-            }));
-            return { ...features, activity: calculateActivity(features) };
-        }
-
-        function averageFeatureSamples(samples) {
-            return Object.fromEntries(FEATURE_KEYS.map((key) => {
-                const values = samples.map((sample) => sample[key]);
-                const mean = average(values);
-                const variance = average(values.map((value) => (value - mean) ** 2));
-                return [key, { mean, dead: Math.max(Math.sqrt(variance) * 3, 0.01) }];
-            }));
-        }
-
         function averageBlendshapeSamples(samples) {
             return Object.fromEntries(ENABLED_BLENDSHAPES.map((name) => {
-                const values = samples.map((sample) => sample.blendshapes[name] ?? 0);
+                const values = samples.map((sample) => sample[name] ?? 0);
                 const mean = average(values);
                 const variance = average(values.map((value) => (value - mean) ** 2));
                 return [name, { mean, dead: Math.max(Math.sqrt(variance) * 3, 0.003) }];
@@ -988,43 +783,6 @@
             return average(strongest);
         }
 
-        function manualBlendshapes(features) {
-            const values = Object.fromEntries(ENABLED_BLENDSHAPES.map((name) => [name, 0]));
-            const pair = (left, right, value) => {
-                values[left] = value;
-                values[right] = value;
-            };
-            values.jawOpen = features.jaw;
-            values.browInnerUp = features.brow;
-            pair("browOuterUpLeft", "browOuterUpRight", features.brow);
-            pair("browDownLeft", "browDownRight", features.browDown);
-            pair("mouthSmileLeft", "mouthSmileRight", features.smile);
-            values.mouthFrownRight = features.frown;
-            values.mouthPucker = features.pucker;
-            values.mouthFunnel = features.pucker;
-            pair("eyeBlinkLeft", "eyeBlinkRight", features.blink);
-            pair("eyeSquintLeft", "eyeSquintRight", features.squint);
-            pair("mouthPressLeft", "mouthPressRight", features.mouthPress);
-            pair("mouthStretchLeft", "mouthStretchRight", features.mouthStretch);
-            values.mouthRollLower = features.mouthRoll;
-            values.mouthRollUpper = features.mouthRoll;
-            if (features.gazeX >= 0) {
-                values.eyeLookInLeft = features.gazeX;
-                values.eyeLookOutRight = features.gazeX;
-            } else {
-                values.eyeLookOutLeft = -features.gazeX;
-                values.eyeLookInRight = -features.gazeX;
-            }
-            if (features.gazeY >= 0) {
-                pair("eyeLookUpLeft", "eyeLookUpRight", features.gazeY);
-            } else {
-                pair("eyeLookDownLeft", "eyeLookDownRight", -features.gazeY);
-            }
-            values.mouthRight = Math.max(features.mouthShift, 0);
-            values.mouthLeft = Math.max(-features.mouthShift, 0);
-            return values;
-        }
-
         function setTargetsFromFaces(faces) {
             if (faces.length < 2) {
                 resetTargets();
@@ -1034,21 +792,13 @@
             const [left, right] = sortFacesForMirroredPreview(faces);
 
             if (app.calibration.active) {
-                app.calibration.samplesA.push({
-                    ...Object.fromEntries(FEATURE_KEYS.map((key) => [key, left[key]])),
-                    blendshapes: left.blendshapes
-                });
-                app.calibration.samplesB.push({
-                    ...Object.fromEntries(FEATURE_KEYS.map((key) => [key, right[key]])),
-                    blendshapes: right.blendshapes
-                });
+                app.calibration.samplesA.push(left.blendshapes);
+                app.calibration.samplesB.push(right.blendshapes);
                 const elapsed = performance.now() - app.calibration.startedAt;
                 setStatus(`ニュートラルを記録しています… ${Math.min(100, Math.round(elapsed / 12))}%`, "ready");
                 if (elapsed >= 1200) {
-                    app.baselines.A = averageFeatureSamples(app.calibration.samplesA);
-                    app.baselines.B = averageFeatureSamples(app.calibration.samplesB);
-                    app.baselines.A.blendshapes = averageBlendshapeSamples(app.calibration.samplesA);
-                    app.baselines.B.blendshapes = averageBlendshapeSamples(app.calibration.samplesB);
+                    app.baselines.A = averageBlendshapeSamples(app.calibration.samplesA);
+                    app.baselines.B = averageBlendshapeSamples(app.calibration.samplesB);
                     app.calibration.active = false;
                     app.fusionLockedUntil = performance.now() + FUSION_LOCK_DURATION;
                     app.fusionLockActive = true;
@@ -1063,10 +813,8 @@
                 return;
             }
 
-            app.target.A = normalizedFeatures(left, app.baselines.A);
-            app.target.B = normalizedFeatures(right, app.baselines.B);
-            app.blendshapeTarget.A = normalizedBlendshapes(left.blendshapes, app.baselines.A?.blendshapes);
-            app.blendshapeTarget.B = normalizedBlendshapes(right.blendshapes, app.baselines.B?.blendshapes);
+            app.blendshapeTarget.A = normalizedBlendshapes(left.blendshapes, app.baselines.A);
+            app.blendshapeTarget.B = normalizedBlendshapes(right.blendshapes, app.baselines.B);
             app.target.A.activity = clamp(blendshapeActivity(app.blendshapeTarget.A) * 0.45);
             app.target.B.activity = clamp(blendshapeActivity(app.blendshapeTarget.B) * 0.45);
         }
@@ -1139,7 +887,7 @@
             app.cameraRunning = false;
             app.latestFaces = [];
             app.baselines = { A: null, B: null };
-            app.calibration = { active: false, startedAt: 0, samplesA: [], samplesB: [] };
+            app.calibration = createCalibration();
             app.fusionLockedUntil = 0;
             app.fusionLockActive = false;
             app.fusion = 0;
@@ -1162,7 +910,7 @@
                 setStatus("二人の顔が同時に認識されてから、もう一度押してください。", "warn");
                 return;
             }
-            app.calibration = { active: true, startedAt: performance.now(), samplesA: [], samplesB: [] };
+            app.calibration = createCalibration(true);
             updateButtonState();
         }
 
@@ -1179,29 +927,26 @@
         }
 
         function updateManualTargets() {
-            const readPerson = (prefix) => Object.fromEntries(FEATURE_KEYS.map((key) => {
-                const elementKey = `${prefix}${key[0].toUpperCase()}${key.slice(1)}`;
-                const value = Number(elements[elementKey].value);
-                elements[`${elementKey}Out`].value = value.toFixed(2);
-                return [key, value];
+            const readPerson = (person) => Object.fromEntries(ENABLED_BLENDSHAPES.map((name) => {
+                const { input, output } = manualControls[person][name];
+                const value = Number(input.value);
+                output.value = value.toFixed(2);
+                return [name, value];
             }));
-            const A = readPerson("a");
-            const B = readPerson("b");
+            const A = readPerson("A");
+            const B = readPerson("B");
 
             if (!app.manualMode) return;
-            app.blendshapeTarget.A = manualBlendshapes(A);
-            app.blendshapeTarget.B = manualBlendshapes(B);
-            app.target.A = { ...A, activity: clamp(blendshapeActivity(app.blendshapeTarget.A) * 0.45) };
-            app.target.B = { ...B, activity: clamp(blendshapeActivity(app.blendshapeTarget.B) * 0.45) };
+            app.blendshapeTarget.A = A;
+            app.blendshapeTarget.B = B;
+            app.target.A.activity = clamp(blendshapeActivity(app.blendshapeTarget.A) * 0.45);
+            app.target.B.activity = clamp(blendshapeActivity(app.blendshapeTarget.B) * 0.45);
         }
 
         function smoothState() {
             for (const key of ["A", "B"]) {
                 const current = app.current[key];
                 const target = app.target[key];
-                for (const feature of FEATURE_KEYS) {
-                    current[feature] = lerp(current[feature], target[feature], feature === "blink" ? 0.24 : 0.15);
-                }
                 current.activity = lerp(current.activity, target.activity, 0.12);
                 for (const name of ENABLED_BLENDSHAPES) {
                     const previous = app.blendshapeCurrent[key][name] ?? 0;
@@ -1370,7 +1115,6 @@
             elements.fillBOuter.setAttribute("stop-color", mixColor(COLORS.bOuter, COLORS.sharedRight, colorFusion * 0.34));
             // 単一化とともに左右色を消し、共同形態を一つの紫へ収束させる。
             elements.fillSharedLeft.setAttribute("stop-color", mixColor(COLORS.sharedLeft, COLORS.sharedCenter, sharedness));
-            elements.fillSharedCenter.setAttribute("stop-color", mixColor(COLORS.sharedCenter, COLORS.sharedCenter, sharedness));
             elements.fillSharedRight.setAttribute("stop-color", mixColor(COLORS.sharedRight, COLORS.sharedCenter, sharedness));
 
             elements.blobA.setAttribute("d", createBlobPath({
@@ -1416,7 +1160,7 @@
             try {
                 const result = app.faceLandmarker.detectForVideo(elements.video, performance.now());
                 app.lastVideoTime = elements.video.currentTime;
-                const faces = (result.faceLandmarks ?? []).map((_, index) => extractFaceFeature(result, index));
+                const faces = (result.faceLandmarks ?? []).map((_, index) => extractFaceInput(result, index));
                 app.latestFaces = faces;
 
                 if (faces.length >= 2) {
@@ -1426,7 +1170,7 @@
                     setTargetsFromFaces(faces);
                 } else {
                     if (app.calibration.active) {
-                        app.calibration = { active: false, startedAt: 0, samplesA: [], samplesB: [] };
+                        app.calibration = createCalibration();
                     }
                     resetTargets();
                     setStatus("二人の顔が同時に見える位置へ移動してください。横並びで、顔が重ならないようにしてください。", "warn");
