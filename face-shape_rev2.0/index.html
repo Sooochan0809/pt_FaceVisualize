@@ -1,0 +1,1503 @@
+<!doctype html>
+<html lang="ja">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>かおのしま</title>
+    <style>
+        :root {
+            --ink: #202124;
+            --muted: #6b7078;
+            --paper: #f5f5f2;
+            --panel: rgba(255, 255, 255, 0.86);
+            --line: rgba(32, 33, 36, 0.14);
+            --accent: #0d6b61;
+            --accent-soft: #dff3ef;
+            --warn: #8e4b00;
+            --danger: #a9423d;
+            --water: #dcebea;
+            --coast: rgba(250, 248, 224, .88);
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        html,
+        body {
+            width: 100%;
+            height: 100%;
+        }
+
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: var(--paper);
+            color: var(--ink);
+            font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif;
+        }
+
+        #app {
+            --controls-width: 320px;
+            min-height: 100%;
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) var(--controls-width);
+            transition: grid-template-columns .25s ease;
+        }
+
+        #app.controls-collapsed {
+            --controls-width: 56px;
+        }
+
+        #stage {
+            position: relative;
+            min-height: 100vh;
+            overflow: hidden;
+            background:
+                radial-gradient(circle at 50% 40%, rgba(248, 253, 249, .72), rgba(220, 235, 232, .45) 44%, rgba(184, 214, 214, .72)),
+                repeating-radial-gradient(circle at 50% 46%, transparent 0 72px, rgba(72, 128, 135, .055) 73px 74px),
+                var(--water);
+        }
+
+        #artboard {
+            display: block;
+            width: 100%;
+            height: 100vh;
+        }
+
+        #headline {
+            position: absolute;
+            top: 24px;
+            left: 28px;
+            max-width: 520px;
+            pointer-events: none;
+        }
+
+        #headline h1 {
+            margin: 0 0 8px;
+            font-size: clamp(21px, 2.6vw, 34px);
+            letter-spacing: .04em;
+            font-weight: 650;
+        }
+
+        #headline p {
+            margin: 0;
+            color: var(--muted);
+            font-size: 14px;
+            line-height: 1.65;
+        }
+
+        #status {
+            position: absolute;
+            left: 28px;
+            bottom: 26px;
+            max-width: min(670px, calc(100vw - 60px));
+            padding: 12px 15px;
+            border: 1px solid var(--line);
+            border-radius: 12px;
+            background: rgba(255, 255, 255, .73);
+            backdrop-filter: blur(10px);
+            font-size: 14px;
+            line-height: 1.5;
+            transition: color .2s ease, background .2s ease;
+        }
+
+        #status[data-tone="ready"] {
+            color: var(--accent);
+        }
+
+        #status[data-tone="warn"] {
+            color: var(--warn);
+        }
+
+        #status[data-tone="error"] {
+            color: var(--danger);
+        }
+
+        #videoWrap {
+            position: absolute;
+            right: 20px;
+            bottom: 20px;
+            width: min(28vw, 290px);
+            aspect-ratio: 16 / 10;
+            overflow: hidden;
+            border-radius: 14px;
+            border: 1px solid rgba(255, 255, 255, .55);
+            background: #121313;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, .15);
+            opacity: 0;
+            transform: translateY(12px);
+            pointer-events: none;
+            transition: opacity .25s ease, transform .25s ease;
+        }
+
+        #videoWrap.is-visible {
+            opacity: .74;
+            transform: translateY(0);
+        }
+
+        #webcam {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transform: scaleX(-1);
+        }
+
+        #controls {
+            height: 100vh;
+            overflow-y: auto;
+            padding: 23px 20px 32px;
+            border-left: 1px solid var(--line);
+            background: var(--panel);
+            backdrop-filter: blur(15px);
+            transition: padding .25s ease;
+        }
+
+        .controls-toggle {
+            width: auto;
+            min-width: 40px;
+            margin: 0 0 14px auto;
+            padding: 8px 10px;
+            text-align: center;
+        }
+
+        #app.controls-collapsed #controls {
+            overflow: hidden;
+            padding: 12px 8px;
+        }
+
+        #app.controls-collapsed #controls> :not(.controls-toggle) {
+            display: none;
+        }
+
+        #app.controls-collapsed .controls-toggle {
+            width: 40px;
+            margin: 0 auto;
+        }
+
+        .section {
+            margin-top: 18px;
+            padding-top: 18px;
+            border-top: 1px solid var(--line);
+        }
+
+        .section h2 {
+            margin: 0 0 9px;
+            font-size: 12px;
+            letter-spacing: .08em;
+            color: var(--muted);
+            font-weight: 700;
+        }
+
+        .buttons {
+            display: grid;
+            gap: 9px;
+        }
+
+        button {
+            width: 100%;
+            appearance: none;
+            border: 1px solid var(--line);
+            border-radius: 10px;
+            padding: 11px 12px;
+            background: rgba(255, 255, 255, .92);
+            color: var(--ink);
+            font: inherit;
+            font-size: 14px;
+            text-align: left;
+            cursor: pointer;
+            transition: transform .12s ease, background .12s ease, border-color .12s ease;
+        }
+
+        button:hover:not(:disabled) {
+            transform: translateY(-1px);
+            border-color: rgba(13, 107, 97, .5);
+        }
+
+        button:disabled {
+            opacity: .45;
+            cursor: not-allowed;
+        }
+
+        button.primary {
+            background: var(--accent);
+            color: white;
+            border-color: var(--accent);
+        }
+
+        button.active {
+            background: var(--accent-soft);
+            border-color: rgba(13, 107, 97, .45);
+            color: #07443d;
+        }
+
+        .legend {
+            display: grid;
+            gap: 9px;
+            font-size: 12px;
+            line-height: 1.55;
+            color: #4e5258;
+        }
+
+        .legend-row {
+            display: grid;
+            grid-template-columns: 12px 1fr;
+            gap: 8px;
+            align-items: start;
+        }
+
+        .dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 999px;
+            margin-top: 4px;
+        }
+
+        .dot.a {
+            background: #5f9a74;
+        }
+
+        .dot.b {
+            background: #b3985e;
+        }
+
+        .dot.shared {
+            background: #87965e;
+        }
+
+        #manualPanel {
+            display: none;
+        }
+
+        #manualPanel.is-visible {
+            display: block;
+        }
+
+        .person-control {
+            padding: 10px 0 6px;
+        }
+
+        .person-control+.person-control {
+            border-top: 1px dashed var(--line);
+            margin-top: 7px;
+        }
+
+        .person-control strong {
+            display: block;
+            margin-bottom: 8px;
+            font-size: 13px;
+        }
+
+        label.range-row {
+            display: grid;
+            grid-template-columns: 1fr 74px;
+            gap: 10px;
+            align-items: center;
+            margin: 8px 0;
+            font-size: 12px;
+            color: #50545a;
+        }
+
+        input[type="range"] {
+            width: 100%;
+            accent-color: var(--accent);
+        }
+
+        output {
+            font-variant-numeric: tabular-nums;
+            text-align: right;
+            color: var(--muted);
+        }
+
+        #metrics {
+            font-size: 12px;
+            color: var(--muted);
+            line-height: 1.7;
+            white-space: pre-line;
+        }
+
+        .blendshape-monitor {
+            margin-top: 10px;
+        }
+
+        .blendshape-monitor summary {
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 700;
+            color: #454950;
+        }
+
+        .blendshape-list {
+            display: grid;
+            gap: 5px;
+            margin-top: 8px;
+        }
+
+        .blendshape-row {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) 92px 42px;
+            gap: 6px;
+            align-items: center;
+            font-size: 10px;
+            color: var(--muted);
+        }
+
+        .blendshape-name {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .blendshape-bar {
+            position: relative;
+            height: 8px;
+            overflow: hidden;
+            border-radius: 999px;
+            background: rgba(32, 33, 36, .10);
+        }
+
+        .blendshape-bar::after {
+            content: "";
+            position: absolute;
+            inset: 0 auto 0 50%;
+            width: 1px;
+            background: rgba(32, 33, 36, .32);
+        }
+
+        .blendshape-fill {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            left: 50%;
+            width: var(--value, 0%);
+            background: #4684c5;
+        }
+
+        .blendshape-row.negative .blendshape-fill {
+            right: 50%;
+            left: auto;
+            background: #e28359;
+        }
+
+        #blendshapeListB .blendshape-fill {
+            background: #d17a5a;
+        }
+
+        #blendshapeListB .blendshape-row.negative .blendshape-fill {
+            background: #6250a6;
+        }
+
+        .blendshape-value {
+            text-align: right;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .small-note {
+            margin: 9px 0 0;
+            color: var(--muted);
+            font-size: 12px;
+            line-height: 1.65;
+        }
+
+        .svg-label {
+            font-size: 14px;
+            letter-spacing: .09em;
+            fill: #565a61;
+            text-anchor: middle;
+            transition: opacity .2s ease;
+        }
+
+        .terrain-layer {
+            pointer-events: none;
+        }
+
+        .terrain-speckle {
+            fill: url(#terrainDots);
+            opacity: .42;
+        }
+
+        .contour {
+            fill: none;
+            stroke: rgba(58, 78, 54, .24);
+            stroke-width: 2;
+            vector-effect: non-scaling-stroke;
+        }
+
+        .coastline {
+            fill: none;
+            stroke: var(--coast);
+            stroke-width: 5;
+            vector-effect: non-scaling-stroke;
+            pointer-events: none;
+        }
+
+        .house-wall {
+            fill: #f3e7c8;
+            stroke: rgba(75, 64, 46, .45);
+            stroke-width: 1.4;
+            vector-effect: non-scaling-stroke;
+        }
+
+        .house-roof {
+            fill: #9d654e;
+            stroke: rgba(75, 64, 46, .48);
+            stroke-width: 1.4;
+            vector-effect: non-scaling-stroke;
+        }
+
+        .resident {
+            pointer-events: none;
+        }
+
+        .resident circle {
+            fill: #f4d3ae;
+            stroke: rgba(37, 42, 38, .72);
+            stroke-width: 1;
+        }
+
+        .resident path {
+            fill: none;
+            stroke: var(--resident-color, #445b52);
+            stroke-width: 2.2;
+            stroke-linecap: round;
+        }
+
+        @media (max-width: 850px) {
+            body {
+                overflow: auto;
+            }
+
+            #app {
+                grid-template-columns: 1fr;
+            }
+
+            #stage {
+                min-height: 75vh;
+            }
+
+            #controls {
+                height: auto;
+                border-left: none;
+                border-top: 1px solid var(--line);
+            }
+
+            #artboard {
+                height: 75vh;
+                min-height: 560px;
+            }
+
+            #videoWrap {
+                width: 180px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <main id="app">
+        <section id="stage" aria-label="二人の島と共同大陸の表示領域">
+            <svg id="artboard" viewBox="0 0 1200 720" role="img" aria-label="二人の顔の動きで島と住民が変化する地図">
+                <defs>
+                    <filter id="goo" x="-35%" y="-35%" width="170%" height="170%" color-interpolation-filters="sRGB">
+                        <feGaussianBlur in="SourceGraphic" stdDeviation="13" result="blur" />
+                        <feColorMatrix in="blur" mode="matrix" values="1 0 0 0 0
+                      0 1 0 0 0
+                      0 0 1 0 0
+                      0 0 0 24 -11" result="goo" />
+                        <feComposite in="SourceGraphic" in2="goo" operator="atop" />
+                    </filter>
+                    <linearGradient id="fillA" x1="0" y1="0" x2="1" y2="0">
+                        <stop id="fillAOuter" offset="0" stop-color="#7cae83" />
+                        <stop id="fillAInner" offset="1" stop-color="#4f8a70" />
+                    </linearGradient>
+                    <linearGradient id="fillB" x1="0" y1="0" x2="1" y2="0">
+                        <stop id="fillBInner" offset="0" stop-color="#9a824f" />
+                        <stop id="fillBOuter" offset="1" stop-color="#c6ad6c" />
+                    </linearGradient>
+                    <linearGradient id="fillShared" x1="0" y1="0" x2="1" y2="0">
+                        <stop id="fillSharedLeft" offset="0" stop-color="#6d9a72" />
+                        <stop offset=".5" stop-color="#87965e" />
+                        <stop id="fillSharedRight" offset="1" stop-color="#ad955b" />
+                    </linearGradient>
+                    <pattern id="terrainDots" width="17" height="17" patternUnits="userSpaceOnUse">
+                        <circle cx="3" cy="4" r="1.2" fill="rgba(35, 70, 49, .38)" />
+                        <circle cx="13" cy="11" r=".8" fill="rgba(250, 247, 214, .46)" />
+                    </pattern>
+                    <g id="houseSymbol">
+                        <rect class="house-wall" x="-7" y="-3" width="14" height="11" rx="1" />
+                        <path class="house-roof" d="M -9 -3 L 0 -11 L 9 -3 Z" />
+                        <rect x="-2" y="2" width="4" height="6" rx=".5" fill="#765848" />
+                    </g>
+                    <clipPath id="clipA"><use href="#blobA" /></clipPath>
+                    <clipPath id="clipB"><use href="#blobB" /></clipPath>
+                    <clipPath id="clipShared"><use href="#sharedBlob" /></clipPath>
+                    <filter id="softShadow" x="-25%" y="-25%" width="150%" height="150%">
+                        <feGaussianBlur in="SourceAlpha" stdDeviation="12" result="blur" />
+                        <feOffset dy="12" result="offset" />
+                        <feColorMatrix in="offset" type="matrix"
+                            values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 .18 0" />
+                        <feMerge>
+                            <feMergeNode />
+                            <feMergeNode in="SourceGraphic" />
+                        </feMerge>
+                    </filter>
+                </defs>
+
+                <g filter="url(#softShadow)">
+                    <g id="meltGroup" filter="url(#goo)">
+                        <path id="bridge" fill="url(#fillShared)" opacity="0"></path>
+                        <path id="blobA" fill="url(#fillA)"></path>
+                        <path id="blobB" fill="url(#fillB)"></path>
+                        <path id="sharedBlob" fill="url(#fillShared)" opacity="0"></path>
+                    </g>
+                </g>
+
+                <g id="mapLayers">
+                    <g id="terrainA" class="terrain-layer" clip-path="url(#clipA)">
+                        <path id="contourA1" class="contour" />
+                        <path id="contourA2" class="contour" />
+                        <path id="contourA3" class="contour" />
+                        <g id="terrainContentA">
+                            <rect class="terrain-speckle" x="-190" y="-190" width="380" height="380" />
+                            <use href="#houseSymbol" transform="translate(-38 17) scale(.8)" />
+                            <use href="#houseSymbol" transform="translate(31 -26) scale(.68)" />
+                        </g>
+                    </g>
+                    <g id="terrainB" class="terrain-layer" clip-path="url(#clipB)">
+                        <path id="contourB1" class="contour" />
+                        <path id="contourB2" class="contour" />
+                        <path id="contourB3" class="contour" />
+                        <g id="terrainContentB">
+                            <rect class="terrain-speckle" x="-190" y="-190" width="380" height="380" />
+                            <use href="#houseSymbol" transform="translate(39 16) scale(.8)" />
+                            <use href="#houseSymbol" transform="translate(-28 -29) scale(.68)" />
+                        </g>
+                    </g>
+                    <g id="terrainShared" class="terrain-layer" clip-path="url(#clipShared)" opacity="0">
+                        <path id="contourShared1" class="contour" />
+                        <path id="contourShared2" class="contour" />
+                        <path id="contourShared3" class="contour" />
+                        <path id="contourShared4" class="contour" />
+                        <g id="terrainContentShared">
+                            <rect class="terrain-speckle" x="-240" y="-180" width="480" height="360" />
+                            <use href="#houseSymbol" transform="translate(-105 25) scale(.72)" />
+                            <use href="#houseSymbol" transform="translate(-48 -44) scale(.66)" />
+                            <use href="#houseSymbol" transform="translate(7 29) scale(.78)" />
+                            <use href="#houseSymbol" transform="translate(70 -34) scale(.66)" />
+                            <use href="#houseSymbol" transform="translate(118 22) scale(.72)" />
+                        </g>
+                    </g>
+                    <path id="coastA" class="coastline" />
+                    <path id="coastB" class="coastline" />
+                    <path id="coastShared" class="coastline" opacity="0" />
+                </g>
+                <g id="residents"></g>
+
+                <g id="labels">
+                    <text id="labelA" class="svg-label" x="300" y="600">A</text>
+                    <text id="labelB" class="svg-label" x="900" y="600">B</text>
+                </g>
+            </svg>
+
+            <div id="status" data-tone="warn"></div>
+
+            <div id="videoWrap" aria-hidden="true">
+                <video id="webcam" playsinline muted></video>
+            </div>
+        </section>
+
+        <aside id="controls">
+            <button id="controlsToggle" class="controls-toggle" type="button" aria-expanded="true"
+                aria-label="コントロールを閉じる">閉じる</button>
+            <div class="buttons">
+                <button id="cameraButton" class="primary">カメラを始める</button>
+                <button id="calibrateButton" disabled>ニュートラルを記録し直す（約1.2秒）</button>
+                <button id="manualButton">テストモード</button>
+            </div>
+
+            <section class="section">
+                <h2>この試作で確認すること</h2>
+                <div class="legend">
+                    <div class="legend-row"><span class="dot a"></span><span>Aの表情が島の海岸線を変え、住民が島内を歩く。</span></div>
+                    <div class="legend-row"><span class="dot b"></span><span>Bの表情が別の島の海岸線を変え、住民が島内を歩く。</span></div>
+                    <div class="legend-row"><span class="dot shared"></span><span>島が接続すると住民が渡り始め、共同大陸で混ざる。分離後は出身地の色を保ったまま、新しい島で暮らす。</span>
+                    </div>
+                </div>
+            </section>
+
+            <section id="manualPanel" class="section">
+                <h2>テスト入力</h2>
+                <div id="manualControlsA" class="person-control"></div>
+                <div id="manualControlsB" class="person-control"></div>
+                <p class="small-note">dataset02で有効な38項目の補正後の値（-1〜1）を直接操作します。</p>
+            </section>
+
+            <section class="section">
+                <h2>状態</h2>
+                <div id="metrics">A: --\nB: --\n共有: --</div>
+                <details class="blendshape-monitor" open>
+                    <summary>A ブレンドシェイプ（38）</summary>
+                    <div id="blendshapeListA" class="blendshape-list"></div>
+                </details>
+                <details class="blendshape-monitor">
+                    <summary>B ブレンドシェイプ（38）</summary>
+                    <div id="blendshapeListB" class="blendshape-list"></div>
+                </details>
+                <p class="small-note">二人が横並びでカメラに入り、途中で位置を入れ替えない前提です。</p>
+            </section>
+        </aside>
+    </main>
+
+    <script type="module">
+        import {
+            FaceLandmarker,
+            FilesetResolver
+        } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/vision_bundle.mjs";
+
+        const MODEL_ASSET_PATH = "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/latest/face_landmarker.task";
+        const WASM_ROOT = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm";
+        const FRAME_RATE = 60;
+        const FRAME_INTERVAL = 1000 / FRAME_RATE;
+        const FUSION_LOCK_DURATION = 10000;
+        const PARTICIPATION_FLOOR = 0.012;
+        const FULL_PARTICIPATION_ACTIVITY = 0.22;
+
+        const $ = (selector) => document.querySelector(selector);
+        const clamp = (value, min = 0, max = 1) => Math.min(Math.max(value, min), max);
+        const lerp = (from, to, amount) => from + (to - from) * amount;
+        const smoothstep = (edge0, edge1, value) => {
+            const amount = clamp((value - edge0) / (edge1 - edge0));
+            return amount * amount * (3 - 2 * amount);
+        };
+        const average = (values) => values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
+        const mixChannels = (from, to, amount) => from.map((channel, index) => Math.round(lerp(channel, to[index], amount)));
+        const mixColor = (from, to, amount) => `rgb(${mixChannels(from, to, amount).join(" ")})`;
+        const COLORS = {
+            aOuter: [124, 174, 131],
+            aInner: [79, 138, 112],
+            bInner: [154, 130, 79],
+            bOuter: [198, 173, 108],
+            sharedLeft: [109, 154, 114],
+            sharedCenter: [135, 150, 94],
+            sharedRight: [173, 149, 91],
+            residentA: [43, 92, 77],
+            residentB: [122, 83, 51]
+        };
+        // parameter/dataset02 で true の、反応が出やすいブレンドシェイプ。
+        const ENABLED_BLENDSHAPES = [
+            "browDownLeft", "browDownRight", "browInnerUp", "browOuterUpLeft", "browOuterUpRight",
+            "eyeBlinkLeft", "eyeBlinkRight", "eyeLookDownLeft", "eyeLookDownRight",
+            "eyeLookInLeft", "eyeLookInRight", "eyeLookOutLeft", "eyeLookOutRight",
+            "eyeLookUpLeft", "eyeLookUpRight", "eyeSquintLeft", "eyeSquintRight", "jawOpen",
+            "mouthClose", "mouthDimpleLeft", "mouthDimpleRight", "mouthFrownRight", "mouthFunnel",
+            "mouthLeft", "mouthLowerDownLeft", "mouthLowerDownRight", "mouthPressLeft", "mouthPressRight",
+            "mouthPucker", "mouthRight", "mouthRollLower", "mouthRollUpper", "mouthSmileLeft",
+            "mouthSmileRight", "mouthStretchLeft", "mouthStretchRight", "mouthUpperUpLeft", "mouthUpperUpRight"
+        ];
+        const BLENDSHAPE_GAIN = 12;
+        const emptyMotion = () => ({ activity: 0 });
+
+        const elements = {
+            app: $("#app"),
+            video: $("#webcam"),
+            videoWrap: $("#videoWrap"),
+            status: $("#status"),
+            cameraButton: $("#cameraButton"),
+            calibrateButton: $("#calibrateButton"),
+            manualButton: $("#manualButton"),
+            controlsToggle: $("#controlsToggle"),
+            manualPanel: $("#manualPanel"),
+            metrics: $("#metrics"),
+            blendshapeListA: $("#blendshapeListA"),
+            blendshapeListB: $("#blendshapeListB"),
+            blobA: $("#blobA"),
+            blobB: $("#blobB"),
+            bridge: $("#bridge"),
+            sharedBlob: $("#sharedBlob"),
+            fillAOuter: $("#fillAOuter"),
+            fillAInner: $("#fillAInner"),
+            fillBInner: $("#fillBInner"),
+            fillBOuter: $("#fillBOuter"),
+            fillSharedLeft: $("#fillSharedLeft"),
+            fillSharedRight: $("#fillSharedRight"),
+            labelA: $("#labelA"),
+            labelB: $("#labelB"),
+            terrainA: $("#terrainA"),
+            terrainB: $("#terrainB"),
+            terrainShared: $("#terrainShared"),
+            terrainContentA: $("#terrainContentA"),
+            terrainContentB: $("#terrainContentB"),
+            terrainContentShared: $("#terrainContentShared"),
+            coastA: $("#coastA"),
+            coastB: $("#coastB"),
+            coastShared: $("#coastShared"),
+            residents: $("#residents"),
+            contoursA: [$("#contourA1"), $("#contourA2"), $("#contourA3")],
+            contoursB: [$("#contourB1"), $("#contourB2"), $("#contourB3")],
+            contoursShared: [$("#contourShared1"), $("#contourShared2"), $("#contourShared3"), $("#contourShared4")]
+        };
+
+        const manualControls = Object.fromEntries(["A", "B"].map((person) => {
+            const prefix = person.toLowerCase();
+            const container = $(`#manualControls${person}`);
+            const heading = document.createElement("strong");
+            heading.textContent = person;
+            const controls = Object.fromEntries(ENABLED_BLENDSHAPES.map((name) => {
+                const suffix = `${name[0].toUpperCase()}${name.slice(1)}`;
+                const label = document.createElement("label");
+                const text = document.createElement("span");
+                const input = document.createElement("input");
+                const output = document.createElement("output");
+                label.className = "range-row";
+                text.textContent = name;
+                Object.assign(input, { id: `${prefix}${suffix}`, type: "range", min: -1, max: 1, step: 0.01, value: 0 });
+                output.id = `${prefix}${suffix}Out`;
+                output.value = "0.00";
+                label.append(text, input, output);
+                container.append(label);
+                return [name, { input, output }];
+            }));
+            container.prepend(heading);
+            return [person, controls];
+        }));
+        const createCalibration = (active = false) => ({
+            active,
+            startedAt: active ? performance.now() : 0,
+            samplesA: [],
+            samplesB: []
+        });
+
+        const app = {
+            faceLandmarker: null,
+            stream: null,
+            cameraRunning: false,
+            cameraStarting: false,
+            manualMode: false,
+            lastVideoTime: -1,
+            lastFrameAt: 0,
+            latestFaces: [],
+            baselines: { A: null, B: null },
+            calibration: createCalibration(),
+            fusionLockedUntil: 0,
+            fusionLockActive: false,
+            fusion: 0,
+            blendshapeTarget: { A: {}, B: {} },
+            blendshapeCurrent: { A: {}, B: {} },
+            sharedBlendshapeCurrent: {},
+            blendshapeRows: { A: new Map(), B: new Map() },
+            residents: [],
+            wasUnified: false,
+            separationAssigned: false,
+            lastMonitorAt: 0,
+            target: {
+                A: emptyMotion(),
+                B: emptyMotion()
+            },
+            current: {
+                A: emptyMotion(),
+                B: emptyMotion()
+            }
+        };
+
+        function resetTargets() {
+            app.target.A = emptyMotion();
+            app.target.B = emptyMotion();
+            app.blendshapeTarget.A = {};
+            app.blendshapeTarget.B = {};
+        }
+
+        function setStatus(message, tone = "warn") {
+            elements.status.textContent = message;
+            elements.status.dataset.tone = tone;
+        }
+
+        function updateButtonState() {
+            elements.cameraButton.disabled = app.cameraStarting;
+            elements.cameraButton.textContent = app.cameraStarting
+                ? "カメラを準備中…"
+                : app.cameraRunning ? "カメラを止める" : "カメラを始める";
+            elements.cameraButton.classList.toggle("primary", !app.cameraRunning);
+            elements.cameraButton.classList.toggle("active", app.cameraRunning);
+            elements.cameraButton.setAttribute("aria-pressed", String(app.cameraRunning));
+            elements.calibrateButton.disabled = !app.cameraRunning || app.latestFaces.length < 2 || app.calibration.active;
+            elements.manualButton.classList.toggle("active", app.manualMode);
+            elements.manualButton.textContent = app.manualMode ? "テストモード終了" : "テストモード";
+        }
+
+        function toggleControls() {
+            const collapsed = elements.app.classList.toggle("controls-collapsed");
+            elements.controlsToggle.textContent = collapsed ? "開く" : "閉じる";
+            elements.controlsToggle.setAttribute("aria-expanded", String(!collapsed));
+            elements.controlsToggle.setAttribute("aria-label", collapsed ? "コントロールを開く" : "コントロールを閉じる");
+        }
+
+        function initializeBlendshapeMonitor() {
+            for (const person of ["A", "B"]) {
+                const list = person === "A" ? elements.blendshapeListA : elements.blendshapeListB;
+                for (const name of ENABLED_BLENDSHAPES) {
+                    const row = document.createElement("div");
+                    const label = document.createElement("span");
+                    const bar = document.createElement("span");
+                    const fill = document.createElement("span");
+                    const value = document.createElement("span");
+                    row.className = "blendshape-row";
+                    label.className = "blendshape-name";
+                    label.textContent = name;
+                    label.title = name;
+                    bar.className = "blendshape-bar";
+                    fill.className = "blendshape-fill";
+                    value.className = "blendshape-value";
+                    value.textContent = "+0.00";
+                    bar.append(fill);
+                    row.append(label, bar, value);
+                    list.append(row);
+                    app.blendshapeRows[person].set(name, { row, fill, value });
+                }
+            }
+        }
+
+        function updateBlendshapeMonitor(timestamp) {
+            if (timestamp - app.lastMonitorAt < 80) return;
+            app.lastMonitorAt = timestamp;
+            for (const person of ["A", "B"]) {
+                for (const name of ENABLED_BLENDSHAPES) {
+                    const amount = app.blendshapeCurrent[person][name] ?? 0;
+                    const { row, fill, value } = app.blendshapeRows[person].get(name);
+                    row.classList.toggle("negative", amount < 0);
+                    fill.style.setProperty("--value", `${Math.min(Math.abs(amount), 1) * 50}%`);
+                    value.textContent = `${amount >= 0 ? "+" : ""}${amount.toFixed(2)}`;
+                }
+            }
+        }
+
+        function initializeResidents() {
+            const svgNamespace = "http://www.w3.org/2000/svg";
+            for (let index = 0; index < 12; index += 1) {
+                const element = document.createElementNS(svgNamespace, "g");
+                const head = document.createElementNS(svgNamespace, "circle");
+                const body = document.createElementNS(svgNamespace, "path");
+                element.classList.add("resident");
+                head.setAttribute("cy", "-4");
+                head.setAttribute("r", "2.4");
+                body.setAttribute("d", "M 0 -1 L 0 6 M 0 1 L -3 4 M 0 1 L 3 4 M 0 6 L -2.5 10 M 0 6 L 2.5 10");
+                element.append(head, body);
+                elements.residents.append(element);
+                app.residents.push({
+                    element,
+                    originSide: index < 6 ? "A" : "B",
+                    homeSide: index < 6 ? "A" : "B",
+                    order: index % 6,
+                    phase: index * 1.73 + 0.4,
+                    speed: 0.00018 + (index % 4) * 0.000025
+                });
+            }
+        }
+
+        function shuffled(values) {
+            const result = [...values];
+            for (let index = result.length - 1; index > 0; index -= 1) {
+                const swapIndex = Math.floor(Math.random() * (index + 1));
+                [result[index], result[swapIndex]] = [result[swapIndex], result[index]];
+            }
+            return result;
+        }
+
+        function assignResidentDestinations() {
+            const previousSides = new Map(app.residents.map((resident) => [resident, resident.homeSide]));
+            const biasToA = Math.random() < 0.5 ? 0.28 : 0.72;
+
+            for (const resident of app.residents) {
+                resident.destinationSide = Math.random() < biasToA ? "A" : "B";
+            }
+
+            const fromA = shuffled(app.residents.filter((resident) => previousSides.get(resident) === "A"));
+            const fromB = shuffled(app.residents.filter((resident) => previousSides.get(resident) === "B"));
+            fromA.slice(0, 1 + Math.floor(Math.random() * 2)).forEach((resident) => { resident.destinationSide = "B"; });
+            fromB.slice(0, 1 + Math.floor(Math.random() * 2)).forEach((resident) => { resident.destinationSide = "A"; });
+
+            let countA = app.residents.filter((resident) => resident.destinationSide === "A").length;
+            if (countA === app.residents.length / 2) {
+                const favoredSide = biasToA > 0.5 ? "A" : "B";
+                const candidate = app.residents.find((resident) =>
+                    resident.destinationSide !== favoredSide && previousSides.get(resident) === resident.destinationSide
+                ) ?? app.residents.find((resident) => resident.destinationSide !== favoredSide);
+                if (candidate) candidate.destinationSide = favoredSide;
+            }
+
+            for (const resident of app.residents) resident.homeSide = resident.destinationSide;
+            countA = app.residents.filter((resident) => resident.homeSide === "A").length;
+            setStatus(`大陸が分かれ始めました。住民は Aへ${countA}人、Bへ${app.residents.length - countA}人移ります。`, "ready");
+        }
+
+        function residentCount(homeSide, originSide) {
+            return app.residents.filter((resident) =>
+                resident.homeSide === homeSide && resident.originSide === originSide
+            ).length;
+        }
+
+        function renderResidents(timestamp, { xA, xB, cy, joint }) {
+            for (const resident of app.residents) {
+                const onA = resident.homeSide === "A";
+                const homeCenterX = onA ? xA : xB;
+                const homeAngle = resident.phase + timestamp * resident.speed * 0.95;
+                const homeOrbit = 31 + 8 * Math.sin(resident.phase * 2.1);
+                const homeWanderX = (Math.sin(timestamp * resident.speed * 3.7 + resident.phase * 2.2) +
+                    Math.sin(timestamp * resident.speed * 7.1 + resident.phase) * 0.42) * 6;
+                const homeWanderY = (Math.cos(timestamp * resident.speed * 4.3 + resident.phase * 1.4) +
+                    Math.sin(timestamp * resident.speed * 6.2 + resident.phase * 2.8) * 0.38) * 5;
+                const homeX = homeCenterX + Math.cos(homeAngle) * homeOrbit + homeWanderX;
+                const homeY = cy + Math.sin(homeAngle) * homeOrbit * 0.72 + homeWanderY;
+
+                const sharedAngle = resident.phase * 1.31 + timestamp * resident.speed * 1.05;
+                const sharedOrbit = 0.56 + 0.10 * Math.sin(resident.phase * 1.7);
+                const sharedWanderX = Math.sin(timestamp * resident.speed * 5.3 + resident.phase * 2.5) * 15 +
+                    Math.cos(timestamp * resident.speed * 8.7 + resident.phase) * 6;
+                const sharedWanderY = Math.cos(timestamp * resident.speed * 4.8 + resident.phase * 1.8) * 10 +
+                    Math.sin(timestamp * resident.speed * 9.1 + resident.phase) * 4;
+                const sharedX = 600 + Math.cos(sharedAngle) * 156 * sharedOrbit + sharedWanderX;
+                const sharedY = cy + Math.sin(sharedAngle) * 102 * sharedOrbit + sharedWanderY;
+                const migration = smoothstep(0.16 + resident.order * 0.055, 0.86, joint);
+                const x = lerp(homeX, sharedX, migration);
+                const y = lerp(homeY, sharedY, migration);
+                const walkTilt = Math.sin(timestamp * resident.speed * 18 + resident.phase) * 7;
+                const originColor = resident.originSide === "A" ? COLORS.residentA : COLORS.residentB;
+
+                resident.element.setAttribute("transform", `translate(${x.toFixed(1)} ${y.toFixed(1)}) rotate(${walkTilt.toFixed(1)}) scale(.82)`);
+                resident.element.style.setProperty("--resident-color", `rgb(${originColor.join(" ")})`);
+            }
+        }
+
+        function extractEnabledBlendshapes(categories) {
+            const scores = new Map(categories.map(({ categoryName, score }) => [categoryName, score]));
+            return Object.fromEntries(ENABLED_BLENDSHAPES.map((name) => [name, scores.get(name) ?? 0]));
+        }
+
+        function extractFaceInput(result, index) {
+            const categories = result.faceBlendshapes?.[index]?.categories ?? [];
+            const landmark = result.faceLandmarks?.[index]?.[1];
+            return {
+                x: landmark?.x ?? 0.5,
+                blendshapes: extractEnabledBlendshapes(categories)
+            };
+        }
+
+        function sortFacesForMirroredPreview(faces) {
+            // プレビュー映像は鏡像なので、画面上の左→右に合わせて生データのxを降順に扱う。
+            return [...faces].sort((a, b) => b.x - a.x);
+        }
+
+        function averageBlendshapeSamples(samples) {
+            return Object.fromEntries(ENABLED_BLENDSHAPES.map((name) => {
+                const values = samples.map((sample) => sample[name] ?? 0);
+                const mean = average(values);
+                const variance = average(values.map((value) => (value - mean) ** 2));
+                return [name, { mean, dead: Math.max(Math.sqrt(variance) * 3, 0.003) }];
+            }));
+        }
+
+        function normalizedBlendshapes(values, baseline = {}) {
+            return Object.fromEntries(ENABLED_BLENDSHAPES.map((name) => {
+                const { mean = 0, dead = 0.003 } = baseline[name] ?? {};
+                const difference = (values[name] ?? 0) - mean;
+                const calibrated = Math.sign(difference) * Math.max(Math.abs(difference) - dead, 0);
+                return [name, clamp(calibrated * BLENDSHAPE_GAIN, -1, 1)];
+            }));
+        }
+
+        function blendshapeActivity(values) {
+            const strongest = Object.values(values).map(Math.abs).sort((a, b) => b - a).slice(0, 8);
+            return average(strongest);
+        }
+
+        function setTargetsFromFaces(faces) {
+            if (faces.length < 2) {
+                resetTargets();
+                return;
+            }
+
+            const [left, right] = sortFacesForMirroredPreview(faces);
+
+            if (app.calibration.active) {
+                app.calibration.samplesA.push(left.blendshapes);
+                app.calibration.samplesB.push(right.blendshapes);
+                const elapsed = performance.now() - app.calibration.startedAt;
+                setStatus(`ニュートラルを記録しています… ${Math.min(100, Math.round(elapsed / 12))}%`, "ready");
+                if (elapsed >= 1200) {
+                    app.baselines.A = averageBlendshapeSamples(app.calibration.samplesA);
+                    app.baselines.B = averageBlendshapeSamples(app.calibration.samplesB);
+                    app.calibration.active = false;
+                    app.fusionLockedUntil = performance.now() + FUSION_LOCK_DURATION;
+                    app.fusionLockActive = true;
+                    app.fusion = 0;
+                    app.wasUnified = false;
+                    app.separationAssigned = false;
+                    setStatus("記録しました。最初の10秒間は、別々の図形を動かしてください。", "ready");
+                }
+            }
+
+            // 初回のキャリブレーションが終わるまでは、未調整の値を図形に反映しない。
+            if (app.calibration.active && !app.baselines.A) {
+                resetTargets();
+                return;
+            }
+
+            app.blendshapeTarget.A = normalizedBlendshapes(left.blendshapes, app.baselines.A);
+            app.blendshapeTarget.B = normalizedBlendshapes(right.blendshapes, app.baselines.B);
+            app.target.A.activity = clamp(blendshapeActivity(app.blendshapeTarget.A) * 0.45);
+            app.target.B.activity = clamp(blendshapeActivity(app.blendshapeTarget.B) * 0.45);
+        }
+
+        async function createLandmarker() {
+            if (app.faceLandmarker) return;
+            setStatus("顔の動きを読む準備をしています…", "warn");
+            const vision = await FilesetResolver.forVisionTasks(WASM_ROOT);
+            const options = (delegate) => ({
+                baseOptions: {
+                    modelAssetPath: MODEL_ASSET_PATH,
+                    delegate
+                },
+                runningMode: "VIDEO",
+                numFaces: 2,
+                outputFaceBlendshapes: true,
+                minFaceDetectionConfidence: 0.55,
+                minFacePresenceConfidence: 0.55,
+                minTrackingConfidence: 0.55
+            });
+
+            try {
+                app.faceLandmarker = await FaceLandmarker.createFromOptions(vision, options("GPU"));
+            } catch (gpuError) {
+                console.warn("GPU delegate was unavailable. Falling back to CPU.", gpuError);
+                app.faceLandmarker = await FaceLandmarker.createFromOptions(vision, options("CPU"));
+            }
+        }
+
+        async function startCamera() {
+            if (app.cameraStarting || app.cameraRunning) return;
+            app.cameraStarting = true;
+            updateButtonState();
+            try {
+                app.manualMode = false;
+                elements.manualPanel.classList.remove("is-visible");
+                await createLandmarker();
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: {
+                        facingMode: "user",
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 },
+                        frameRate: { ideal: FRAME_RATE, max: FRAME_RATE }
+                    },
+                    audio: false
+                });
+                app.stream = stream;
+                elements.video.srcObject = stream;
+                await elements.video.play();
+                app.cameraRunning = true;
+                app.lastVideoTime = -1;
+                elements.videoWrap.classList.add("is-visible");
+                setStatus("二人が横並びでカメラに入ると、ニュートラルを自動で記録します。", "ready");
+            } catch (error) {
+                console.error(error);
+                app.stream?.getTracks().forEach((track) => track.stop());
+                app.stream = null;
+                elements.video.srcObject = null;
+                setStatus(`カメラを開始できませんでした。${error?.message ?? "ブラウザのカメラ権限を確認してください。"}`, "error");
+            } finally {
+                app.cameraStarting = false;
+                updateButtonState();
+            }
+        }
+
+        function stopCamera() {
+            app.stream?.getTracks().forEach((track) => track.stop());
+            app.stream = null;
+            elements.video.srcObject = null;
+            app.cameraRunning = false;
+            app.latestFaces = [];
+            app.baselines = { A: null, B: null };
+            app.calibration = createCalibration();
+            app.fusionLockedUntil = 0;
+            app.fusionLockActive = false;
+            app.fusion = 0;
+            app.wasUnified = false;
+            app.separationAssigned = false;
+            resetTargets();
+            elements.videoWrap.classList.remove("is-visible");
+            setStatus("カメラを停止しました。必要ならテストモードで形の変化を確認できます。", "warn");
+            updateButtonState();
+        }
+
+        function toggleCamera() {
+            if (app.cameraRunning) {
+                stopCamera();
+            } else {
+                startCamera();
+            }
+        }
+
+        function startCalibration() {
+            if (app.latestFaces.length < 2) {
+                setStatus("二人の顔が同時に認識されてから、もう一度押してください。", "warn");
+                return;
+            }
+            app.calibration = createCalibration(true);
+            updateButtonState();
+        }
+
+        function toggleManualMode() {
+            app.manualMode = !app.manualMode;
+            elements.manualPanel.classList.toggle("is-visible", app.manualMode);
+            if (app.manualMode) {
+                updateManualTargets();
+                setStatus("テストモードです。二人のスライダーを動かして、結合と分離を確認してください。", "ready");
+            } else if (!app.cameraRunning) {
+                setStatus("テストモードを終了しました。カメラを始めるか、再度テストモードを使ってください。", "warn");
+            }
+            updateButtonState();
+        }
+
+        function updateManualTargets() {
+            const readPerson = (person) => Object.fromEntries(ENABLED_BLENDSHAPES.map((name) => {
+                const { input, output } = manualControls[person][name];
+                const value = Number(input.value);
+                output.value = value.toFixed(2);
+                return [name, value];
+            }));
+            const A = readPerson("A");
+            const B = readPerson("B");
+
+            if (!app.manualMode) return;
+            app.blendshapeTarget.A = A;
+            app.blendshapeTarget.B = B;
+            app.target.A.activity = clamp(blendshapeActivity(app.blendshapeTarget.A) * 0.45);
+            app.target.B.activity = clamp(blendshapeActivity(app.blendshapeTarget.B) * 0.45);
+        }
+
+        function smoothState() {
+            for (const key of ["A", "B"]) {
+                const current = app.current[key];
+                const target = app.target[key];
+                current.activity = lerp(current.activity, target.activity, 0.12);
+                for (const name of ENABLED_BLENDSHAPES) {
+                    const previous = app.blendshapeCurrent[key][name] ?? 0;
+                    const next = app.blendshapeTarget[key][name] ?? 0;
+                    app.blendshapeCurrent[key][name] = lerp(previous, next, 0.25);
+                }
+            }
+            for (const name of ENABLED_BLENDSHAPES) {
+                const valueA = app.blendshapeCurrent.A[name] ?? 0;
+                const valueB = app.blendshapeCurrent.B[name] ?? 0;
+                const magnitude = Math.sqrt((valueA * valueA + valueB * valueB) / 2);
+                const combined = Math.tanh((valueA + valueB) * 2.5) * magnitude;
+                const previous = app.sharedBlendshapeCurrent[name] ?? 0;
+                app.sharedBlendshapeCurrent[name] = lerp(previous, combined, 0.20);
+            }
+        }
+
+        function point(x, y) { return { x, y }; }
+
+        function smoothClosedPath(points) {
+            const midpoint = (a, b) => point((a.x + b.x) / 2, (a.y + b.y) / 2);
+            const start = midpoint(points[points.length - 1], points[0]);
+            let d = `M ${start.x.toFixed(1)} ${start.y.toFixed(1)} `;
+            for (let i = 0; i < points.length; i += 1) {
+                const current = points[i];
+                const next = points[(i + 1) % points.length];
+                const nextMid = midpoint(current, next);
+                d += `Q ${current.x.toFixed(1)} ${current.y.toFixed(1)} ${nextMid.x.toFixed(1)} ${nextMid.y.toFixed(1)} `;
+            }
+            return `${d}Z`;
+        }
+
+        function spectrumSample(spectrum, index) {
+            const count = ENABLED_BLENDSHAPES.length;
+            const current = spectrum[ENABLED_BLENDSHAPES[index]] ?? 0;
+            const previous = spectrum[ENABLED_BLENDSHAPES[(index - 1 + count) % count]] ?? 0;
+            const next = spectrum[ENABLED_BLENDSHAPES[(index + 1) % count]] ?? 0;
+            return current * 0.62 + previous * 0.19 + next * 0.19;
+        }
+
+        function spectrumDifference(spectrumA, spectrumB) {
+            return average(ENABLED_BLENDSHAPES.map((name) => Math.abs((spectrumA[name] ?? 0) - (spectrumB[name] ?? 0))));
+        }
+
+        function spectrumVerticalMoment(spectrum) {
+            return average(ENABLED_BLENDSHAPES.map((name, index) =>
+                (spectrum[name] ?? 0) * Math.sin((Math.PI * 2 * index) / ENABLED_BLENDSHAPES.length)
+            ));
+        }
+
+        function createBlobPath({ cx, cy, radius, spectrum, otherActivity, side, fusion }) {
+            const points = [];
+            const count = ENABLED_BLENDSHAPES.length;
+            const isA = side === "A";
+            const innerAngle = isA ? 0 : Math.PI;
+            const islandPhase = isA ? 0.35 : 1.65;
+            const energy = blendshapeActivity(spectrum);
+
+            for (let index = 0; index < count; index += 1) {
+                const angle = (Math.PI * 2 * index) / count;
+                const cos = Math.cos(angle);
+                const sin = Math.sin(angle);
+                const innerness = Math.max(0, Math.cos(angle - innerAngle));
+                const value = spectrumSample(spectrum, index);
+                const previous = spectrumSample(spectrum, (index - 1 + count) % count);
+                const next = spectrumSample(spectrum, (index + 1) % count);
+                const coastlineShape =
+                    Math.sin(angle * 3 + islandPhase) * 0.060 +
+                    Math.sin(angle * 5 - islandPhase * 0.7) * 0.034 +
+                    Math.cos(angle * 7 + islandPhase * 1.3) * 0.018;
+                const radial = radius * (1 + coastlineShape + energy * 0.16 + value * 0.52);
+                const tangent = (next - previous) * radius * 0.10;
+                const innerCross = fusion * otherActivity * radius * 0.34 * innerness;
+
+                points.push(point(
+                    cx + cos * (radial + innerCross) - sin * tangent,
+                    cy + sin * radial + cos * tangent
+                ));
+            }
+            return smoothClosedPath(points);
+        }
+
+        function sharedDimensions(activityA, activityB, fusion) {
+            const averageActivity = (activityA + activityB) / 2;
+            return {
+                radiusX: 198 + averageActivity * 76 + fusion * 30,
+                radiusY: 142 + averageActivity * 64
+            };
+        }
+
+        function createSharedBlobPath({ cx, cy, activityA, activityB, spectrum, fusion, difference, scale = 1 }) {
+            const points = [];
+            const count = ENABLED_BLENDSHAPES.length;
+            const { radiusX, radiusY } = sharedDimensions(activityA, activityB, fusion);
+
+            for (let index = 0; index < count; index += 1) {
+                const angle = (Math.PI * 2 * index) / count;
+                const cos = Math.cos(angle);
+                const sin = Math.sin(angle);
+                const value = spectrumSample(spectrum, index);
+                const previous = spectrumSample(spectrum, (index - 1 + count) % count);
+                const next = spectrumSample(spectrum, (index + 1) % count);
+                const radialOffset = value * Math.min(radiusX, radiusY) * 0.40;
+                const differenceWave = difference * Math.min(radiusX, radiusY) * 0.10 * Math.sin(angle * 5);
+                const tangent = (next - previous) * Math.min(radiusX, radiusY) * 0.08;
+
+                points.push(point(
+                    cx + cos * (radiusX + radialOffset + differenceWave) * scale - sin * tangent * scale,
+                    cy + sin * (radiusY + radialOffset + differenceWave) * scale + cos * tangent * scale
+                ));
+            }
+
+            return smoothClosedPath(points);
+        }
+
+        function bridgePath({ xA, xB, cy, height, shift, fusion }) {
+            const leftX = xA + 70;
+            const rightX = xB - 70;
+            const topLeft = cy - height / 2;
+            const bottomLeft = cy + height / 2;
+            const topRight = cy - height / 2 + shift;
+            const bottomRight = cy + height / 2 + shift;
+            const curve = (rightX - leftX) * (0.25 + fusion * 0.25);
+            return [
+                `M ${leftX.toFixed(1)} ${topLeft.toFixed(1)}`,
+                `C ${(leftX + curve).toFixed(1)} ${(topLeft - height * .25).toFixed(1)}, ${(rightX - curve).toFixed(1)} ${(topRight - height * .25).toFixed(1)}, ${rightX.toFixed(1)} ${topRight.toFixed(1)}`,
+                `L ${rightX.toFixed(1)} ${bottomRight.toFixed(1)}`,
+                `C ${(rightX - curve).toFixed(1)} ${(bottomRight + height * .25).toFixed(1)}, ${(leftX + curve).toFixed(1)} ${(bottomLeft + height * .25).toFixed(1)}, ${leftX.toFixed(1)} ${bottomLeft.toFixed(1)}`,
+                "Z"
+            ].join(" ");
+        }
+
+        function renderArtwork(timestamp) {
+            const A = app.current.A;
+            const B = app.current.B;
+            const participationA = clamp(
+                (A.activity - PARTICIPATION_FLOOR) / (FULL_PARTICIPATION_ACTIVITY - PARTICIPATION_FLOOR)
+            );
+            const participationB = clamp(
+                (B.activity - PARTICIPATION_FLOOR) / (FULL_PARTICIPATION_ACTIVITY - PARTICIPATION_FLOOR)
+            );
+            // 両者の参加が必要だが、小さな表情変化から結合が始まる。
+            const activityJoint = Math.sqrt(participationA * participationB);
+            const fusionLockRemaining = Math.max(app.fusionLockedUntil - performance.now(), 0);
+            const targetFusion = fusionLockRemaining > 0 ? 0 : activityJoint;
+            const fusionEase = targetFusion > app.fusion ? 0.012 : 0.035;
+            app.fusion = lerp(app.fusion, targetFusion, fusionEase);
+            if (Math.abs(app.fusion - targetFusion) < 0.001) app.fusion = targetFusion;
+            const joint = app.fusion;
+            if (app.fusionLockActive && fusionLockRemaining <= 0) {
+                app.fusionLockActive = false;
+                if (app.cameraRunning && app.latestFaces.length >= 2) {
+                    setStatus("結合モードになりました。現在の活動量に向かって徐々に融合します。", "ready");
+                }
+            }
+            const difference = clamp(spectrumDifference(app.blendshapeCurrent.A, app.blendshapeCurrent.B) * 1.8);
+            const sharedness = smoothstep(0.50, 0.88, joint);
+            const separateOpacity = 1 - sharedness;
+            if (sharedness > 0.92 && !app.wasUnified) {
+                app.wasUnified = true;
+                app.separationAssigned = false;
+            }
+            const escaping = app.wasUnified && targetFusion < joint - 0.01;
+            if (escaping && !app.separationAssigned) {
+                assignResidentDestinations();
+                app.separationAssigned = true;
+            }
+            if (joint < 0.04 && targetFusion < 0.04) app.wasUnified = false;
+            const cx = 600;
+            const cy = 390;
+            const distance = lerp(520, 168, joint);
+            const xA = cx - distance / 2;
+            const xB = cx + distance / 2;
+            const radiusA = 104 + A.activity * 66;
+            const radiusB = 104 + B.activity * 66;
+            const bridgeHeight = joint > 0.035 ? 18 + joint * 128 + difference * 48 : 0;
+            const bridgeShift = (
+                spectrumVerticalMoment(app.blendshapeCurrent.A) -
+                spectrumVerticalMoment(app.blendshapeCurrent.B)
+            ) * 210;
+            const colorFusion = clamp(joint * 1.25);
+
+            // 接触側は共有色へ強く寄せ、外側にはそれぞれの色を少し残す。
+            elements.fillAOuter.setAttribute("stop-color", mixColor(COLORS.aOuter, COLORS.sharedLeft, colorFusion * 0.34));
+            elements.fillAInner.setAttribute("stop-color", mixColor(COLORS.aInner, COLORS.sharedCenter, colorFusion));
+            elements.fillBInner.setAttribute("stop-color", mixColor(COLORS.bInner, COLORS.sharedCenter, colorFusion));
+            elements.fillBOuter.setAttribute("stop-color", mixColor(COLORS.bOuter, COLORS.sharedRight, colorFusion * 0.34));
+            // 単一化とともに左右色を消し、共同大陸を一つの色へ収束させる。
+            elements.fillSharedLeft.setAttribute("stop-color", mixColor(COLORS.sharedLeft, COLORS.sharedCenter, sharedness));
+            elements.fillSharedRight.setAttribute("stop-color", mixColor(COLORS.sharedRight, COLORS.sharedCenter, sharedness));
+
+            const pathA = createBlobPath({
+                cx: xA, cy, radius: radiusA,
+                spectrum: app.blendshapeCurrent.A,
+                otherActivity: B.activity,
+                side: "A", fusion: joint
+            });
+            const pathB = createBlobPath({
+                cx: xB, cy, radius: radiusB,
+                spectrum: app.blendshapeCurrent.B,
+                otherActivity: A.activity,
+                side: "B", fusion: joint
+            });
+            const pathShared = createSharedBlobPath({
+                cx, cy,
+                activityA: A.activity,
+                activityB: B.activity,
+                spectrum: app.sharedBlendshapeCurrent,
+                fusion: joint, difference
+            });
+            elements.blobA.setAttribute("d", pathA);
+            elements.blobB.setAttribute("d", pathB);
+            elements.sharedBlob.setAttribute("d", pathShared);
+            elements.coastA.setAttribute("d", pathA);
+            elements.coastB.setAttribute("d", pathB);
+            elements.coastShared.setAttribute("d", pathShared);
+            [0.78, 0.56, 0.34].forEach((scale, index) => {
+                elements.contoursA[index].setAttribute("d", createBlobPath({
+                    cx: xA, cy, radius: radiusA * scale,
+                    spectrum: app.blendshapeCurrent.A,
+                    otherActivity: B.activity,
+                    side: "A", fusion: joint
+                }));
+                elements.contoursB[index].setAttribute("d", createBlobPath({
+                    cx: xB, cy, radius: radiusB * scale,
+                    spectrum: app.blendshapeCurrent.B,
+                    otherActivity: A.activity,
+                    side: "B", fusion: joint
+                }));
+            });
+            [0.78, 0.59, 0.41, 0.24].forEach((scale, index) => {
+                elements.contoursShared[index].setAttribute("d", createSharedBlobPath({
+                    cx, cy,
+                    activityA: A.activity,
+                    activityB: B.activity,
+                    spectrum: app.sharedBlendshapeCurrent,
+                    fusion: joint, difference, scale
+                }));
+            });
+            elements.blobA.setAttribute("opacity", String(separateOpacity));
+            elements.blobB.setAttribute("opacity", String(separateOpacity));
+            elements.sharedBlob.setAttribute("opacity", String(sharedness));
+            elements.bridge.setAttribute("d", bridgePath({ xA, xB, cy, height: bridgeHeight, shift: bridgeShift, fusion: joint }));
+            elements.bridge.setAttribute("opacity", joint > 0.025 ? String(clamp(joint * 1.2) * separateOpacity) : "0");
+            elements.labelA.setAttribute("x", xA.toFixed(1));
+            elements.labelB.setAttribute("x", xB.toFixed(1));
+            elements.labelA.setAttribute("opacity", String((1 - joint * 0.92) * separateOpacity));
+            elements.labelB.setAttribute("opacity", String((1 - joint * 0.92) * separateOpacity));
+
+            const { radiusX: sharedRadiusX, radiusY: sharedRadiusY } = sharedDimensions(A.activity, B.activity, joint);
+            elements.terrainContentA.setAttribute("transform", `translate(${xA.toFixed(1)} ${cy}) scale(${(radiusA / 110).toFixed(3)})`);
+            elements.terrainContentB.setAttribute("transform", `translate(${xB.toFixed(1)} ${cy}) scale(${(radiusB / 110).toFixed(3)})`);
+            elements.terrainContentShared.setAttribute("transform", `translate(${cx} ${cy}) scale(${(sharedRadiusX / 198).toFixed(3)} ${(sharedRadiusY / 142).toFixed(3)})`);
+            elements.terrainA.setAttribute("opacity", String(separateOpacity));
+            elements.terrainB.setAttribute("opacity", String(separateOpacity));
+            elements.terrainShared.setAttribute("opacity", String(sharedness));
+            elements.coastA.setAttribute("opacity", String(separateOpacity));
+            elements.coastB.setAttribute("opacity", String(separateOpacity));
+            elements.coastShared.setAttribute("opacity", String(sharedness));
+            renderResidents(timestamp, { xA, xB, cy, joint });
+            elements.metrics.textContent = [
+                `A  38項目活動 ${A.activity.toFixed(2)}  上位平均 ${blendshapeActivity(app.blendshapeCurrent.A).toFixed(2)}`,
+                `B  38項目活動 ${B.activity.toFixed(2)}  上位平均 ${blendshapeActivity(app.blendshapeCurrent.B).toFixed(2)}`,
+                `住民  A島 [A出身 ${residentCount("A", "A")} / B出身 ${residentCount("A", "B")}]  B島 [A出身 ${residentCount("B", "A")} / B出身 ${residentCount("B", "B")}]`,
+                fusionLockRemaining > 0 ? `個人モード  結合解禁まで ${(fusionLockRemaining / 1000).toFixed(1)}秒` : `結合モード  活動量に応じて結合／分離`,
+                `共同  融合 ${joint.toFixed(2)} → 目標 ${targetFusion.toFixed(2)}  単一化 ${sharedness.toFixed(2)}  参加 ${participationA.toFixed(2)}/${participationB.toFixed(2)}  差異 ${difference.toFixed(2)}`
+            ].join("\n");
+        }
+
+        function detectFaces() {
+            if (app.manualMode || !app.cameraRunning || !app.faceLandmarker || elements.video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return;
+            if (elements.video.currentTime === app.lastVideoTime) return;
+
+            try {
+                const result = app.faceLandmarker.detectForVideo(elements.video, performance.now());
+                app.lastVideoTime = elements.video.currentTime;
+                const faces = (result.faceLandmarks ?? []).map((_, index) => extractFaceInput(result, index));
+                app.latestFaces = faces;
+
+                if (faces.length >= 2) {
+                    if (!app.baselines.A && !app.calibration.active) {
+                        startCalibration();
+                    }
+                    setTargetsFromFaces(faces);
+                } else {
+                    if (app.calibration.active) {
+                        app.calibration = createCalibration();
+                    }
+                    resetTargets();
+                    setStatus("二人の顔が同時に見える位置へ移動してください。横並びで、顔が重ならないようにしてください。", "warn");
+                }
+                updateButtonState();
+            } catch (error) {
+                console.warn("Face detection error", error);
+            }
+        }
+
+        function renderLoop(timestamp) {
+            requestAnimationFrame(renderLoop);
+            if (timestamp - app.lastFrameAt < FRAME_INTERVAL) return;
+            app.lastFrameAt = timestamp - ((timestamp - app.lastFrameAt) % FRAME_INTERVAL);
+
+            detectFaces();
+            smoothState();
+            renderArtwork(timestamp);
+            updateBlendshapeMonitor(timestamp);
+        }
+
+        elements.cameraButton.addEventListener("click", toggleCamera);
+        elements.calibrateButton.addEventListener("click", startCalibration);
+        elements.manualButton.addEventListener("click", toggleManualMode);
+        elements.controlsToggle.addEventListener("click", toggleControls);
+        elements.manualPanel.querySelectorAll('input[type="range"]').forEach((input) => input.addEventListener("input", updateManualTargets));
+
+        updateManualTargets();
+        updateButtonState();
+        initializeBlendshapeMonitor();
+        initializeResidents();
+        requestAnimationFrame(renderLoop);
+    </script>
+</body>
+
+</html>
