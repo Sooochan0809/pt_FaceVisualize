@@ -21,27 +21,98 @@
       touch-action: none;
       cursor: crosshair
     }
+
+    .controls {
+      position: fixed;
+      left: 1em;
+      top: 1em;
+      z-index: 1;
+      box-sizing: border-box;
+      width: min(280px, calc(100vw - 32px));
+      padding: 0.4em;
+      background: rgba(255, 255, 255, .5);
+      font-size: 14px;
+    }
+
+    .control {
+      display: block;
+      margin-top: 8px;
+    }
+
+    .control output {
+      float: right;
+    }
+
+    .control input {
+      width: 100%;
+    }
   </style>
 </head>
 
 <body>
   <canvas></canvas>
+  <div class="controls" aria-label="波紋の設定">
+    <label class="control">
+      <span>大きさ</span>
+      <output id="sizeValue">1.00x</output>
+      <input id="sizeSlider" type="range" min="0.1" max="2" step="0.05" value="1">
+    </label>
+    <label class="control">
+      <span>速度</span>
+      <output id="speedValue">1.00x</output>
+      <input id="speedSlider" type="range" min="0.4" max="2" step="0.05" value="1">
+    </label>
+    <label class="control">
+      <span>減衰係数</span>
+      <output id="fadeValue">0.0040</output>
+      <input id="fadeSlider" type="range" min="0.01" max="0.05" step="0.0005" value="0.01">
+    </label>
+  </div>
 </body>
 
 <script>
   const c = document.querySelector('canvas'), g = c.getContext('2d');
   const o = document.createElement('canvas'), og = o.getContext('2d');
+  const controls = document.querySelector('.controls');
+  const sizeSlider = document.querySelector('#sizeSlider');
+  const speedSlider = document.querySelector('#speedSlider');
+  const fadeSlider = document.querySelector('#fadeSlider');
+  const sizeValue = document.querySelector('#sizeValue');
+  const speedValue = document.querySelector('#speedValue');
+  const fadeValue = document.querySelector('#fadeValue');
   const nx = 220, ny = 140, curve = 1.65;
   // 前版の干渉パラメータを維持
-  const speed = .11, wave = .92, fade = .004, contrast = .16;
+  const speed = .11, wave = .92, contrast = .16;
   // 1クリックにつき、広がる波紋は1本だけ。値を小さくすると輪が細くなる。
   const ringWidth = .032;
   const maxRipples = 12, life = 10;
+  const waterRatio = .4;
+  const settings = {
+    size: Number(sizeSlider.value),
+    speed: Number(speedSlider.value),
+    fade: Number(fadeSlider.value)
+  };
   let W, H, hy, img, t = 0, ripples = [];
+
+  function updateControls() {
+    settings.size = Number(sizeSlider.value);
+    settings.speed = Number(speedSlider.value);
+    settings.fade = Number(fadeSlider.value);
+    sizeValue.value = `${settings.size.toFixed(2)}x`;
+    speedValue.value = `${settings.speed.toFixed(2)}x`;
+    fadeValue.value = settings.fade.toFixed(4);
+  }
+
+  controls.addEventListener('pointerdown', e => e.stopPropagation());
+  controls.addEventListener('pointerup', e => e.stopPropagation());
+  sizeSlider.addEventListener('input', updateControls);
+  speedSlider.addEventListener('input', updateControls);
+  fadeSlider.addEventListener('input', updateControls);
+  updateControls();
 
   function resize() {
     const d = devicePixelRatio || 1;
-    W = innerWidth * d; H = innerHeight * d; hy = H * .5;
+    W = innerWidth * d; H = innerHeight * d; hy = H * (1 - waterRatio);
     c.width = W; c.height = H; o.width = nx; o.height = ny;
     img = og.createImageData(nx, ny);
   }
@@ -51,12 +122,13 @@
     const r = c.getBoundingClientRect();
     const x = (e.clientX - r.left) / r.width;
     const y = (e.clientY - r.top) / r.height;
-    if (y < .5) return;
+    const horizon = 1 - waterRatio;
+    if (y < horizon) return;
 
     // 画面上の位置を、遠近補正前の水面座標へ変換して保存する
     ripples.push({
       x,
-      y: Math.pow((y - .5) / .5, 1 / curve),
+      y: Math.pow((y - horizon) / waterRatio, 1 / curve),
       born: performance.now() * .001
     });
     if (ripples.length > maxRipples) ripples.shift();
@@ -75,7 +147,8 @@
 
   function frame(ms) {
     t = ms * .001;
-    ripples = ripples.filter(s => t - s.born < life);
+    const rippleLife = life * settings.size;
+    ripples = ripples.filter(s => t - s.born < rippleLife);
     const p = img.data;
 
     for (let y = 0; y < ny; y++)for (let x = 0; x < nx; x++) {
@@ -84,8 +157,9 @@
 
       for (const s of ripples) {
         const age = t - s.born;
+        const lifeFade = 1 - smoothstep(rippleLife * .62, rippleLife, age);
         const X = u - s.x, Y = v - s.y, r = Math.hypot(X, Y) + .0001;
-        const front = age * speed * wave;
+        const front = age * speed * wave * settings.speed;
 
         // 波面の前後だけに1本の輪を描く。
         // 以前の正弦波は波源から複数の同心円を出していたため、
@@ -95,7 +169,7 @@
 
         // Ricker wavelet：山の両側にごく薄い谷を伴う、単一の波紋パルス。
         // 高さを重ね合わせるため、別の波紋と重なれば干渉する。
-        const a = Math.exp(-r * fade * nx) * Math.exp(-age * .10);
+        const a = Math.exp(-r * settings.fade * nx) * Math.exp(-age * .10) * lifeFade;
         const e = Math.exp(-q * q * .5);
         const z = (1 - q * q) * e * a;
         h += z;
