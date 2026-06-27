@@ -1,0 +1,132 @@
+<!doctype html>
+<meta charset="utf-8">
+
+<head>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>水面の波紋</title>
+
+  <style>
+    html,
+    body,
+    canvas {
+      margin: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #dceaf1
+    }
+
+    canvas {
+      display: block;
+      touch-action: none;
+      cursor: crosshair
+    }
+  </style>
+</head>
+
+<body>
+  <canvas></canvas>
+</body>
+
+<script>
+  const c = document.querySelector('canvas'), g = c.getContext('2d');
+  const o = document.createElement('canvas'), og = o.getContext('2d');
+  const nx = 220, ny = 140, curve = 1.65;
+  // 前版の干渉パラメータを維持
+  const speed = .11, wave = .92, fade = .004, contrast = .16;
+  // 1クリックにつき、広がる波紋は1本だけ。値を小さくすると輪が細くなる。
+  const ringWidth = .032;
+  const maxRipples = 12, life = 10;
+  let W, H, hy, img, t = 0, ripples = [];
+
+  function resize() {
+    const d = devicePixelRatio || 1;
+    W = innerWidth * d; H = innerHeight * d; hy = H * .5;
+    c.width = W; c.height = H; o.width = nx; o.height = ny;
+    img = og.createImageData(nx, ny);
+  }
+  addEventListener('resize', resize); resize();
+
+  function addRipple(e) {
+    const r = c.getBoundingClientRect();
+    const x = (e.clientX - r.left) / r.width;
+    const y = (e.clientY - r.top) / r.height;
+    if (y < .5) return;
+
+    // 画面上の位置を、遠近補正前の水面座標へ変換して保存する
+    ripples.push({
+      x,
+      y: Math.pow((y - .5) / .5, 1 / curve),
+      born: performance.now() * .001
+    });
+    if (ripples.length > maxRipples) ripples.shift();
+  }
+
+  c.addEventListener('pointerdown', e => c.setPointerCapture(e.pointerId));
+  c.addEventListener('pointerup', e => {
+    if (e.isPrimary) addRipple(e); // 押した瞬間ではなく、離した瞬間に1回だけ発生
+    if (c.hasPointerCapture(e.pointerId)) c.releasePointerCapture(e.pointerId);
+  });
+
+  function smoothstep(a, b, x) {
+    x = Math.max(0, Math.min(1, (x - a) / (b - a)));
+    return x * x * (3 - 2 * x);
+  }
+
+  function frame(ms) {
+    t = ms * .001;
+    ripples = ripples.filter(s => t - s.born < life);
+    const p = img.data;
+
+    for (let y = 0; y < ny; y++)for (let x = 0; x < nx; x++) {
+      const u = x / (nx - 1), v = y / (ny - 1);
+      let h = 0, dx = 0, dy = 0;
+
+      for (const s of ripples) {
+        const age = t - s.born;
+        const X = u - s.x, Y = v - s.y, r = Math.hypot(X, Y) + .0001;
+        const front = age * speed * wave;
+
+        // 波面の前後だけに1本の輪を描く。
+        // 以前の正弦波は波源から複数の同心円を出していたため、
+        // クリック1回で複数の波紋に見えていた。
+        const q = (r - front) / ringWidth;
+        if (Math.abs(q) > 3.2) continue;
+
+        // Ricker wavelet：山の両側にごく薄い谷を伴う、単一の波紋パルス。
+        // 高さを重ね合わせるため、別の波紋と重なれば干渉する。
+        const a = Math.exp(-r * fade * nx) * Math.exp(-age * .10);
+        const e = Math.exp(-q * q * .5);
+        const z = (1 - q * q) * e * a;
+        h += z;
+
+        // 描画用の傾き（z の半径方向微分）
+        const dzdr = (q * (q * q - 3) * e * a) / ringWidth;
+        dx += dzdr * X / r; dy += dzdr * Y / r;
+      }
+
+      // 暗部だけを強く落とさない。干渉は高さ h の加算として残す。
+      const raw = (h * .22 - dx * .15 - dy * .09) * contrast;
+      const shine = Math.max(-.34, Math.min(.58, raw));
+      const k = (x + y * nx) * 4;
+      p[k] = 43 + shine * 13;
+      p[k + 1] = 139 + shine * 25;
+      p[k + 2] = 177 + shine * 31;
+      p[k + 3] = 255;
+    }
+    og.putImageData(img, 0, 0);
+
+    const sky = g.createLinearGradient(0, 0, 0, hy);
+    sky.addColorStop(0, '#dfeef5'); sky.addColorStop(1, '#9fc8d9');
+    g.fillStyle = sky; g.fillRect(0, 0, W, hy);
+    for (let y = 0; y < ny; y++) {
+      const y0 = hy + (H - hy) * Math.pow(y / ny, curve);
+      const y1 = hy + (H - hy) * Math.pow((y + 1) / ny, curve);
+      g.drawImage(o, 0, y, nx, 1, 0, y0, W, y1 - y0 + 1);
+    }
+
+    g.fillStyle = 'rgba(255,255,255,.42)'; g.fillRect(0, hy, W, 1);
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+</script>
