@@ -126,9 +126,9 @@
     speed: Number(speedSlider.value),
     fade: Number(fadeSlider.value)
   };
-  let W, H, hy, img, t = 0, ripples = [], faceLandmarker = null, lastVideoTime = -1;
-  let faceStates = Array.from({ length: FACE_LIMIT }, createFaceState);
-  let sharedLastAt = new Map();
+  let W, H, hy, img, t = 0, ripples = [], faceLandmarker = null, lastVideoTime = -1, cameraFocusX = .5, cameraLiftY = 0;
+  const faceStates = Array.from({ length: FACE_LIMIT }, createFaceState);
+  const sharedLastAt = new Map();
 
   Object.assign(video, { autoplay: true, playsInline: true, muted: true });
 
@@ -141,11 +141,12 @@
     fadeValue.value = settings.fade.toFixed(4);
   }
 
-  controls.addEventListener('pointerdown', e => e.stopPropagation());
-  controls.addEventListener('pointerup', e => e.stopPropagation());
-  sizeSlider.addEventListener('input', updateControls);
-  speedSlider.addEventListener('input', updateControls);
-  fadeSlider.addEventListener('input', updateControls);
+  for (const eventName of ['pointerdown', 'pointerup']) {
+    controls.addEventListener(eventName, e => e.stopPropagation());
+  }
+  for (const slider of [sizeSlider, speedSlider, fadeSlider]) {
+    slider.addEventListener('input', updateControls);
+  }
   updateControls();
 
   function resize() {
@@ -204,7 +205,7 @@
       calibration: { warmup: WARMUP_FRAMES, remaining: CALIBRATION_FRAMES, samples: 0, stats: new Map() },
       values: new Map(),
       lastRippleAt: new Map(),
-      lastGroupAt: new Map()
+      lastMouthAt: -Infinity
     };
   }
 
@@ -221,14 +222,18 @@
     return { x: sum.x / landmarks.length, y: sum.y / landmarks.length };
   }
 
-  function landmarkBoundsArea(landmarks = []) {
-    if (!landmarks.length) return 0;
-    const bounds = landmarks.reduce((box, point) => ({
+  function landmarkBounds(landmarks = []) {
+    if (!landmarks.length) return null;
+    return landmarks.reduce((box, point) => ({
       minX: Math.min(box.minX, point.x),
       minY: Math.min(box.minY, point.y),
       maxX: Math.max(box.maxX, point.x),
       maxY: Math.max(box.maxY, point.y)
     }), { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity });
+  }
+
+  function boundsArea(bounds) {
+    if (!bounds) return 0;
     return Math.max(bounds.maxX - bounds.minX, 0) * Math.max(bounds.maxY - bounds.minY, 0);
   }
 
@@ -236,11 +241,13 @@
     const detections = faceLandmarks
       .map((landmarks, index) => {
         const rawCenter = getLandmarkCenter(landmarks);
+        const bounds = landmarkBounds(landmarks);
         return {
           landmarks,
           categories: faceBlendshapes[index]?.categories ?? [],
           center: { x: 1 - rawCenter.x, y: rawCenter.y },
-          area: landmarkBoundsArea(landmarks)
+          bottomY: bounds?.maxY ?? rawCenter.y,
+          area: boundsArea(bounds)
         };
       })
       .filter(({ landmarks, categories }) => landmarks.length && categories.length)
@@ -273,6 +280,22 @@
     }
 
     return assignments.sort((a, b) => a.center.x - b.center.x);
+  }
+
+  function updateCameraFocus(assignments) {
+    if (!assignments.length) {
+      cameraFocusX = lerp(cameraFocusX, .5, .025);
+      cameraLiftY = lerp(cameraLiftY, 0, .04);
+      return;
+    }
+
+    const targetX = assignments.reduce((sum, { center }) => sum + center.x, 0) / assignments.length;
+    const lowestFaceBottom = Math.max(...assignments.map(({ bottomY }) => bottomY));
+    const safeBottom = .78;
+    const maxLift = hy * .24;
+    const targetLiftY = -clamp((lowestFaceBottom - safeBottom) * hy * .95, 0, maxLift);
+    cameraFocusX = lerp(cameraFocusX, clamp(targetX, .08, .92), .08);
+    cameraLiftY = lerp(cameraLiftY, targetLiftY, .08);
   }
 
   function updateCalibration(faceState, categories) {
@@ -322,6 +345,17 @@
     return new Map(categories.map(({ categoryName, score }) => [categoryName, score]));
   }
 
+  function strongestMotionForConfig(faceState, scores, config) {
+    let selected = null;
+    for (const key of config.keys) {
+      const score = scores.get(key);
+      if (score == null) continue;
+      const motion = updateMotionValue(faceState, key, score);
+      if (!selected || motion.amount > selected.amount) selected = { key, ...motion };
+    }
+    return selected;
+  }
+
   function faceZone(index, count) {
     if (count < 2) return { x0: .18, x1: .82 };
     return index === 0 ? { x0: .05, x1: .47 } : { x0: .53, x1: .95 };
@@ -346,8 +380,7 @@
       born: now * .001
     });
     faceState.lastRippleAt.set(config.keys[0], now);
-    faceState.lastGroupAt.set(config.group, now);
-    if (mouthGroups.has(config.group)) faceState.lastGroupAt.set('mouth', now);
+    if (mouthGroups.has(config.group)) faceState.lastMouthAt = now;
   }
 
   function spreadRipplePoint(anchor, jitter, group, now) {
@@ -406,6 +439,7 @@
     const assignments = assignFaces(faceLandmarks, faceBlendshapes);
     const now = performance.now();
     const activeEvents = [];
+    updateCameraFocus(assignments);
 
     assignments.forEach(({ categories, faceState }, index) => {
       updateCalibration(faceState, categories);
@@ -414,16 +448,10 @@
       const scores = categoryScoreMap(categories);
       const zone = faceZone(index, assignments.length);
       for (const config of expressionConfigs) {
-        let selected = null;
-        for (const key of config.keys) {
-          const score = scores.get(key);
-          if (score == null) continue;
-          const motion = updateMotionValue(faceState, key, score);
-          if (!selected || motion.amount > selected.amount) selected = { key, ...motion };
-        }
+        const selected = strongestMotionForConfig(faceState, scores, config);
         if (!selected || selected.amount < config.threshold) continue;
         if (now - (faceState.lastRippleAt.get(config.keys[0]) ?? -Infinity) < config.cooldown) continue;
-        if (mouthGroups.has(config.group) && now - (faceState.lastGroupAt.get('mouth') ?? -Infinity) < mouthFamilyCooldown) continue;
+        if (mouthGroups.has(config.group) && now - faceState.lastMouthAt < mouthFamilyCooldown) continue;
         spawnExpressionRipple(faceState, zone, config, selected.amount, selected.speed, now);
         activeEvents.push({ config, amount: selected.amount, motionSpeed: selected.speed });
       }
@@ -436,6 +464,25 @@
       : '顔を検出中...';
   }
 
+  function cameraSourceRect() {
+    const videoAspect = video.videoWidth / video.videoHeight;
+    const targetAspect = W / hy;
+    let sx = 0, sy = 0, sw = video.videoWidth, sh = video.videoHeight;
+
+    if (videoAspect > targetAspect) {
+      sw = video.videoHeight * targetAspect;
+      const sourceFocusX = 1 - cameraFocusX;
+      sx = clamp(sourceFocusX * video.videoWidth - sw * .5, 0, video.videoWidth - sw);
+    } else {
+      sh = video.videoWidth / targetAspect;
+      sy = (video.videoHeight - sh) * .5;
+    }
+
+    const sourceLiftY = -cameraLiftY / hy * sh;
+    sy = clamp(sy + sourceLiftY, 0, video.videoHeight - sh);
+    return { sx, sy, sw, sh };
+  }
+
   function drawCamera() {
     if (video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
       const sky = g.createLinearGradient(0, 0, 0, hy);
@@ -444,16 +491,7 @@
       return;
     }
 
-    const videoAspect = video.videoWidth / video.videoHeight;
-    const targetAspect = W / hy;
-    let sx = 0, sy = 0, sw = video.videoWidth, sh = video.videoHeight;
-    if (videoAspect > targetAspect) {
-      sw = video.videoHeight * targetAspect;
-      sx = (video.videoWidth - sw) * .5;
-    } else {
-      sh = video.videoWidth / targetAspect;
-      sy = (video.videoHeight - sh) * .5;
-    }
+    const { sx, sy, sw, sh } = cameraSourceRect();
 
     g.save();
     g.scale(-1, 1);
@@ -505,11 +543,12 @@
         const lifeFade = 1 - smoothstep(rippleLife * .62, rippleLife, age);
         const X = u - s.x, Y = v - s.y, r = Math.hypot(X, Y) + .0001;
         const front = age * speed * wave * settings.speed * (s.speedScale ?? 1);
+        const width = ringWidth * (s.sizeScale ?? 1);
 
         // 波面の前後だけに1本の輪を描く。
         // 以前の正弦波は波源から複数の同心円を出していたため、
         // クリック1回で複数の波紋に見えていた。
-        const q = (r - front) / (ringWidth * (s.sizeScale ?? 1));
+        const q = (r - front) / width;
         if (Math.abs(q) > 3.2) continue;
 
         // Ricker wavelet：山の両側にごく薄い谷を伴う、単一の波紋パルス。
@@ -520,7 +559,7 @@
         h += z;
 
         // 描画用の傾き（z の半径方向微分）
-        const dzdr = (q * (q * q - 3) * e * a) / (ringWidth * (s.sizeScale ?? 1));
+        const dzdr = (q * (q * q - 3) * e * a) / width;
         dx += dzdr * X / r; dy += dzdr * Y / r;
       }
 
