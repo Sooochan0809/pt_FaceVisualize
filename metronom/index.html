@@ -1,0 +1,699 @@
+<!doctype html>
+<html lang="ja">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>メトロノーム同期シミュレーション</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0b1015;
+      --line: #263542;
+      --text: #ecf2f8;
+      --sub: #aab8c7;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      height: 100dvh;
+      overflow: hidden;
+      background: var(--bg);
+      color: var(--text);
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif;
+    }
+
+    main {
+      width: 100vw;
+      height: 100dvh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    canvas {
+      display: block;
+      width: 100%;
+      flex: 1 1 auto;
+      height: auto;
+      min-height: 0;
+      background: linear-gradient(#0c1116, #121a22 66%, #161d24);
+      touch-action: none;
+      cursor: default;
+    }
+
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 10px;
+      padding: 12px 14px calc(12px + env(safe-area-inset-bottom));
+      border-top: 1px solid var(--line);
+      background: #0f161d;
+    }
+
+    button {
+      border: 1px solid #34495d;
+      border-radius: 6px;
+      padding: 8px 12px;
+      background: #162330;
+      color: var(--text);
+      font: inherit;
+      cursor: pointer;
+    }
+
+    button:hover {
+      background: #2a4259;
+    }
+
+    button:active {
+      transform: translateY(1px);
+    }
+
+    .readout {
+      margin-left: auto;
+      color: var(--sub);
+      font-size: .88rem;
+      white-space: nowrap;
+    }
+
+    @media (max-width: 620px) {
+      .readout {
+        width: 100%;
+        margin-left: 0;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <main>
+    <canvas id="sim" width="1600" height="900" aria-label="可動台上のメトロノーム同期シミュレーション"></canvas>
+    <div class="controls">
+      <button id="disturb-0" type="button">左端に刺激</button>
+      <button id="disturb-1" type="button">中央に刺激</button>
+      <button id="disturb-2" type="button">右端に刺激</button>
+      <button id="reset" type="button">同期状態に戻す</button>
+      <button id="pause" type="button">一時停止</button>
+      <span class="readout" id="readout">位相の揃い 100%</span>
+    </div>
+  </main>
+
+  <script>
+    (() => {
+      const canvas = document.getElementById('sim');
+      const ctx = canvas.getContext('2d');
+      const readout = document.getElementById('readout');
+      const disturbBtns = [
+        document.getElementById('disturb-0'),
+        document.getElementById('disturb-1'),
+        document.getElementById('disturb-2'),
+      ];
+      const resetBtn = document.getElementById('reset');
+      const pauseBtn = document.getElementById('pause');
+
+      const BASE_W = 1600;
+      const BASE_H = 900;
+      const count = 3;
+      const view = {
+        width: BASE_W,
+        height: BASE_H,
+        scale: 1,
+        offsetX: 0,
+        offsetY: 0,
+      };
+
+      const physics = {
+        baseMass: 3.1,
+        bobMass: 1.0,
+        rodLength: 0.65,
+        naturalAngularSpeed: 4.4,
+        amplitude: 0.32,
+        selfExcitation: 1.10,
+        pendulumDamping: 0.02,
+        baseDamping: 0.78,
+        baseCentering: 0.10,
+        pixelsPerMeter: 165,
+        maxDragForce: 145,
+        mountMass: 0.34,
+        mountDamping: 1.9,
+        mountStiffness: 46,
+        actuatorForce: 4.9,
+        actuatorDuration: 0.20,
+        mountLimit: 0.18,
+      };
+
+      const metronomes = Array.from({ length: count }, (_, i) => ({
+        theta: 0.20,
+        omega: 0,
+        mountX: 0,
+        mountV: 0,
+        actuatorTime: 0,
+        actuatorActive: false,
+        index: i,
+        label: `M${i + 1}`,
+      }));
+
+      const state = {
+        x: 0,
+        v: 0,
+        running: true,
+      };
+
+      const layout = {
+        boardCenterX: 800,
+        boardY: 704,
+        boardW: 1190,
+        boardH: 42,
+        floorY: 823,
+        rollerY: 785,
+        bodyTopY: 245,
+        bodyBottomY: 658,
+        bodyW: 210,
+        bodyTopW: 86,
+        pivotY: 630,
+        armLen: 272,
+        xOffsets: [-360, 0, 360],
+      };
+
+      const pointer = {
+        active: false,
+        targetX: 0,
+        offsetX: 0,
+        pointerId: null,
+      };
+
+      let lastTime = performance.now();
+
+      function clamp(value, min, max) {
+        return Math.max(min, Math.min(max, value));
+      }
+
+      function resizeCanvas() {
+        const rect = canvas.getBoundingClientRect();
+        const width = Math.max(1, Math.round(rect.width));
+        const height = Math.max(1, Math.round(rect.height));
+        const dpr = Math.max(1, window.devicePixelRatio || 1);
+        const pixelWidth = Math.round(width * dpr);
+        const pixelHeight = Math.round(height * dpr);
+
+        if (canvas.width !== pixelWidth || canvas.height !== pixelHeight) {
+          canvas.width = pixelWidth;
+          canvas.height = pixelHeight;
+        }
+
+        view.width = width;
+        view.height = height;
+        view.scale = Math.min(width / BASE_W, height / BASE_H);
+        view.offsetX = (width - BASE_W * view.scale) / 2;
+        view.offsetY = (height - BASE_H * view.scale) / 2;
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      }
+
+      function reset() {
+        for (const m of metronomes) {
+          m.theta = 0.20;
+          m.omega = 0;
+          m.mountX = 0;
+          m.mountV = 0;
+          m.actuatorTime = 0;
+          m.actuatorActive = false;
+        }
+        state.x = 0;
+        state.v = 0;
+        state.running = true;
+        pauseBtn.textContent = '一時停止';
+      }
+
+      function disturb(index) {
+        const m = metronomes[index];
+        if (!m) return;
+        m.actuatorTime = 0;
+        m.actuatorActive = true;
+      }
+
+      function actuatorForceFor(m) {
+        if (!m.actuatorActive) return 0;
+        const u = clamp(m.actuatorTime / physics.actuatorDuration, 0, 1);
+        const force = physics.actuatorForce * Math.sin(Math.PI * u);
+        if (u >= 1) m.actuatorActive = false;
+        return force;
+      }
+
+      function phaseCoherence() {
+        const p = physics;
+        let re = 0;
+        let im = 0;
+        for (const m of metronomes) {
+          const phase = Math.atan2(-m.omega / (p.amplitude * p.naturalAngularSpeed), m.theta / p.amplitude);
+          re += Math.cos(phase);
+          im += Math.sin(phase);
+        }
+        return Math.hypot(re, im) / count;
+      }
+
+      function externalDragForce() {
+        if (!pointer.active) return 0;
+        const spring = 260;
+        const damping = 24;
+        return clamp(spring * (pointer.targetX - state.x) - damping * state.v, -physics.maxDragForce, physics.maxDragForce);
+      }
+
+      function integrate(h) {
+        const p = physics;
+        const cos = metronomes.map(m => Math.cos(m.theta));
+        const sin = metronomes.map(m => Math.sin(m.theta));
+
+        const localAcceleration = metronomes.map(m => {
+          const restoring = -(p.naturalAngularSpeed ** 2) * Math.sin(m.theta);
+          const escapement = p.selfExcitation * (1 - (m.theta / p.amplitude) ** 2) * m.omega;
+          const damping = -p.pendulumDamping * m.omega;
+          return restoring + escapement + damping;
+        });
+
+        const pendulumReaction = metronomes.map((m, i) => (
+          p.bobMass * p.rodLength * (
+            localAcceleration[i] * cos[i] - m.omega ** 2 * sin[i]
+          )
+        ));
+
+        const camForces = metronomes.map(m => actuatorForceFor(m));
+        const mountInternalForces = metronomes.map((m, i) => (
+          camForces[i] - p.mountDamping * m.mountV - p.mountStiffness * m.mountX
+        ));
+
+        const dragForce = externalDragForce();
+        const effectiveMass = Math.max(
+          0.6,
+          p.baseMass + count * (p.mountMass + p.bobMass) - cos.reduce((sum, c) => sum + p.bobMass * c ** 2, 0)
+        );
+
+        const baseAcceleration = (
+          dragForce
+          - p.baseDamping * state.v
+          - p.baseCentering * state.x
+          - mountInternalForces.reduce((sum, f) => sum + f, 0)
+        ) / effectiveMass;
+
+        const mountAbsoluteAcceleration = metronomes.map((m, i) => (
+          (mountInternalForces[i] - pendulumReaction[i]) / p.mountMass
+        ));
+
+        for (let i = 0; i < count; i++) {
+          const pivotAcceleration = mountAbsoluteAcceleration[i];
+          const angularAcceleration = localAcceleration[i] - (pivotAcceleration / p.rodLength) * cos[i];
+          metronomes[i].omega += angularAcceleration * h;
+          metronomes[i].theta += metronomes[i].omega * h;
+
+          const relativeAcceleration = mountAbsoluteAcceleration[i] - baseAcceleration;
+          metronomes[i].mountV += relativeAcceleration * h;
+          metronomes[i].mountX += metronomes[i].mountV * h;
+          if (Math.abs(metronomes[i].mountX) > p.mountLimit) {
+            metronomes[i].mountX = Math.sign(metronomes[i].mountX) * p.mountLimit;
+            metronomes[i].mountV *= -0.08;
+          }
+
+          if (metronomes[i].actuatorActive) metronomes[i].actuatorTime += h;
+        }
+
+        state.v += baseAcceleration * h;
+        state.x += state.v * h;
+
+        if (Math.abs(state.x) > 2.1) {
+          state.x = Math.sign(state.x) * 2.1;
+          state.v *= -0.18;
+        }
+      }
+
+      function step(dt) {
+        const safeDt = Math.min(dt, 0.04);
+        const substeps = Math.max(1, Math.ceil(safeDt / 0.003));
+        const h = safeDt / substeps;
+        if (state.running) {
+          for (let i = 0; i < substeps; i++) integrate(h);
+        }
+      }
+
+      function roundedRect(x, y, w, h, r) {
+        const rr = Math.min(r, w / 2, h / 2);
+        ctx.beginPath();
+        ctx.moveTo(x + rr, y);
+        ctx.arcTo(x + w, y, x + w, y + h, rr);
+        ctx.arcTo(x + w, y + h, x, y + h, rr);
+        ctx.arcTo(x, y + h, x, y, rr);
+        ctx.arcTo(x, y, x + w, y, rr);
+        ctx.closePath();
+      }
+
+      function worldToScreenX(x) {
+        return layout.boardCenterX + x * physics.pixelsPerMeter;
+      }
+
+      function screenToWorldX(x) {
+        return (x - layout.boardCenterX) / physics.pixelsPerMeter;
+      }
+
+      function drawBody(localX) {
+        const { bodyTopY, bodyBottomY, bodyW, bodyTopW } = layout;
+        ctx.beginPath();
+        ctx.moveTo(localX - bodyTopW / 2, bodyTopY);
+        ctx.lineTo(localX + bodyTopW / 2, bodyTopY);
+        ctx.lineTo(localX + bodyW / 2, bodyBottomY);
+        ctx.lineTo(localX - bodyW / 2, bodyBottomY);
+        ctx.closePath();
+
+        const grad = ctx.createLinearGradient(0, bodyTopY, 0, bodyBottomY);
+        grad.addColorStop(0, '#556474');
+        grad.addColorStop(0.48, '#2a3642');
+        grad.addColorStop(1, '#151e27');
+        ctx.fillStyle = grad;
+        ctx.fill();
+        ctx.strokeStyle = '#7c8fa1';
+        ctx.lineWidth = 3;
+        ctx.stroke();
+
+        ctx.strokeStyle = 'rgba(213,229,242,.36)';
+        ctx.lineWidth = 2;
+        for (let i = 0; i < 8; i++) {
+          const y = bodyTopY + 86 + i * 37;
+          ctx.beginPath();
+          ctx.moveTo(localX - 30, y);
+          ctx.lineTo(localX + 30, y);
+          ctx.stroke();
+        }
+      }
+
+      function drawMetronome(m) {
+        const boardX = worldToScreenX(state.x);
+        const localX = boardX + layout.xOffsets[m.index] + m.mountX * physics.pixelsPerMeter;
+        drawBody(localX);
+
+        const pivotX = localX;
+        const pivotY = layout.pivotY;
+        const angle = m.theta * 0.98;
+        const endX = pivotX + Math.sin(angle) * layout.armLen;
+        const endY = pivotY - Math.cos(angle) * layout.armLen;
+
+        ctx.strokeStyle = '#f0d88e';
+        ctx.lineWidth = 8;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(pivotX, pivotY);
+        ctx.lineTo(endX, endY);
+        ctx.stroke();
+
+        const weightT = 0.73;
+        const weightX = pivotX + (endX - pivotX) * weightT;
+        const weightY = pivotY + (endY - pivotY) * weightT;
+        ctx.fillStyle = '#e1b950';
+        roundedRect(weightX - 19, weightY - 16, 38, 32, 6);
+        ctx.fill();
+        ctx.strokeStyle = '#fff0b5';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        ctx.fillStyle = '#eaf3fb';
+        ctx.beginPath();
+        ctx.arc(pivotX, pivotY, 14, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#9ac7ed';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        ctx.fillStyle = '#d6e2ec';
+        ctx.font = '600 21px ui-sans-serif, system-ui, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(m.label, localX, 866);
+      }
+
+      function drawDisturbanceMechanisms() {
+        const boardX = worldToScreenX(state.x);
+        const y = layout.boardY;
+        const guideW = 300;
+        const sledW = 238;
+        const sledH = 22;
+
+        metronomes.forEach((m, i) => {
+          const fixedX = boardX + layout.xOffsets[i];
+          const movingX = fixedX + m.mountX * physics.pixelsPerMeter;
+          const active = m.actuatorActive;
+
+          ctx.strokeStyle = '#526b7d';
+          ctx.lineWidth = 7;
+          ctx.lineCap = 'round';
+          ctx.beginPath();
+          ctx.moveTo(fixedX - guideW / 2, y - 22);
+          ctx.lineTo(fixedX + guideW / 2, y - 22);
+          ctx.stroke();
+
+          ctx.strokeStyle = '#9eb7c9';
+          ctx.lineWidth = 2;
+          for (const x of [fixedX - guideW / 2, fixedX + guideW / 2]) {
+            ctx.beginPath();
+            ctx.moveTo(x, y - 33);
+            ctx.lineTo(x, y - 11);
+            ctx.stroke();
+          }
+
+          const sliderGrad = ctx.createLinearGradient(movingX - sledW / 2, y - 54, movingX + sledW / 2, y - 34);
+          sliderGrad.addColorStop(0, '#718ca0');
+          sliderGrad.addColorStop(.5, '#d1e3ef');
+          sliderGrad.addColorStop(1, '#718ca0');
+          ctx.fillStyle = sliderGrad;
+          roundedRect(movingX - sledW / 2, y - 54, sledW, sledH, 7);
+          ctx.fill();
+          ctx.strokeStyle = '#e4f2fb';
+          ctx.lineWidth = 2;
+          ctx.stroke();
+
+          ctx.fillStyle = '#405566';
+          roundedRect(movingX - 58, layout.bodyBottomY - 7, 116, 16, 6);
+          ctx.fill();
+
+          ctx.fillStyle = '#d69458';
+          ctx.beginPath();
+          ctx.arc(fixedX, y - 6, 11, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.strokeStyle = '#fff0d2';
+          ctx.lineWidth = 2;
+          ctx.stroke();
+
+          ctx.fillStyle = '#b8cad8';
+          ctx.font = '600 16px ui-sans-serif, system-ui, sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillText('刺激', fixedX, y - 76);
+        });
+      }
+
+      function drawBase() {
+        const x = worldToScreenX(state.x);
+        const y = layout.boardY;
+
+        ctx.fillStyle = '#2a3540';
+        roundedRect(90, layout.floorY, BASE_W - 180, 28, 14);
+        ctx.fill();
+        ctx.strokeStyle = '#526273';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        for (const offset of [-390, 0, 390]) {
+          const rx = x + offset;
+          const grad = ctx.createRadialGradient(rx - 12, layout.rollerY - 12, 4, rx, layout.rollerY, 39);
+          grad.addColorStop(0, '#c8d6e2');
+          grad.addColorStop(0.52, '#788b9d');
+          grad.addColorStop(1, '#2d3b48');
+          ctx.fillStyle = grad;
+          ctx.beginPath();
+          ctx.arc(rx, layout.rollerY, 38, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.strokeStyle = '#a6b7c5';
+          ctx.lineWidth = 3;
+          ctx.stroke();
+        }
+
+        const grad = ctx.createLinearGradient(x - layout.boardW / 2, y, x + layout.boardW / 2, y + layout.boardH);
+        grad.addColorStop(0, '#7f9db9');
+        grad.addColorStop(.45, '#b7d4ec');
+        grad.addColorStop(1, '#718da7');
+        ctx.fillStyle = grad;
+        roundedRect(x - layout.boardW / 2, y, layout.boardW, layout.boardH, 14);
+        ctx.fill();
+        ctx.strokeStyle = '#d5ebff';
+        ctx.lineWidth = 3;
+        ctx.stroke();
+
+        ctx.save();
+        ctx.strokeStyle = `rgba(142,197,255,${0.30 + Math.min(Math.abs(state.x) * .28, .44)})`;
+        ctx.lineWidth = 2;
+        ctx.setLineDash([9, 9]);
+        ctx.beginPath();
+        ctx.moveTo(layout.boardCenterX, y - 24);
+        ctx.lineTo(x, y - 24);
+        ctx.stroke();
+        ctx.restore();
+
+      }
+
+      function draw() {
+        resizeCanvas();
+        ctx.clearRect(0, 0, view.width, view.height);
+        const bg = ctx.createLinearGradient(0, 0, 0, view.height);
+        bg.addColorStop(0, '#0b1015');
+        bg.addColorStop(1, '#18212a');
+        ctx.fillStyle = bg;
+        ctx.fillRect(0, 0, view.width, view.height);
+        ctx.save();
+        ctx.translate(view.offsetX, view.offsetY);
+        ctx.scale(view.scale, view.scale);
+
+        const coherence = phaseCoherence();
+        const percent = Math.round(coherence * 100);
+        readout.textContent = `位相の揃い ${percent}%`;
+
+        ctx.fillStyle = '#e7f0f8';
+        ctx.font = '700 38px ui-sans-serif, system-ui, sans-serif';
+        ctx.textAlign = 'left';
+        ctx.fillText('', 74, 82);
+        ctx.fillStyle = '#aab8c7';
+        ctx.font = '23px ui-sans-serif, system-ui, sans-serif';
+        ctx.fillText('', 76, 122);
+
+        const bx = 76;
+        const by = 151;
+        const bw = 392;
+        const bh = 12;
+        ctx.fillStyle = '#263542';
+        roundedRect(bx, by, bw, bh, bh / 2);
+        ctx.fill();
+        ctx.fillStyle = coherence > .84 ? '#9dd7a4' : coherence > .52 ? '#e2cb77' : '#ff9a9a';
+        roundedRect(bx, by, bw * coherence, bh, bh / 2);
+        ctx.fill();
+
+        ctx.fillStyle = '#8ea6ba';
+        ctx.font = '18px ui-sans-serif, system-ui, sans-serif';
+        ctx.fillText('共通台の横変位', 76, 201);
+        const displacement = clamp(state.x / 1.4, -1, 1);
+        ctx.fillStyle = '#263542';
+        roundedRect(76, 216, 392, 10, 5);
+        ctx.fill();
+        ctx.fillStyle = '#9ecdf4';
+        const center = 76 + 196;
+        const len = displacement * 176;
+        roundedRect(Math.min(center, center + len), 216, Math.abs(len), 10, 5);
+        ctx.fill();
+        ctx.strokeStyle = '#637789';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(center, 208);
+        ctx.lineTo(center, 236);
+        ctx.stroke();
+
+        drawBase();
+        drawDisturbanceMechanisms();
+        for (const m of metronomes) drawMetronome(m);
+        ctx.restore();
+
+      }
+
+      function animate(now) {
+        const dt = (now - lastTime) / 1000;
+        lastTime = now;
+        step(dt);
+        draw();
+        requestAnimationFrame(animate);
+      }
+
+      function toCanvasPoint(event) {
+        const rect = canvas.getBoundingClientRect();
+        const x = event.clientX - rect.left;
+        const y = event.clientY - rect.top;
+        return {
+          x: (x - view.offsetX) / view.scale,
+          y: (y - view.offsetY) / view.scale,
+        };
+      }
+
+      function isBoardHit(point) {
+        const x = worldToScreenX(state.x);
+        return (
+          point.x >= x - layout.boardW / 2 - 16 &&
+          point.x <= x + layout.boardW / 2 + 16 &&
+          point.y >= layout.boardY - 24 &&
+          point.y <= layout.boardY + layout.boardH + 28
+        );
+      }
+
+      function actuatorHitIndex(point) {
+        const boardX = worldToScreenX(state.x);
+        for (let i = 0; i < count; i++) {
+          const fixedX = boardX + layout.xOffsets[i];
+          if (
+            point.x >= fixedX - 158 &&
+            point.x <= fixedX + 158 &&
+            point.y >= layout.boardY - 92 &&
+            point.y <= layout.boardY + 8
+          ) {
+            return i;
+          }
+        }
+        return -1;
+      }
+
+      canvas.addEventListener('pointerdown', event => {
+        const point = toCanvasPoint(event);
+        const hitIndex = actuatorHitIndex(point);
+        if (hitIndex !== -1) {
+          disturb(hitIndex);
+          return;
+        }
+        if (!isBoardHit(point)) return;
+        pointer.active = true;
+        pointer.pointerId = event.pointerId;
+        pointer.offsetX = screenToWorldX(point.x) - state.x;
+        pointer.targetX = state.x;
+        canvas.setPointerCapture(event.pointerId);
+        canvas.style.cursor = 'grabbing';
+      });
+
+      canvas.addEventListener('pointermove', event => {
+        const point = toCanvasPoint(event);
+        if (!pointer.active) {
+          canvas.style.cursor = actuatorHitIndex(point) !== -1 ? 'pointer' : isBoardHit(point) ? 'grab' : 'default';
+          return;
+        }
+        pointer.targetX = clamp(screenToWorldX(point.x) - pointer.offsetX, -1.7, 1.7);
+      });
+
+      function endDrag(event) {
+        if (!pointer.active) return;
+        pointer.active = false;
+        canvas.style.cursor = 'default';
+        if (event.pointerId !== undefined && canvas.hasPointerCapture(event.pointerId)) {
+          canvas.releasePointerCapture(event.pointerId);
+        }
+      }
+
+      canvas.addEventListener('pointerup', endDrag);
+      canvas.addEventListener('pointercancel', endDrag);
+      canvas.addEventListener('pointerleave', event => {
+        if (event.buttons === 0) endDrag(event);
+      });
+
+      disturbBtns.forEach((button, i) => button.addEventListener('click', () => disturb(i)));
+      resetBtn.addEventListener('click', reset);
+      pauseBtn.addEventListener('click', () => {
+        state.running = !state.running;
+        pauseBtn.textContent = state.running ? '一時停止' : '再開';
+      });
+
+      resizeCanvas();
+      reset();
+      requestAnimationFrame(animate);
+    })();
+  </script>
+</body>
+
+</html>
