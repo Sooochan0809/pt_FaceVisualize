@@ -130,11 +130,7 @@
 
         .stage img {
             position: absolute;
-            inset: 0;
-            width: 100%;
-            height: 100%;
             display: block;
-            object-fit: contain;
             user-select: none;
             pointer-events: none;
             z-index: 1;
@@ -148,6 +144,25 @@
 
         .stageImageArea[hidden] {
             display: none;
+        }
+
+        .alignToggleButton {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            z-index: 3;
+            min-width: 76px;
+            height: 32px;
+            padding: 0 10px;
+            border: 0;
+            border-radius: 8px;
+            background: var(--ink);
+            color: #fff;
+            font-size: 0.78rem;
+        }
+
+        .alignToggleButton.is-off {
+            background: #7d858f;
         }
 
         .fileButton img {
@@ -347,6 +362,7 @@
             <section class="stageWrap" aria-label="重ね合わせ結果">
                 <div class="stage" id="stage">
                     <div class="stageImageArea" id="stageImageArea" hidden></div>
+                    <button class="alignToggleButton" id="alignToggleButton" type="button" aria-pressed="true">調整 ON</button>
                 </div>
             </section>
         </main>
@@ -368,20 +384,29 @@
         </aside>
     </div>
 
-    <script>
+    <script type="module">
         const MAX_IMAGES = 7;
         const DEFAULT_OPACITY = 0.1;
+        const MEDIAPIPE_TASKS_URL = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest";
+        const FACE_MODEL_URL = "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/latest/face_landmarker.task";
+        const MEDIAPIPE_WASM_URL = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm";
         const REMOVE_ICON_SRC = "icon-clause.png";
+        const ALIGN_LANDMARKS = [
+            33, 133, 362, 263, 1, 4, 61, 291, 199, 152
+        ];
         const fileInput = document.getElementById("fileInput");
         const clearButton = document.getElementById("clearButton");
         const status = document.getElementById("status");
         const stage = document.getElementById("stage");
         const stageImageArea = document.getElementById("stageImageArea");
+        const alignToggleButton = document.getElementById("alignToggleButton");
         const layerList = document.getElementById("layerList");
         const layersContainer = document.getElementById("layers");
 
         let layers = [];
         let draggedId = null;
+        let faceLandmarkerPromise = null;
+        let alignmentEnabled = true;
 
         const createId = () => {
             if (crypto.randomUUID) return crypto.randomUUID();
@@ -400,17 +425,69 @@
             });
         }
 
+        function loadImage(src) {
+            return new Promise((resolve, reject) => {
+                const image = new Image();
+                image.onload = () => resolve(image);
+                image.onerror = reject;
+                image.src = src;
+            });
+        }
+
+        async function getFaceLandmarker() {
+            if (!faceLandmarkerPromise) {
+                faceLandmarkerPromise = import(MEDIAPIPE_TASKS_URL)
+                    .then(({ FaceLandmarker, FilesetResolver }) => FilesetResolver
+                        .forVisionTasks(MEDIAPIPE_WASM_URL)
+                        .then((vision) => FaceLandmarker.createFromOptions(vision, {
+                            baseOptions: {
+                                modelAssetPath: FACE_MODEL_URL
+                            },
+                            runningMode: "IMAGE",
+                            numFaces: 1
+                        })))
+                    .catch((error) => {
+                        faceLandmarkerPromise = null;
+                        throw error;
+                    });
+            }
+
+            return faceLandmarkerPromise;
+        }
+
+        async function detectFaceLandmarks(src, width, height) {
+            try {
+                const [faceLandmarker, image] = await Promise.all([
+                    getFaceLandmarker(),
+                    loadImage(src)
+                ]);
+                const result = faceLandmarker.detect(image);
+                const landmarks = result.faceLandmarks?.[0];
+                if (!landmarks) return null;
+
+                return landmarks.map((point) => ({
+                    x: point.x * width,
+                    y: point.y * height
+                }));
+            } catch (error) {
+                console.warn("Face landmark detection failed.", error);
+                return null;
+            }
+        }
+
         function makeLayer(file) {
             return new Promise((resolve, reject) => {
                 const reader = new FileReader();
                 reader.onload = async () => {
                     const size = await getImageSize(reader.result);
+                    const landmarks = await detectFaceLandmarks(reader.result, size.width, size.height);
                     resolve({
                         id: createId(),
                         name: file.name,
                         src: reader.result,
                         width: size.width,
                         height: size.height,
+                        landmarks,
                         opacity: DEFAULT_OPACITY
                     });
                 };
@@ -462,32 +539,133 @@
             render();
         }
 
-        function updateStageImageArea() {
+        function getContainTransform(layer) {
+            const scale = Math.min(stage.clientWidth / layer.width, stage.clientHeight / layer.height);
+            return {
+                a: scale,
+                b: 0,
+                c: 0,
+                d: scale,
+                e: (stage.clientWidth - layer.width * scale) / 2,
+                f: (stage.clientHeight - layer.height * scale) / 2
+            };
+        }
+
+        function transformPoint(point, transform) {
+            return {
+                x: transform.a * point.x + transform.c * point.y + transform.e,
+                y: transform.b * point.x + transform.d * point.y + transform.f
+            };
+        }
+
+        function getComparableLandmarks(source, target) {
+            return ALIGN_LANDMARKS
+                .filter((index) => source[index] && target[index])
+                .map((index) => ({
+                    source: source[index],
+                    target: target[index]
+                }));
+        }
+
+        function getSimilarityTransform(sourceLandmarks, targetLandmarks) {
+            const pairs = getComparableLandmarks(sourceLandmarks, targetLandmarks);
+            if (pairs.length < 2) return null;
+
+            const sourceCenter = pairs.reduce((sum, pair) => ({
+                x: sum.x + pair.source.x,
+                y: sum.y + pair.source.y
+            }), { x: 0, y: 0 });
+            const targetCenter = pairs.reduce((sum, pair) => ({
+                x: sum.x + pair.target.x,
+                y: sum.y + pair.target.y
+            }), { x: 0, y: 0 });
+            sourceCenter.x /= pairs.length;
+            sourceCenter.y /= pairs.length;
+            targetCenter.x /= pairs.length;
+            targetCenter.y /= pairs.length;
+
+            const fit = pairs.reduce((sum, pair) => {
+                const sx = pair.source.x - sourceCenter.x;
+                const sy = pair.source.y - sourceCenter.y;
+                const tx = pair.target.x - targetCenter.x;
+                const ty = pair.target.y - targetCenter.y;
+                return {
+                    dot: sum.dot + sx * tx + sy * ty,
+                    cross: sum.cross + sx * ty - sy * tx,
+                    size: sum.size + sx * sx + sy * sy
+                };
+            }, { dot: 0, cross: 0, size: 0 });
+
+            if (fit.size === 0) return null;
+
+            const a = fit.dot / fit.size;
+            const b = fit.cross / fit.size;
+            return {
+                a,
+                b,
+                c: -b,
+                d: a,
+                e: targetCenter.x - a * sourceCenter.x + b * sourceCenter.y,
+                f: targetCenter.y - b * sourceCenter.x - a * sourceCenter.y
+            };
+        }
+
+        function getAlignedTransforms() {
+            if (!alignmentEnabled) {
+                return new Map(layers.map((layer) => [layer.id, getContainTransform(layer)]));
+            }
+
+            const reference = layers.find((layer) => layer.landmarks);
+            const referenceTransform = reference ? getContainTransform(reference) : null;
+            const referenceLandmarks = reference?.landmarks?.map((point) => transformPoint(point, referenceTransform));
+
+            return new Map(layers.map((layer) => {
+                if (!reference || layer.id === reference.id || !layer.landmarks) {
+                    return [layer.id, getContainTransform(layer)];
+                }
+
+                return [
+                    layer.id,
+                    getSimilarityTransform(layer.landmarks, referenceLandmarks) || getContainTransform(layer)
+                ];
+            }));
+        }
+
+        function getTransformedBounds(layer, transform) {
+            const corners = [
+                { x: 0, y: 0 },
+                { x: layer.width, y: 0 },
+                { x: layer.width, y: layer.height },
+                { x: 0, y: layer.height }
+            ].map((point) => transformPoint(point, transform));
+
+            return corners.reduce((bounds, point) => ({
+                left: Math.min(bounds.left, point.x),
+                top: Math.min(bounds.top, point.y),
+                right: Math.max(bounds.right, point.x),
+                bottom: Math.max(bounds.bottom, point.y)
+            }), {
+                left: Infinity,
+                top: Infinity,
+                right: -Infinity,
+                bottom: -Infinity
+            });
+        }
+
+        function updateStageImageArea(transforms) {
             if (layers.length === 0) {
                 stageImageArea.hidden = true;
                 return;
             }
 
-            const stageWidth = stage.clientWidth;
-            const stageHeight = stage.clientHeight;
-            const rects = layers.map((layer) => {
-                const scale = Math.min(stageWidth / layer.width, stageHeight / layer.height);
-                const width = layer.width * scale;
-                const height = layer.height * scale;
-                return {
-                    left: (stageWidth - width) / 2,
-                    top: (stageHeight - height) / 2,
-                    right: (stageWidth + width) / 2,
-                    bottom: (stageHeight + height) / 2
-                };
-            });
-
-            const area = rects.reduce((result, rect) => ({
-                left: Math.min(result.left, rect.left),
-                top: Math.min(result.top, rect.top),
-                right: Math.max(result.right, rect.right),
-                bottom: Math.max(result.bottom, rect.bottom)
-            }));
+            const area = layers
+                .map((layer) => getTransformedBounds(layer, transforms.get(layer.id)))
+                .reduce((result, bounds) => ({
+                    left: Math.min(result.left, bounds.left),
+                    top: Math.min(result.top, bounds.top),
+                    right: Math.max(result.right, bounds.right),
+                    bottom: Math.max(result.bottom, bounds.bottom)
+                }));
 
             stageImageArea.hidden = false;
             stageImageArea.style.left = `${area.left}px`;
@@ -497,14 +675,20 @@
         }
 
         function renderStage() {
+            const transforms = getAlignedTransforms();
             stage.querySelectorAll(".stageLayer").forEach((image) => image.remove());
-            updateStageImageArea();
+            updateStageImageArea(transforms);
             layers.slice().reverse().forEach((layer) => {
+                const transform = transforms.get(layer.id);
                 const image = document.createElement("img");
                 image.className = "stageLayer";
                 image.src = layer.src;
                 image.alt = layer.name;
+                image.style.width = `${layer.width}px`;
+                image.style.height = `${layer.height}px`;
                 image.style.opacity = layer.opacity;
+                image.style.transformOrigin = "0 0";
+                image.style.transform = `matrix(${transform.a}, ${transform.b}, ${transform.c}, ${transform.d}, ${transform.e}, ${transform.f})`;
                 stage.appendChild(image);
             });
         }
@@ -650,6 +834,9 @@
             status.textContent = `${layers.length} / ${MAX_IMAGES}`;
             clearButton.disabled = layers.length === 0;
             fileInput.disabled = layers.length >= MAX_IMAGES;
+            alignToggleButton.classList.toggle("is-off", !alignmentEnabled);
+            alignToggleButton.textContent = alignmentEnabled ? "調整 ON" : "調整 OFF";
+            alignToggleButton.setAttribute("aria-pressed", String(alignmentEnabled));
         }
 
         function render() {
@@ -668,7 +855,12 @@
             render();
         });
 
-        window.addEventListener("resize", updateStageImageArea);
+        alignToggleButton.addEventListener("click", () => {
+            alignmentEnabled = !alignmentEnabled;
+            render();
+        });
+
+        window.addEventListener("resize", renderStage);
 
         render();
     </script>
