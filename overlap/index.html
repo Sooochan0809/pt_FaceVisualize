@@ -1,9 +1,677 @@
 <!DOCTYPE html>
 <html lang="ja">
+
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>表情の重ね合わせ</title>
+    <style>
+        :root {
+            --bg: #f0f0f0;
+            --ink: #1b2026;
+            --muted: #6d737b;
+            --line: #d9dde2;
+            --panel: #ffffff;
+            --accent: #42d392;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        html,
+        body {
+            min-height: 100dvh;
+        }
+
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: var(--bg);
+            color: var(--ink);
+            font-family: "Yu Gothic Medium", "Yu Gothic", sans-serif;
+        }
+
+        button,
+        input {
+            font: inherit;
+        }
+
+        button {
+            border: 1px solid var(--line);
+            background: var(--panel);
+            color: var(--ink);
+            cursor: pointer;
+        }
+
+        button:disabled {
+            cursor: not-allowed;
+            opacity: 0.42;
+        }
+
+        .app {
+            width: 100dvw;
+            height: 100dvh;
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) 340px;
+            overflow: hidden;
+        }
+
+        .workspace {
+            min-width: 0;
+            height: 100%;
+            display: grid;
+        }
+
+        .status {
+            color: var(--muted);
+            font-size: 0.82rem;
+            font-variant-numeric: tabular-nums;
+            white-space: nowrap;
+        }
+
+        .fileButton,
+        .textButton {
+            min-width: 36px;
+            display: inline-grid;
+            place-items: center;
+            border-radius: 8px;
+        }
+
+        .textButton {
+            height: 36px;
+            padding: 0 12px;
+            border: 0;
+            background: var(--ink);
+            color: #fff;
+            font-size: 0.88rem;
+        }
+
+        .fileButton {
+            position: relative;
+            width: 80px;
+            height: 80px;
+            padding: 0;
+            overflow: hidden;
+            background: transparent;
+        }
+
+        .fileButton input {
+            position: absolute;
+            inset: 0;
+            opacity: 0;
+            cursor: pointer;
+        }
+
+        .stageWrap {
+            min-height: 0;
+            display: grid;
+            place-items: center;
+            padding: 24px;
+        }
+
+        .stage {
+            position: relative;
+            width: min(78vw, calc((100dvh - 112px) * 1.333));
+            height: min(calc(100dvh - 112px), 58.5vw);
+            min-width: 280px;
+            min-height: 210px;
+            overflow: hidden;
+            border: 1px solid var(--line);
+            background:
+                linear-gradient(45deg, #dde1e6 25%, transparent 25%),
+                linear-gradient(-45deg, #dde1e6 25%, transparent 25%),
+                linear-gradient(45deg, transparent 75%, #dde1e6 75%),
+                linear-gradient(-45deg, transparent 75%, #dde1e6 75%);
+            background-color: #f8f9fa;
+            background-position: 0 0, 0 10px, 10px -10px, -10px 0;
+            background-size: 20px 20px;
+        }
+
+        .stage img {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            display: block;
+            object-fit: contain;
+            user-select: none;
+            pointer-events: none;
+            z-index: 1;
+        }
+
+        .stageImageArea {
+            position: absolute;
+            background: #fff;
+            pointer-events: none;
+        }
+
+        .stageImageArea[hidden] {
+            display: none;
+        }
+
+        .fileButton img {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+
+        .sidePanel {
+            min-width: 0;
+            height: 100dvh;
+            display: grid;
+            grid-template-rows: minmax(0, 1fr) auto;
+            border-left: 1px solid var(--line);
+            background: var(--panel);
+        }
+
+        .sideFooter {
+            min-height: 52px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 8px 12px 8px 14px;
+            border-top: 1px solid var(--line);
+        }
+
+        .layerList {
+            min-height: 0;
+            display: grid;
+            grid-template-rows: auto;
+            place-content: center;
+            gap: 10px;
+            padding: 12px;
+            overflow: auto;
+        }
+
+        .layerList.has-layers {
+            grid-template-rows: auto auto;
+            align-content: start;
+            justify-content: stretch;
+        }
+
+        .addLayerSlot {
+            display: grid;
+            place-items: center;
+        }
+
+        .layers {
+            display: grid;
+            align-content: start;
+            gap: 10px;
+        }
+
+        .layer {
+            position: relative;
+            display: grid;
+            grid-template-columns: 74px minmax(0, 1fr);
+            gap: 10px;
+            padding: 10px;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            background: #fff;
+            cursor: grab;
+        }
+
+        .layer.dragging {
+            opacity: 0.55;
+            cursor: grabbing;
+        }
+
+        .layerRemoveButton {
+            position: absolute;
+            top: -9px;
+            right: -9px;
+            width: 24px;
+            height: 24px;
+            display: grid;
+            place-items: center;
+            padding: 0;
+            border: 0;
+            border-radius: 50%;
+            background: transparent;
+            cursor: pointer;
+        }
+
+        .layerRemoveButton img {
+            width: 100%;
+            height: 100%;
+            display: block;
+            pointer-events: none;
+        }
+
+        .layerThumb {
+            width: 74px;
+            height: 74px;
+            overflow: hidden;
+            border: 1px solid var(--line);
+            border-radius: 6px;
+            background: #f8f9fa;
+        }
+
+        .layerThumb img {
+            width: 100%;
+            height: 100%;
+            display: block;
+            object-fit: contain;
+            pointer-events: none;
+            user-select: none;
+        }
+
+        .layerBody {
+            min-width: 0;
+            display: grid;
+            gap: 8px;
+        }
+
+        .layerTitle {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            min-width: 0;
+        }
+
+        .fileName {
+            min-width: 0;
+            flex: 1;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            font-size: 0.83rem;
+        }
+
+        .opacityControl {
+            display: grid;
+            grid-template-columns: 1fr 3.2em;
+            gap: 8px;
+            align-items: center;
+        }
+
+        input[type="range"] {
+            width: 100%;
+            accent-color: var(--accent);
+        }
+
+        output {
+            color: var(--muted);
+            font-size: 0.78rem;
+            text-align: right;
+            font-variant-numeric: tabular-nums;
+        }
+
+        @media (max-width: 860px) {
+            body {
+                overflow: auto;
+            }
+
+            .app {
+                min-height: 100dvh;
+                height: auto;
+                grid-template-columns: 1fr;
+                grid-template-rows: minmax(420px, 58dvh) auto;
+                overflow: visible;
+            }
+
+            .workspace {
+                min-height: 420px;
+            }
+
+            .stageWrap {
+                padding: 12px;
+            }
+
+            .stage {
+                width: min(100%, calc((58dvh - 92px) * 1.333));
+                height: min(calc(58dvh - 92px), 75vw);
+            }
+
+            .sidePanel {
+                height: auto;
+                min-height: 42dvh;
+                border-left: 0;
+                border-top: 1px solid var(--line);
+            }
+
+            .layerList {
+                max-height: none;
+                overflow: visible;
+            }
+        }
+    </style>
 </head>
+
 <body>
+    <div class="app">
+        <main class="workspace">
+            <section class="stageWrap" aria-label="重ね合わせ結果">
+                <div class="stage" id="stage">
+                    <div class="stageImageArea" id="stageImageArea" hidden></div>
+                </div>
+            </section>
+        </main>
+
+        <aside class="sidePanel" aria-label="インポート画像">
+            <div class="layerList" id="layerList">
+                <div class="layers" id="layers"></div>
+                <div class="addLayerSlot">
+                    <label class="fileButton" aria-label="画像を追加">
+                        <img src="icon-plus.png" alt="">
+                        <input id="fileInput" type="file" accept="image/*" multiple>
+                    </label>
+                </div>
+            </div>
+            <div class="sideFooter">
+                <span class="status" id="status">0 / 7</span>
+                <button class="textButton" id="clearButton" type="button" disabled>クリア</button>
+            </div>
+        </aside>
+    </div>
+
+    <script>
+        const MAX_IMAGES = 7;
+        const DEFAULT_OPACITY = 0.1;
+        const REMOVE_ICON_SRC = "icon-clause.png";
+        const fileInput = document.getElementById("fileInput");
+        const clearButton = document.getElementById("clearButton");
+        const status = document.getElementById("status");
+        const stage = document.getElementById("stage");
+        const stageImageArea = document.getElementById("stageImageArea");
+        const layerList = document.getElementById("layerList");
+        const layersContainer = document.getElementById("layers");
+
+        let layers = [];
+        let draggedId = null;
+
+        const createId = () => {
+            if (crypto.randomUUID) return crypto.randomUUID();
+            return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+        };
+
+        function getImageSize(src) {
+            return new Promise((resolve) => {
+                const image = new Image();
+                image.onload = () => resolve({
+                    width: image.naturalWidth,
+                    height: image.naturalHeight
+                });
+                image.onerror = () => resolve({ width: 1, height: 1 });
+                image.src = src;
+            });
+        }
+
+        function makeLayer(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = async () => {
+                    const size = await getImageSize(reader.result);
+                    resolve({
+                        id: createId(),
+                        name: file.name,
+                        src: reader.result,
+                        width: size.width,
+                        height: size.height,
+                        opacity: DEFAULT_OPACITY
+                    });
+                };
+                reader.onerror = reject;
+                reader.readAsDataURL(file);
+            });
+        }
+
+        async function addFiles(fileList) {
+            const imageFiles = Array.from(fileList).filter((file) => file.type.startsWith("image/"));
+            const slots = MAX_IMAGES - layers.length;
+            const selectedFiles = imageFiles.slice(0, slots);
+
+            if (selectedFiles.length === 0) {
+                render();
+                return;
+            }
+
+            const nextLayers = await Promise.all(selectedFiles.map(makeLayer));
+            layers = [...nextLayers, ...layers];
+            render();
+        }
+
+        function setOpacity(id, value) {
+            layers = layers.map((layer) => {
+                if (layer.id !== id) return layer;
+                return { ...layer, opacity: Number(value) / 100 };
+            });
+            renderStage();
+            renderLayerOutputs();
+        }
+
+        function removeLayer(id) {
+            layers = layers.filter((layer) => layer.id !== id);
+            render();
+        }
+
+        function reorderByDrop(targetId) {
+            if (!draggedId || draggedId === targetId) return;
+
+            const draggedIndex = layers.findIndex((layer) => layer.id === draggedId);
+            const targetIndex = layers.findIndex((layer) => layer.id === targetId);
+            if (draggedIndex === -1 || targetIndex === -1) return;
+
+            const next = [...layers];
+            const [draggedLayer] = next.splice(draggedIndex, 1);
+            next.splice(targetIndex, 0, draggedLayer);
+            layers = next;
+            render();
+        }
+
+        function updateStageImageArea() {
+            if (layers.length === 0) {
+                stageImageArea.hidden = true;
+                return;
+            }
+
+            const stageWidth = stage.clientWidth;
+            const stageHeight = stage.clientHeight;
+            const rects = layers.map((layer) => {
+                const scale = Math.min(stageWidth / layer.width, stageHeight / layer.height);
+                const width = layer.width * scale;
+                const height = layer.height * scale;
+                return {
+                    left: (stageWidth - width) / 2,
+                    top: (stageHeight - height) / 2,
+                    right: (stageWidth + width) / 2,
+                    bottom: (stageHeight + height) / 2
+                };
+            });
+
+            const area = rects.reduce((result, rect) => ({
+                left: Math.min(result.left, rect.left),
+                top: Math.min(result.top, rect.top),
+                right: Math.max(result.right, rect.right),
+                bottom: Math.max(result.bottom, rect.bottom)
+            }));
+
+            stageImageArea.hidden = false;
+            stageImageArea.style.left = `${area.left}px`;
+            stageImageArea.style.top = `${area.top}px`;
+            stageImageArea.style.width = `${area.right - area.left}px`;
+            stageImageArea.style.height = `${area.bottom - area.top}px`;
+        }
+
+        function renderStage() {
+            stage.querySelectorAll(".stageLayer").forEach((image) => image.remove());
+            updateStageImageArea();
+            layers.slice().reverse().forEach((layer) => {
+                const image = document.createElement("img");
+                image.className = "stageLayer";
+                image.src = layer.src;
+                image.alt = layer.name;
+                image.style.opacity = layer.opacity;
+                stage.appendChild(image);
+            });
+        }
+
+        function renderLayerOutputs() {
+            layers.forEach((layer) => {
+                const output = document.querySelector(`[data-opacity-output="${layer.id}"]`);
+                if (output) output.value = `${Math.round(layer.opacity * 100)}%`;
+            });
+        }
+
+        function isControlTarget(target) {
+            return Boolean(target.closest(".opacityControl, button, input"));
+        }
+
+        function preventLayerDrag(event, item) {
+            event.stopPropagation();
+            item.draggable = false;
+        }
+
+        function bindLayerDrag(item, layer) {
+            item.addEventListener("pointerdown", (event) => {
+                item.draggable = !isControlTarget(event.target);
+            });
+            item.addEventListener("dragstart", (event) => {
+                if (isControlTarget(event.target)) {
+                    event.preventDefault();
+                    item.draggable = false;
+                    return;
+                }
+
+                draggedId = layer.id;
+                item.classList.add("dragging");
+            });
+            item.addEventListener("dragend", () => {
+                draggedId = null;
+                item.draggable = false;
+                item.classList.remove("dragging");
+            });
+            item.addEventListener("dragover", (event) => event.preventDefault());
+            item.addEventListener("drop", (event) => {
+                event.preventDefault();
+                reorderByDrop(layer.id);
+            });
+        }
+
+        function createIconImage(src) {
+            const image = document.createElement("img");
+            image.src = src;
+            image.alt = "";
+            image.draggable = false;
+            return image;
+        }
+
+        function createRemoveButton(layer) {
+            const button = document.createElement("button");
+            button.type = "button";
+            button.className = "layerRemoveButton";
+            button.title = "削除";
+            button.setAttribute("aria-label", `${layer.name}を削除`);
+            button.appendChild(createIconImage(REMOVE_ICON_SRC));
+            button.addEventListener("dragstart", (event) => event.stopPropagation());
+            button.addEventListener("click", (event) => {
+                event.stopPropagation();
+                removeLayer(layer.id);
+            });
+            return button;
+        }
+
+        function createThumbnail(layer) {
+            const thumb = document.createElement("div");
+            thumb.className = "layerThumb";
+
+            const image = document.createElement("img");
+            image.src = layer.src;
+            image.alt = layer.name;
+            image.draggable = false;
+            thumb.appendChild(image);
+
+            return thumb;
+        }
+
+        function createLayerTitle(layer) {
+            const title = document.createElement("div");
+            title.className = "layerTitle";
+
+            const fileName = document.createElement("div");
+            fileName.className = "fileName";
+            fileName.textContent = layer.name;
+            fileName.title = layer.name;
+            title.appendChild(fileName);
+
+            return title;
+        }
+
+        function createOpacityControl(layer, item) {
+            const control = document.createElement("label");
+            control.className = "opacityControl";
+            ["pointerdown", "mousedown", "touchstart"].forEach((eventName) => {
+                control.addEventListener(eventName, (event) => preventLayerDrag(event, item));
+            });
+
+            const slider = document.createElement("input");
+            slider.type = "range";
+            slider.min = "0";
+            slider.max = "100";
+            slider.value = String(Math.round(layer.opacity * 100));
+            slider.draggable = false;
+            slider.setAttribute("aria-label", `${layer.name}の不透明度`);
+            slider.addEventListener("dragstart", (event) => event.stopPropagation());
+            slider.addEventListener("input", (event) => setOpacity(layer.id, event.target.value));
+
+            const output = document.createElement("output");
+            output.dataset.opacityOutput = layer.id;
+            output.value = `${Math.round(layer.opacity * 100)}%`;
+
+            control.append(slider, output);
+            return control;
+        }
+
+        function createLayerItem(layer) {
+            const item = document.createElement("article");
+            item.className = "layer";
+            item.draggable = false;
+            item.dataset.layerId = layer.id;
+            bindLayerDrag(item, layer);
+
+            const body = document.createElement("div");
+            body.className = "layerBody";
+
+            body.append(createLayerTitle(layer), createOpacityControl(layer, item));
+            item.append(createRemoveButton(layer), createThumbnail(layer), body);
+            return item;
+        }
+
+        function renderLayerList() {
+            layersContainer.replaceChildren();
+            layerList.classList.toggle("has-layers", layers.length > 0);
+            layers.forEach((layer) => layersContainer.appendChild(createLayerItem(layer)));
+        }
+
+        function renderStatus() {
+            status.textContent = `${layers.length} / ${MAX_IMAGES}`;
+            clearButton.disabled = layers.length === 0;
+            fileInput.disabled = layers.length >= MAX_IMAGES;
+        }
+
+        function render() {
+            renderStage();
+            renderLayerList();
+            renderStatus();
+        }
+
+        fileInput.addEventListener("change", async (event) => {
+            await addFiles(event.target.files);
+            fileInput.value = "";
+        });
+
+        clearButton.addEventListener("click", () => {
+            layers = [];
+            render();
+        });
+
+        window.addEventListener("resize", updateStageImageArea);
+
+        render();
+    </script>
 </body>
+
 </html>
