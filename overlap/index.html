@@ -112,8 +112,8 @@
 
         .stage {
             position: relative;
-            width: min(78vw, calc((100dvh - 112px) * 1.333));
-            height: min(calc(100dvh - 112px), 58.5vw);
+            width: min(100%, calc((100dvh - 48px) * 1.333));
+            aspect-ratio: 4 / 3;
             min-width: 280px;
             min-height: 210px;
             overflow: hidden;
@@ -337,8 +337,7 @@
             }
 
             .stage {
-                width: min(100%, calc((58dvh - 92px) * 1.333));
-                height: min(calc(58dvh - 92px), 75vw);
+                width: min(100%, calc((58dvh - 24px) * 1.333));
             }
 
             .sidePanel {
@@ -362,7 +361,8 @@
             <section class="stageWrap" aria-label="重ね合わせ結果">
                 <div class="stage" id="stage">
                     <div class="stageImageArea" id="stageImageArea" hidden></div>
-                    <button class="alignToggleButton" id="alignToggleButton" type="button" aria-pressed="true">調整 ON</button>
+                    <button class="alignToggleButton" id="alignToggleButton" type="button" aria-pressed="true">調整
+                        ON</button>
                 </div>
             </section>
         </main>
