@@ -246,6 +246,10 @@
             place-items: center;
         }
 
+        .addLayerSlot[hidden] {
+            display: none;
+        }
+
         .layers {
             display: grid;
             align-content: start;
@@ -467,6 +471,7 @@
         const alignToggleButton = document.getElementById("alignToggleButton");
         const layerList = document.getElementById("layerList");
         const layersContainer = document.getElementById("layers");
+        const addLayerSlot = document.querySelector(".addLayerSlot");
         const overlayModeButton = document.getElementById("overlayModeButton");
         const morphModeButton = document.getElementById("morphModeButton");
 
@@ -625,6 +630,11 @@
         async function addFiles(fileList) {
             const imageFiles = Array.from(fileList).filter((file) => file.type.startsWith("image/"));
             const slots = MAX_IMAGES - layers.length;
+
+            if (imageFiles.length > slots) {
+                alert(`画像は最大${MAX_IMAGES}枚まで追加できます。`);
+            }
+
             const selectedFiles = imageFiles.slice(0, slots);
 
             if (selectedFiles.length === 0) {
@@ -1168,6 +1178,7 @@
             status.textContent = `${layers.length} / ${MAX_IMAGES}`;
             clearButton.disabled = layers.length === 0;
             fileInput.disabled = layers.length >= MAX_IMAGES;
+            addLayerSlot.hidden = layers.length >= MAX_IMAGES;
             alignToggleButton.hidden = mode !== MODE_OVERLAY;
             alignToggleButton.classList.toggle("is-off", !alignmentEnabled);
             alignToggleButton.textContent = alignmentEnabled ? "調整 ON" : "調整 OFF";
