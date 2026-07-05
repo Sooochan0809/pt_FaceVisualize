@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>表情の重ね合わせ</title>
+    <title>表情の重ね合わせ・モーフィング</title>
     <style>
         :root {
             --bg: #f0f0f0;
@@ -157,6 +157,10 @@
             background: #7d858f;
         }
 
+        .alignToggleButton[hidden] {
+            display: none;
+        }
+
         img {
             display: block;
         }
@@ -177,9 +181,38 @@
             min-width: 0;
             height: 100dvh;
             display: grid;
-            grid-template-rows: minmax(0, 1fr) auto;
+            grid-template-rows: auto minmax(0, 1fr) auto;
             border-left: 1px solid var(--line);
             background: var(--panel);
+        }
+
+        .sideHeader {
+            padding: 12px;
+            border-bottom: 1px solid var(--line);
+        }
+
+        .modeTabs {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 6px;
+            padding: 4px;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            background: #f8f9fa;
+        }
+
+        .modeTab {
+            height: 34px;
+            border: 0;
+            border-radius: 6px;
+            background: transparent;
+            color: var(--muted);
+            font-size: 0.86rem;
+        }
+
+        .modeTab.is-active {
+            background: var(--ink);
+            color: #fff;
         }
 
         .sideFooter {
@@ -315,6 +348,20 @@
             font-variant-numeric: tabular-nums;
         }
 
+        .morphCanvas {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            pointer-events: none;
+            z-index: 1;
+        }
+
+        .morphCanvas[hidden] {
+            display: none;
+        }
+
         @media (max-width: 860px) {
             body {
                 overflow: auto;
@@ -358,9 +405,10 @@
 <body>
     <div class="app">
         <main class="workspace">
-            <section class="stageWrap" aria-label="重ね合わせ結果">
+            <section class="stageWrap" aria-label="プレビュー">
                 <div class="stage" id="stage">
                     <div class="stageImageArea" id="stageImageArea" hidden></div>
+                    <canvas class="morphCanvas" id="morphCanvas" hidden></canvas>
                     <button class="alignToggleButton" id="alignToggleButton" type="button" aria-pressed="true">調整
                         ON</button>
                 </div>
@@ -368,6 +416,14 @@
         </main>
 
         <aside class="sidePanel" aria-label="インポート画像">
+            <header class="sideHeader">
+                <div class="modeTabs" role="tablist" aria-label="機能選択">
+                    <button class="modeTab is-active" id="overlayModeButton" type="button" role="tab"
+                        aria-selected="true">重ね合わせ</button>
+                    <button class="modeTab" id="morphModeButton" type="button" role="tab"
+                        aria-selected="false">モーフィング</button>
+                </div>
+            </header>
             <div class="layerList" id="layerList">
                 <div class="layers" id="layers"></div>
                 <div class="addLayerSlot">
@@ -385,8 +441,16 @@
     </div>
 
     <script type="module">
+        import Delaunator from "https://cdn.jsdelivr.net/npm/delaunator@5/+esm";
+
         const MAX_IMAGES = 7;
         const DEFAULT_OPACITY = 0.1;
+        const MODE_OVERLAY = "overlay";
+        const MODE_MORPH = "morph";
+        const MORPH_WIDTH = 600;
+        const MORPH_HEIGHT = 800;
+        const MORPH_RATIO = MORPH_WIDTH / MORPH_HEIGHT;
+        const TRIANGLE_OVERDRAW_PX = 0.75;
         const MEDIAPIPE_TASKS_URL = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest";
         const FACE_MODEL_URL = "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/latest/face_landmarker.task";
         const MEDIAPIPE_WASM_URL = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm";
@@ -399,31 +463,23 @@
         const status = document.getElementById("status");
         const stage = document.getElementById("stage");
         const stageImageArea = document.getElementById("stageImageArea");
+        const morphCanvas = document.getElementById("morphCanvas");
         const alignToggleButton = document.getElementById("alignToggleButton");
         const layerList = document.getElementById("layerList");
         const layersContainer = document.getElementById("layers");
+        const overlayModeButton = document.getElementById("overlayModeButton");
+        const morphModeButton = document.getElementById("morphModeButton");
 
         let layers = [];
         let draggedId = null;
         let faceLandmarkerPromise = null;
         let alignmentEnabled = true;
+        let mode = MODE_OVERLAY;
 
         const createId = () => {
             if (crypto.randomUUID) return crypto.randomUUID();
             return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
         };
-
-        function getImageSize(src) {
-            return new Promise((resolve) => {
-                const image = new Image();
-                image.onload = () => resolve({
-                    width: image.naturalWidth,
-                    height: image.naturalHeight
-                });
-                image.onerror = () => resolve({ width: 1, height: 1 });
-                image.src = src;
-            });
-        }
 
         function loadImage(src) {
             return new Promise((resolve, reject) => {
@@ -464,30 +520,94 @@
             return faceLandmarkerPromise;
         }
 
-        async function detectFaceLandmarks(src, width, height) {
+        async function makeFaceData(image) {
             try {
-                const [faceLandmarker, image] = await Promise.all([
-                    getFaceLandmarker(),
-                    loadImage(src)
-                ]);
-                const result = faceLandmarker.detect(image);
-                const landmarks = result.faceLandmarks?.[0];
-                if (!landmarks) return null;
+                const faceLandmarker = await getFaceLandmarker();
+                const width = image.naturalWidth || image.width || 1;
+                const height = image.naturalHeight || image.height || 1;
 
-                return landmarks.map((point) => ({
-                    x: point.x * width,
-                    y: point.y * height
-                }));
+                return {
+                    landmarks: detectFaceLandmarksFromSource(faceLandmarker, image, width, height),
+                    morph: makeMorphData(faceLandmarker, image)
+                };
             } catch (error) {
-                console.warn("Face landmark detection failed.", error);
-                return null;
+                console.warn("Face data preparation failed.", error);
+                return {
+                    landmarks: null,
+                    morph: null
+                };
             }
+        }
+
+        function detectFaceLandmarksFromSource(faceLandmarker, source, width, height) {
+            const result = faceLandmarker.detect(source);
+            const landmarks = result.faceLandmarks?.[0];
+            if (!landmarks) return null;
+
+            return landmarks.map((point) => ({
+                x: point.x * width,
+                y: point.y * height
+            }));
+        }
+
+        function getCenteredCropRect(srcWidth, srcHeight, targetRatio) {
+            const srcRatio = srcWidth / srcHeight;
+
+            if (srcRatio > targetRatio) {
+                const cropHeight = srcHeight;
+                const cropWidth = cropHeight * targetRatio;
+                return {
+                    sx: (srcWidth - cropWidth) / 2,
+                    sy: 0,
+                    sw: cropWidth,
+                    sh: cropHeight
+                };
+            }
+
+            const cropWidth = srcWidth;
+            const cropHeight = cropWidth / targetRatio;
+            return {
+                sx: 0,
+                sy: (srcHeight - cropHeight) / 2,
+                sw: cropWidth,
+                sh: cropHeight
+            };
+        }
+
+        function createMorphSourceCanvas(image) {
+            const canvas = document.createElement("canvas");
+            const ctx = prepareCanvas(canvas, MORPH_WIDTH, MORPH_HEIGHT);
+
+            const { sx, sy, sw, sh } = getCenteredCropRect(image.naturalWidth, image.naturalHeight, MORPH_RATIO);
+            ctx.drawImage(image, sx, sy, sw, sh, 0, 0, MORPH_WIDTH, MORPH_HEIGHT);
+            return canvas;
+        }
+
+        function makeMorphData(faceLandmarker, image) {
+            const canvas = createMorphSourceCanvas(image);
+            const landmarks = detectFaceLandmarksFromSource(faceLandmarker, canvas, MORPH_WIDTH, MORPH_HEIGHT);
+            if (!landmarks) return null;
+
+            const points = landmarks.map((point) => [point.x, point.y]);
+            points.push([0, 0]);
+            points.push([MORPH_WIDTH - 1, 0]);
+            points.push([MORPH_WIDTH - 1, MORPH_HEIGHT - 1]);
+            points.push([0, MORPH_HEIGHT - 1]);
+
+            return {
+                canvas,
+                points
+            };
         }
 
         async function makeLayer(file) {
             const src = await readFileAsDataUrl(file);
-            const size = await getImageSize(src);
-            const landmarks = await detectFaceLandmarks(src, size.width, size.height);
+            const image = await loadImage(src);
+            const size = {
+                width: image.naturalWidth || image.width || 1,
+                height: image.naturalHeight || image.height || 1
+            };
+            const { landmarks, morph } = await makeFaceData(image);
 
             return {
                 id: createId(),
@@ -496,6 +616,8 @@
                 width: size.width,
                 height: size.height,
                 landmarks,
+                morph,
+                morphWeight: 100,
                 opacity: DEFAULT_OPACITY
             };
         }
@@ -519,6 +641,15 @@
             layers = layers.map((layer) => {
                 if (layer.id !== id) return layer;
                 return { ...layer, opacity: Number(value) / 100 };
+            });
+            renderStage();
+            renderLayerOutputs();
+        }
+
+        function setMorphWeight(id, value) {
+            layers = layers.map((layer) => {
+                if (layer.id !== id) return layer;
+                return { ...layer, morphWeight: Number(value) };
             });
             renderStage();
             renderLayerOutputs();
@@ -695,9 +826,163 @@
             return image;
         }
 
+        function getMorphLayers() {
+            return layers.filter((layer) => layer.morph);
+        }
+
+        function getNormalizedMorphWeights(morphLayers = getMorphLayers()) {
+            const total = morphLayers.reduce((sum, layer) => sum + Math.max(0, layer.morphWeight), 0);
+            if (total === 0) return new Map(morphLayers.map((layer) => [layer.id, 0]));
+
+            return new Map(morphLayers.map((layer) => [
+                layer.id,
+                Math.max(0, layer.morphWeight) / total
+            ]));
+        }
+
+        function getExpandedTriangle(tri, expandPx = TRIANGLE_OVERDRAW_PX) {
+            const centroidX = (tri[0][0] + tri[1][0] + tri[2][0]) / 3;
+            const centroidY = (tri[0][1] + tri[1][1] + tri[2][1]) / 3;
+
+            return tri.map(([x, y]) => {
+                const dx = x - centroidX;
+                const dy = y - centroidY;
+                const length = Math.hypot(dx, dy);
+                if (length < 1e-6) return [x, y];
+
+                const scale = (length + expandPx) / length;
+                return [
+                    centroidX + dx * scale,
+                    centroidY + dy * scale
+                ];
+            });
+        }
+
+        function clipTriangle(ctx, tri) {
+            const expandedTri = getExpandedTriangle(tri);
+            ctx.beginPath();
+            ctx.moveTo(expandedTri[0][0], expandedTri[0][1]);
+            ctx.lineTo(expandedTri[1][0], expandedTri[1][1]);
+            ctx.lineTo(expandedTri[2][0], expandedTri[2][1]);
+            ctx.closePath();
+            ctx.clip();
+        }
+
+        function drawTriangleImage(ctx, image, srcTri, dstTri) {
+            const [sx0, sy0] = srcTri[0];
+            const [sx1, sy1] = srcTri[1];
+            const [sx2, sy2] = srcTri[2];
+            const [dx0, dy0] = dstTri[0];
+            const [dx1, dy1] = dstTri[1];
+            const [dx2, dy2] = dstTri[2];
+            const denom = sx0 * (sy1 - sy2) + sx1 * (sy2 - sy0) + sx2 * (sy0 - sy1);
+            if (Math.abs(denom) < 1e-6) return;
+
+            const a = (dx0 * (sy1 - sy2) + dx1 * (sy2 - sy0) + dx2 * (sy0 - sy1)) / denom;
+            const b = (dy0 * (sy1 - sy2) + dy1 * (sy2 - sy0) + dy2 * (sy0 - sy1)) / denom;
+            const c = (dx0 * (sx2 - sx1) + dx1 * (sx0 - sx2) + dx2 * (sx1 - sx0)) / denom;
+            const d = (dy0 * (sx2 - sx1) + dy1 * (sx0 - sx2) + dy2 * (sx1 - sx0)) / denom;
+            const e = (dx0 * (sx1 * sy2 - sx2 * sy1) + dx1 * (sx2 * sy0 - sx0 * sy2) + dx2 * (sx0 * sy1 - sx1 * sy0)) / denom;
+            const f = (dy0 * (sx1 * sy2 - sx2 * sy1) + dy1 * (sx2 * sy0 - sx0 * sy2) + dy2 * (sx0 * sy1 - sx1 * sy0)) / denom;
+
+            ctx.save();
+            clipTriangle(ctx, dstTri);
+            ctx.setTransform(a, b, c, d, e, f);
+            ctx.drawImage(image, 0, 0);
+            ctx.restore();
+        }
+
+        function blendPoints(weightedLayers) {
+            const pointCount = weightedLayers[0].layer.morph.points.length;
+            const points = [];
+
+            for (let pointIndex = 0; pointIndex < pointCount; pointIndex += 1) {
+                const point = weightedLayers.reduce((sum, item) => {
+                    const sourcePoint = item.layer.morph.points[pointIndex];
+                    return [
+                        sum[0] + sourcePoint[0] * item.weight,
+                        sum[1] + sourcePoint[1] * item.weight
+                    ];
+                }, [0, 0]);
+                points.push(point);
+            }
+
+            return points;
+        }
+
+        function prepareCanvas(targetCanvas, width, height) {
+            targetCanvas.width = width;
+            targetCanvas.height = height;
+            const ctx = targetCanvas.getContext("2d");
+            ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = "high";
+            ctx.clearRect(0, 0, width, height);
+            return ctx;
+        }
+
+        function renderWarpedImage(targetCanvas, image, sourcePoints, destinationPoints, triangles) {
+            const ctx = prepareCanvas(targetCanvas, MORPH_WIDTH, MORPH_HEIGHT);
+
+            for (let i = 0; i < triangles.length; i += 3) {
+                const i0 = triangles[i];
+                const i1 = triangles[i + 1];
+                const i2 = triangles[i + 2];
+                drawTriangleImage(
+                    ctx,
+                    image,
+                    [sourcePoints[i0], sourcePoints[i1], sourcePoints[i2]],
+                    [destinationPoints[i0], destinationPoints[i1], destinationPoints[i2]]
+                );
+            }
+        }
+
+        function renderMorphStage() {
+            const morphLayers = getMorphLayers();
+            const normalizedWeights = getNormalizedMorphWeights(morphLayers);
+            const activeMorphLayers = morphLayers
+                .map((layer) => ({
+                    layer,
+                    weight: normalizedWeights.get(layer.id) || 0
+                }))
+                .filter((item) => item.weight > 0);
+            const ctx = prepareCanvas(morphCanvas, MORPH_WIDTH, MORPH_HEIGHT);
+
+            if (morphLayers.length === 0 || activeMorphLayers.length === 0) {
+                return;
+            }
+
+            if (activeMorphLayers.length === 1) {
+                ctx.drawImage(activeMorphLayers[0].layer.morph.canvas, 0, 0);
+                return;
+            }
+
+            const blendedPoints = blendPoints(activeMorphLayers);
+            const triangles = Delaunator.from(blendedPoints).triangles;
+            let cumulativeWeight = 0;
+
+            activeMorphLayers.forEach((item) => {
+                const warpCanvas = document.createElement("canvas");
+                renderWarpedImage(warpCanvas, item.layer.morph.canvas, item.layer.morph.points, blendedPoints, triangles);
+                cumulativeWeight += item.weight;
+                ctx.globalAlpha = item.weight / cumulativeWeight;
+                ctx.drawImage(warpCanvas, 0, 0);
+            });
+
+            ctx.globalAlpha = 1;
+        }
+
         function renderStage() {
-            const transforms = getAlignedTransforms();
             stage.querySelectorAll(".stageLayer").forEach((image) => image.remove());
+
+            if (mode === MODE_MORPH) {
+                stageImageArea.hidden = true;
+                morphCanvas.hidden = false;
+                renderMorphStage();
+                return;
+            }
+
+            morphCanvas.hidden = true;
+            const transforms = getAlignedTransforms();
             updateStageImageArea(transforms);
             layers.slice().reverse().forEach((layer) => {
                 stage.appendChild(createStageImage(layer, transforms.get(layer.id)));
@@ -705,9 +990,19 @@
         }
 
         function renderLayerOutputs() {
+            const normalizedMorphWeights = getNormalizedMorphWeights();
             layers.forEach((layer) => {
                 const output = document.querySelector(`[data-opacity-output="${layer.id}"]`);
-                if (output) output.value = `${Math.round(layer.opacity * 100)}%`;
+                if (output) {
+                    output.value = `${Math.round(layer.opacity * 100)}%`;
+                    output.textContent = output.value;
+                }
+
+                const morphOutput = document.querySelector(`[data-morph-output="${layer.id}"]`);
+                if (morphOutput) {
+                    morphOutput.value = `${Math.round((normalizedMorphWeights.get(layer.id) || 0) * 100)}%`;
+                    morphOutput.textContent = morphOutput.value;
+                }
             });
         }
 
@@ -795,7 +1090,7 @@
             return title;
         }
 
-        function createOpacityControl(layer, item) {
+        function createRangeControl(layer, item, options) {
             const control = document.createElement("label");
             control.className = "opacityControl";
             ["pointerdown", "mousedown", "touchstart"].forEach((eventName) => {
@@ -806,18 +1101,41 @@
             slider.type = "range";
             slider.min = "0";
             slider.max = "100";
-            slider.value = String(Math.round(layer.opacity * 100));
+            slider.value = String(options.value);
             slider.draggable = false;
-            slider.setAttribute("aria-label", `${layer.name}の不透明度`);
+            slider.disabled = Boolean(options.disabled);
+            slider.setAttribute("aria-label", `${layer.name}の${options.label}`);
             slider.addEventListener("dragstart", (event) => event.stopPropagation());
-            slider.addEventListener("input", (event) => setOpacity(layer.id, event.target.value));
+            slider.addEventListener("input", (event) => options.onInput(layer.id, event.target.value));
 
             const output = document.createElement("output");
-            output.dataset.opacityOutput = layer.id;
-            output.value = `${Math.round(layer.opacity * 100)}%`;
+            output.dataset[options.outputDatasetKey] = layer.id;
+            output.value = options.outputValue;
+            output.textContent = output.value;
 
             control.append(slider, output);
             return control;
+        }
+
+        function createOpacityControl(layer, item) {
+            return createRangeControl(layer, item, {
+                label: "不透明度",
+                value: Math.round(layer.opacity * 100),
+                outputDatasetKey: "opacityOutput",
+                outputValue: `${Math.round(layer.opacity * 100)}%`,
+                onInput: setOpacity
+            });
+        }
+
+        function createMorphWeightControl(layer, item) {
+            return createRangeControl(layer, item, {
+                label: "モーフィング割合",
+                value: Math.round(layer.morphWeight),
+                disabled: !layer.morph,
+                outputDatasetKey: "morphOutput",
+                outputValue: "0%",
+                onInput: setMorphWeight
+            });
         }
 
         function createLayerItem(layer) {
@@ -830,7 +1148,12 @@
             const body = document.createElement("div");
             body.className = "layerBody";
 
-            body.append(createLayerTitle(layer), createOpacityControl(layer, item));
+            body.append(createLayerTitle(layer));
+            if (mode === MODE_OVERLAY) {
+                body.append(createOpacityControl(layer, item));
+            } else {
+                body.append(createMorphWeightControl(layer, item));
+            }
             item.append(createRemoveButton(layer), createThumbnail(layer), body);
             return item;
         }
@@ -845,15 +1168,27 @@
             status.textContent = `${layers.length} / ${MAX_IMAGES}`;
             clearButton.disabled = layers.length === 0;
             fileInput.disabled = layers.length >= MAX_IMAGES;
+            alignToggleButton.hidden = mode !== MODE_OVERLAY;
             alignToggleButton.classList.toggle("is-off", !alignmentEnabled);
             alignToggleButton.textContent = alignmentEnabled ? "調整 ON" : "調整 OFF";
             alignToggleButton.setAttribute("aria-pressed", String(alignmentEnabled));
+            overlayModeButton.classList.toggle("is-active", mode === MODE_OVERLAY);
+            morphModeButton.classList.toggle("is-active", mode === MODE_MORPH);
+            overlayModeButton.setAttribute("aria-selected", String(mode === MODE_OVERLAY));
+            morphModeButton.setAttribute("aria-selected", String(mode === MODE_MORPH));
         }
 
         function render() {
             renderStage();
             renderLayerList();
+            renderLayerOutputs();
             renderStatus();
+        }
+
+        function setMode(nextMode) {
+            if (mode === nextMode) return;
+            mode = nextMode;
+            render();
         }
 
         fileInput.addEventListener("change", async (event) => {
@@ -870,6 +1205,9 @@
             alignmentEnabled = !alignmentEnabled;
             render();
         });
+
+        overlayModeButton.addEventListener("click", () => setMode(MODE_OVERLAY));
+        morphModeButton.addEventListener("click", () => setMode(MODE_MORPH));
 
         window.addEventListener("resize", renderStage);
 
