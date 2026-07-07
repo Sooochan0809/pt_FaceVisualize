@@ -340,6 +340,22 @@
             align-items: center;
         }
 
+        .autoControl {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            color: var(--muted);
+            font-size: 0.78rem;
+        }
+
+        .autoControl input {
+            width: 16px;
+            height: 16px;
+            margin: 0;
+            accent-color: var(--accent);
+        }
+
         input[type="range"] {
             width: 100%;
             accent-color: var(--accent);
@@ -480,6 +496,8 @@
         let faceLandmarkerPromise = null;
         let alignmentEnabled = true;
         let mode = MODE_OVERLAY;
+        let autoRandomFrameId = null;
+        let lastAutoRandomTime = 0;
 
         const createId = () => {
             if (crypto.randomUUID) return crypto.randomUUID();
@@ -623,7 +641,12 @@
                 landmarks,
                 morph,
                 morphWeight: 100,
-                opacity: DEFAULT_OPACITY
+                opacity: DEFAULT_OPACITY,
+                autoRandom: false,
+                randomTargets: {
+                    opacity: Math.random(),
+                    morphWeight: Math.random() * 100
+                }
             };
         }
 
@@ -663,6 +686,21 @@
             });
             renderStage();
             renderLayerOutputs();
+        }
+
+        function setAutoRandom(id, enabled) {
+            layers = layers.map((layer) => {
+                if (layer.id !== id) return layer;
+                return {
+                    ...layer,
+                    autoRandom: enabled,
+                    randomTargets: {
+                        opacity: layer.opacity,
+                        morphWeight: layer.morphWeight
+                    }
+                };
+            });
+            ensureAutoRandomLoop();
         }
 
         function removeLayer(id) {
@@ -850,6 +888,86 @@
             ]));
         }
 
+        function getAutoRandomConfig(layer) {
+            if (mode === MODE_MORPH) {
+                if (!layer.morph) return null;
+                return {
+                    valueKey: "morphWeight",
+                    targetKey: "morphWeight",
+                    min: 0,
+                    max: 100,
+                    threshold: 1
+                };
+            }
+
+            return {
+                valueKey: "opacity",
+                targetKey: "opacity",
+                min: 0,
+                max: 0.5,
+                threshold: 0.01
+            };
+        }
+
+        function getRandomValue(min, max) {
+            return min + Math.random() * (max - min);
+        }
+
+        function hasActiveAutoRandomLayer() {
+            return layers.some((layer) => layer.autoRandom && getAutoRandomConfig(layer));
+        }
+
+        function tickAutoRandom(timestamp) {
+            if (!lastAutoRandomTime) lastAutoRandomTime = timestamp;
+            const deltaSeconds = Math.min((timestamp - lastAutoRandomTime) / 1000, 0.08);
+            lastAutoRandomTime = timestamp;
+
+            let changed = false;
+            layers = layers.map((layer) => {
+                if (!layer.autoRandom) return layer;
+
+                const config = getAutoRandomConfig(layer);
+                if (!config) return layer;
+
+                const currentValue = layer[config.valueKey];
+                let targetValue = layer.randomTargets?.[config.targetKey];
+                if (typeof targetValue !== "number" || Math.abs(currentValue - targetValue) <= config.threshold) {
+                    targetValue = getRandomValue(config.min, config.max);
+                }
+
+                const nextValue = currentValue + (targetValue - currentValue) * Math.min(deltaSeconds * 0.8, 1);
+                if (Math.abs(nextValue - currentValue) < 0.0001) return layer;
+
+                changed = true;
+                return {
+                    ...layer,
+                    [config.valueKey]: nextValue,
+                    randomTargets: {
+                        ...layer.randomTargets,
+                        [config.targetKey]: targetValue
+                    }
+                };
+            });
+
+            if (changed) {
+                renderStage();
+                renderLayerOutputs();
+            }
+
+            if (hasActiveAutoRandomLayer()) {
+                autoRandomFrameId = requestAnimationFrame(tickAutoRandom);
+            } else {
+                autoRandomFrameId = null;
+                lastAutoRandomTime = 0;
+            }
+        }
+
+        function ensureAutoRandomLoop() {
+            if (autoRandomFrameId || !hasActiveAutoRandomLayer()) return;
+            lastAutoRandomTime = 0;
+            autoRandomFrameId = requestAnimationFrame(tickAutoRandom);
+        }
+
         function getExpandedTriangle(tri, expandPx = TRIANGLE_OVERDRAW_PX) {
             const centroidX = (tri[0][0] + tri[1][0] + tri[2][0]) / 3;
             const centroidY = (tri[0][1] + tri[1][1] + tri[2][1]) / 3;
@@ -1007,12 +1125,16 @@
                     output.value = `${Math.round(layer.opacity * 100)}%`;
                     output.textContent = output.value;
                 }
+                const opacityInput = document.querySelector(`[data-opacity-input="${layer.id}"]`);
+                if (opacityInput) opacityInput.value = String(Math.round(layer.opacity * 100));
 
                 const morphOutput = document.querySelector(`[data-morph-output="${layer.id}"]`);
                 if (morphOutput) {
                     morphOutput.value = `${Math.round((normalizedMorphWeights.get(layer.id) || 0) * 100)}%`;
                     morphOutput.textContent = morphOutput.value;
                 }
+                const morphInput = document.querySelector(`[data-morph-input="${layer.id}"]`);
+                if (morphInput) morphInput.value = String(Math.round(layer.morphWeight));
             });
         }
 
@@ -1114,6 +1236,7 @@
             slider.value = String(options.value);
             slider.draggable = false;
             slider.disabled = Boolean(options.disabled);
+            slider.dataset[options.inputDatasetKey] = layer.id;
             slider.setAttribute("aria-label", `${layer.name}の${options.label}`);
             slider.addEventListener("dragstart", (event) => event.stopPropagation());
             slider.addEventListener("input", (event) => options.onInput(layer.id, event.target.value));
@@ -1131,6 +1254,7 @@
             return createRangeControl(layer, item, {
                 label: "不透明度",
                 value: Math.round(layer.opacity * 100),
+                inputDatasetKey: "opacityInput",
                 outputDatasetKey: "opacityOutput",
                 outputValue: `${Math.round(layer.opacity * 100)}%`,
                 onInput: setOpacity
@@ -1142,10 +1266,33 @@
                 label: "モーフィング割合",
                 value: Math.round(layer.morphWeight),
                 disabled: !layer.morph,
+                inputDatasetKey: "morphInput",
                 outputDatasetKey: "morphOutput",
                 outputValue: "0%",
                 onInput: setMorphWeight
             });
+        }
+
+        function createAutoRandomControl(layer, item) {
+            const control = document.createElement("label");
+            control.className = "autoControl";
+            ["pointerdown", "mousedown", "touchstart"].forEach((eventName) => {
+                control.addEventListener(eventName, (event) => preventLayerDrag(event, item));
+            });
+
+            const labelText = document.createElement("span");
+            labelText.textContent = "ランダム";
+
+            const checkbox = document.createElement("input");
+            checkbox.type = "checkbox";
+            checkbox.checked = layer.autoRandom;
+            checkbox.draggable = false;
+            checkbox.setAttribute("aria-label", `${layer.name}のランダム変化`);
+            checkbox.addEventListener("dragstart", (event) => event.stopPropagation());
+            checkbox.addEventListener("change", (event) => setAutoRandom(layer.id, event.target.checked));
+
+            control.append(labelText, checkbox);
+            return control;
         }
 
         function createLayerItem(layer) {
@@ -1164,6 +1311,7 @@
             } else {
                 body.append(createMorphWeightControl(layer, item));
             }
+            body.append(createAutoRandomControl(layer, item));
             item.append(createRemoveButton(layer), createThumbnail(layer), body);
             return item;
         }
@@ -1200,6 +1348,7 @@
             if (mode === nextMode) return;
             mode = nextMode;
             render();
+            ensureAutoRandomLoop();
         }
 
         fileInput.addEventListener("change", async (event) => {
