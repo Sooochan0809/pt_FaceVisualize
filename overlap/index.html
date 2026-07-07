@@ -138,10 +138,9 @@
             display: none;
         }
 
-        .alignToggleButton {
+        .stageToggleButton {
             position: absolute;
             top: 10px;
-            right: 10px;
             z-index: 3;
             min-width: 76px;
             height: 32px;
@@ -153,12 +152,20 @@
             font-size: 0.78rem;
         }
 
-        .alignToggleButton.is-off {
+        .stageToggleButton.is-off {
             background: #7d858f;
         }
 
-        .alignToggleButton[hidden] {
+        .stageToggleButton[hidden] {
             display: none;
+        }
+
+        .monoToggleButton {
+            right: 96px;
+        }
+
+        .alignToggleButton {
+            right: 10px;
         }
 
         img {
@@ -170,6 +177,11 @@
             user-select: none;
             pointer-events: none;
             z-index: 1;
+        }
+
+        .stageLayer.is-monochrome,
+        .morphCanvas.is-monochrome {
+            filter: grayscale(1);
         }
 
         .fileButton img {
@@ -429,8 +441,10 @@
                 <div class="stage" id="stage">
                     <div class="stageImageArea" id="stageImageArea" hidden></div>
                     <canvas class="morphCanvas" id="morphCanvas" hidden></canvas>
-                    <button class="alignToggleButton" id="alignToggleButton" type="button" aria-pressed="true">調整
-                        ON</button>
+                    <button class="stageToggleButton monoToggleButton is-off" id="monoToggleButton" type="button"
+                        aria-pressed="false">モノクロ OFF</button>
+                    <button class="stageToggleButton alignToggleButton" id="alignToggleButton" type="button"
+                        aria-pressed="true">顔位置 ON</button>
                 </div>
             </section>
         </main>
@@ -484,6 +498,7 @@
         const stage = document.getElementById("stage");
         const stageImageArea = document.getElementById("stageImageArea");
         const morphCanvas = document.getElementById("morphCanvas");
+        const monoToggleButton = document.getElementById("monoToggleButton");
         const alignToggleButton = document.getElementById("alignToggleButton");
         const layerList = document.getElementById("layerList");
         const layersContainer = document.getElementById("layers");
@@ -495,6 +510,7 @@
         let draggedId = null;
         let faceLandmarkerPromise = null;
         let alignmentEnabled = true;
+        let monochromeEnabled = false;
         let mode = MODE_OVERLAY;
         let autoRandomFrameId = null;
         let lastAutoRandomTime = 0;
@@ -871,6 +887,7 @@
             image.style.opacity = layer.opacity;
             image.style.transformOrigin = "0 0";
             image.style.transform = `matrix(${transform.a}, ${transform.b}, ${transform.c}, ${transform.d}, ${transform.e}, ${transform.f})`;
+            image.classList.toggle("is-monochrome", monochromeEnabled);
             return image;
         }
 
@@ -1105,11 +1122,13 @@
             if (mode === MODE_MORPH) {
                 stageImageArea.hidden = true;
                 morphCanvas.hidden = false;
+                morphCanvas.classList.toggle("is-monochrome", monochromeEnabled);
                 renderMorphStage();
                 return;
             }
 
             morphCanvas.hidden = true;
+            morphCanvas.classList.toggle("is-monochrome", monochromeEnabled);
             const transforms = getAlignedTransforms();
             updateStageImageArea(transforms);
             layers.slice().reverse().forEach((layer) => {
@@ -1327,9 +1346,12 @@
             clearButton.disabled = layers.length === 0;
             fileInput.disabled = layers.length >= MAX_IMAGES;
             addLayerSlot.hidden = layers.length >= MAX_IMAGES;
+            monoToggleButton.classList.toggle("is-off", !monochromeEnabled);
+            monoToggleButton.textContent = monochromeEnabled ? "モノクロ ON" : "モノクロ OFF";
+            monoToggleButton.setAttribute("aria-pressed", String(monochromeEnabled));
             alignToggleButton.hidden = mode !== MODE_OVERLAY;
             alignToggleButton.classList.toggle("is-off", !alignmentEnabled);
-            alignToggleButton.textContent = alignmentEnabled ? "調整 ON" : "調整 OFF";
+            alignToggleButton.textContent = alignmentEnabled ? "顔位置 ON" : "顔位置 OFF";
             alignToggleButton.setAttribute("aria-pressed", String(alignmentEnabled));
             overlayModeButton.classList.toggle("is-active", mode === MODE_OVERLAY);
             morphModeButton.classList.toggle("is-active", mode === MODE_MORPH);
@@ -1358,6 +1380,11 @@
 
         clearButton.addEventListener("click", () => {
             layers = [];
+            render();
+        });
+
+        monoToggleButton.addEventListener("click", () => {
+            monochromeEnabled = !monochromeEnabled;
             render();
         });
 
