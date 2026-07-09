@@ -93,6 +93,113 @@
             cursor: pointer;
         }
 
+        .demoScene {
+            position: relative;
+            display: grid;
+            place-items: center;
+            padding: 12px;
+        }
+
+        .demoPanel {
+            width: min(100%, calc((100dvh - 24px) * 0.75));
+            min-width: 0;
+            overflow: hidden;
+            border: 1px solid var(--line);
+            border-radius: 6px;
+            background: var(--panel);
+        }
+
+        .demoPanel.is-previewing {
+            filter: blur(8px);
+        }
+
+        .demoVideoWrap {
+            position: relative;
+            aspect-ratio: 3 / 4;
+            background: #111821;
+        }
+
+        .demoVideoWrap video {
+            width: 100%;
+            height: 100%;
+            display: block;
+            object-fit: contain;
+            background: #111821;
+        }
+
+        .demoIntroOverlay {
+            position: absolute;
+            inset: 0;
+            z-index: 6;
+            display: grid;
+            place-items: center;
+            padding: 24px;
+            background: rgba(247, 248, 250, 0.58);
+            backdrop-filter: blur(10px);
+        }
+
+        .demoIntroOverlay[hidden] {
+            display: none;
+        }
+
+        .demoIntroCard {
+            width: min(560px, 100%);
+            display: grid;
+            gap: 10px;
+            border: 1px solid rgba(217, 222, 229, 0.82);
+            border-radius: 6px;
+            background: rgba(255, 255, 255, 0.82);
+            padding: 18px 24px;
+            text-align: center;
+        }
+
+        .demoIntroTitle {
+            margin: 0;
+            color: var(--ink);
+            font-size: clamp(1.6rem, 4vw, 3rem);
+            line-height: 1.2;
+        }
+
+        .demoIntroText {
+            margin: 0;
+            color: var(--muted);
+            font-size: clamp(0.95rem, 2vw, 1.08rem);
+            line-height: 1.7;
+        }
+
+        .skipButton {
+            position: absolute;
+            right: 18px;
+            bottom: 18px;
+            z-index: 5;
+            min-height: 40px;
+            border: 1px solid rgba(217, 222, 229, 0.82);
+            border-radius: 6px;
+            padding: 0 14px;
+            background: rgba(255, 255, 255, 0.84);
+            color: var(--ink);
+            font: inherit;
+            font-size: 0.9rem;
+            cursor: pointer;
+        }
+
+        .demoProgress {
+            position: absolute;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            z-index: 4;
+            height: 8px;
+            background: rgba(23, 32, 42, 0.12);
+        }
+
+        .demoProgressFill {
+            display: block;
+            width: 0%;
+            height: 100%;
+            background: var(--accent);
+        }
+
         main {
             height: 100%;
             min-height: 0;
@@ -102,20 +209,19 @@
         }
 
         .practice {
+            width: 100%;
             min-width: 0;
             min-height: 0;
             display: grid;
-            grid-template-columns: repeat(2, minmax(0, 1fr));
+            grid-template-columns: minmax(0, 1fr);
             gap: 12px;
             align-content: start;
             justify-items: center;
         }
 
         .videoPanel {
-            width: min(100%, calc((100dvh - 80px) * 0.75));
+            width: min(100%, calc((100dvh - 24px) * 0.75));
             min-width: 0;
-            display: grid;
-            grid-template-rows: 54px auto;
             align-self: start;
             overflow: hidden;
             border: 1px solid var(--line);
@@ -123,20 +229,11 @@
             background: var(--panel);
         }
 
-        .panelHeader {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 10px;
-            min-height: 54px;
-            padding: 8px 12px;
-            border-bottom: 1px solid var(--line);
-        }
-
-        .panelTitle {
-            margin: 0;
-            font-size: 0.96rem;
-            line-height: 1.2;
+        .levelBadge {
+            grid-column: 1 / -1;
+            color: var(--muted);
+            font-size: 0.82rem;
+            white-space: nowrap;
         }
 
         .viewer {
@@ -153,10 +250,6 @@
             display: block;
             object-fit: cover;
             background: #111821;
-        }
-
-        .sampleVideo {
-            object-fit: contain;
         }
 
         #webcamVideo {
@@ -231,7 +324,7 @@
         }
 
         .scoreValue {
-            grid-row: span 2;
+            grid-row: span 3;
             min-width: 54px;
             font-size: 2rem;
             font-weight: 700;
@@ -263,18 +356,6 @@
             white-space: nowrap;
         }
 
-        select {
-            width: auto;
-            min-height: 30px;
-            border: 1px solid var(--line);
-            border-radius: 6px;
-            padding: 0 28px 0 8px;
-            background: #fff;
-            color: var(--ink);
-            font: inherit;
-            font-size: 0.82rem;
-        }
-
         @media (max-width: 1120px) {
             main {
                 overflow: auto;
@@ -284,10 +365,6 @@
         @media (max-width: 760px) {
             main {
                 padding: 10px;
-            }
-
-            .practice {
-                grid-template-columns: 1fr;
             }
         }
     </style>
@@ -304,27 +381,33 @@
             </div>
         </section>
 
+        <section id="demoScene" class="scene demoScene" hidden>
+            <article id="demoPanel" class="demoPanel">
+                <div class="demoVideoWrap">
+                    <video id="demoVideo" muted loop playsinline></video>
+                    <div id="demoPlaceholder" class="placeholder">お手本動画を読み込み中...</div>
+                </div>
+            </article>
+            <div id="demoIntroOverlay" class="demoIntroOverlay" hidden>
+                <div class="demoIntroCard">
+                    <h2 id="demoIntroTitle" class="demoIntroTitle">レベル0：中立</h2>
+                    <p class="demoIntroText">まずは、お手本動画を見て観察しましょう。</p>
+                </div>
+            </div>
+            <button id="skipDemoButton" class="skipButton" type="button">スキップ →</button>
+            <div class="demoProgress" aria-hidden="true">
+                <span id="demoProgressFill" class="demoProgressFill"></span>
+            </div>
+        </section>
+
         <main id="trainingScene" class="scene" hidden>
             <section class="practice" aria-label="training videos">
                 <article class="videoPanel">
-                    <div class="panelHeader">
-                        <h2 class="panelTitle">Sample</h2>
-                        <select id="targetSelect" aria-label="トレーニングする表情"></select>
-                    </div>
-                    <div class="viewer">
-                        <video id="sampleVideo" class="sampleVideo" muted loop autoplay playsinline></video>
-                        <div id="samplePlaceholder" class="placeholder">サンプル動画を読み込み中...</div>
-                    </div>
-                </article>
-
-                <article class="videoPanel">
-                    <div class="panelHeader">
-                        <h2 class="panelTitle">Webcam</h2>
-                    </div>
                     <div class="viewer">
                         <video id="webcamVideo" autoplay muted playsinline></video>
                         <div class="scoreHero">
                             <span id="scoreValue" class="scoreValue">0</span>
+                            <span id="levelLabel" class="levelBadge">レベル0：中立</span>
                             <div id="scoreRing" class="scoreRing"></div>
                             <div class="scoreText">
                                 <strong id="scoreTitle">準備中</strong>
@@ -342,6 +425,8 @@
     <script>
         window.addEventListener("load", () => {
             const MODEL_URL = "../modules/faceAPI/models";
+            const DEMO_INTRO_MS = 2000;
+            const DEMO_DURATION_MS = 10000;
             const EXPRESSIONS = ["happy", "surprised", "angry", "sad", "fearful", "disgusted", "neutral"];
             const TARGETS = {
                 happy: { label: "喜び", vector: { happy: 0.82, surprised: 0.08, angry: 0, sad: 0, fearful: 0, disgusted: 0, neutral: 0.10 } },
@@ -352,6 +437,15 @@
                 disgusted: { label: "嫌悪", vector: { happy: 0, surprised: 0, angry: 0.10, sad: 0.02, fearful: 0, disgusted: 0.76, neutral: 0.12 } },
                 neutral: { label: "中立", vector: { happy: 0.02, surprised: 0.02, angry: 0.02, sad: 0.02, fearful: 0.02, disgusted: 0.02, neutral: 0.88 } }
             };
+            const LEVELS = [
+                { level: 0, key: "neutral" },
+                { level: 1, key: "happy" },
+                { level: 2, key: "surprised" },
+                { level: 3, key: "angry" },
+                { level: 4, key: "sad" },
+                { level: 5, key: "fearful" },
+                { level: 6, key: "disgusted" }
+            ];
             const videoFiles = (...names) => {
                 const extensions = ["mp4", "webm", "mov", "m4v"];
                 return names.flatMap((name) => extensions.map((extension) => `${name}.${extension}`));
@@ -370,28 +464,34 @@
             const clamp = (value, min = 0, max = 1) => Math.min(max, Math.max(min, Number(value || 0)));
             const detectOptions = new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.45 });
 
-            const sampleVideo = $("sampleVideo");
-            const samplePlaceholder = $("samplePlaceholder");
+            const demoPanel = $("demoPanel");
+            const demoVideo = $("demoVideo");
+            const demoPlaceholder = $("demoPlaceholder");
+            const demoIntroOverlay = $("demoIntroOverlay");
+            const demoIntroTitle = $("demoIntroTitle");
             const webcamVideo = $("webcamVideo");
             const cameraPlaceholder = $("cameraPlaceholder");
             const introScene = $("introScene");
+            const demoScene = $("demoScene");
             const trainingScene = $("trainingScene");
             const startButton = $("startButton");
-            const targetSelect = $("targetSelect");
+            const skipDemoButton = $("skipDemoButton");
+            const demoProgressFill = $("demoProgressFill");
+            const levelLabel = $("levelLabel");
             const scoreRing = $("scoreRing");
             const scoreValue = $("scoreValue");
             const scoreTitle = $("scoreTitle");
             const scoreMessage = $("scoreMessage");
 
-            let activeTarget = "happy";
+            let currentLevelIndex = 0;
+            let activeTarget = LEVELS[currentLevelIndex].key;
             let sampleLoadToken = 0;
+            let demoTimer = 0;
+            let demoIntroTimer = 0;
+            let demoStartedAt = 0;
             let running = false;
             let modelsLoading = false;
             let smoothedScore = 0;
-
-            targetSelect.innerHTML = Object.entries(TARGETS)
-                .map(([key, target]) => `<option value="${key}">${target.label}</option>`)
-                .join("");
 
             const setScore = (score) => {
                 const normalized = clamp(score);
@@ -414,46 +514,52 @@
 
             const sampleCandidatesFor = (key) => {
                 const files = SAMPLE_VIDEO_CANDIDATES[key] || [`${key}.mp4`];
-                return files.map((file) => `SampleVideo/${encodeURIComponent(file)}`);
+                return files.map((file) => `samplevideo/${encodeURIComponent(file)}`);
             };
 
-            const loadSampleVideo = (key) => {
+            const levelText = () => {
+                const level = LEVELS[currentLevelIndex];
+                return `レベル${level.level}：${TARGETS[level.key].label}`;
+            };
+
+            const setDemoVideoSource = (key) => {
                 const token = sampleLoadToken + 1;
                 sampleLoadToken = token;
                 const target = TARGETS[key];
                 const candidates = sampleCandidatesFor(key);
                 let index = 0;
-
-                samplePlaceholder.hidden = false;
-                samplePlaceholder.textContent = `${target.label}のサンプル動画を読み込み中...`;
+                demoPlaceholder.hidden = false;
+                demoPlaceholder.textContent = `${target.label}のお手本動画を読み込み中...`;
 
                 const tryNext = () => {
                     if (token !== sampleLoadToken) return;
                     if (index >= candidates.length) {
-                        sampleVideo.removeAttribute("src");
-                        sampleVideo.load();
-                        samplePlaceholder.hidden = false;
-                        samplePlaceholder.textContent = `training/SampleVideo に ${target.label} の動画が見つかりません。`;
+                        demoVideo.removeAttribute("src");
+                        demoVideo.load();
+                        demoPlaceholder.hidden = false;
+                        demoPlaceholder.textContent = `training/samplevideo に ${target.label} の動画が見つかりません。`;
                         return;
                     }
-                    sampleVideo.src = candidates[index];
+                    demoVideo.src = candidates[index];
                     index += 1;
-                    sampleVideo.load();
+                    demoVideo.load();
                 };
 
-                sampleVideo.onloadeddata = () => {
+                demoVideo.onloadeddata = () => {
                     if (token !== sampleLoadToken) return;
-                    samplePlaceholder.hidden = true;
-                    sampleVideo.play().catch(() => {});
+                    demoPlaceholder.hidden = true;
                 };
-                sampleVideo.onerror = tryNext;
+                demoVideo.onerror = tryNext;
                 tryNext();
             };
 
-            const updateTarget = (key) => {
-                activeTarget = key;
-                targetSelect.value = activeTarget;
-                loadSampleVideo(activeTarget);
+            const updateLevel = (index) => {
+                currentLevelIndex = Math.min(Math.max(index, 0), LEVELS.length - 1);
+                activeTarget = LEVELS[currentLevelIndex].key;
+                const text = levelText();
+                demoIntroTitle.textContent = text;
+                levelLabel.textContent = text;
+                setDemoVideoSource(activeTarget);
             };
 
             const scoreExpressions = (expressions) => {
@@ -527,18 +633,63 @@
                 }
             };
 
-            targetSelect.addEventListener("change", () => updateTarget(targetSelect.value));
-            startButton.addEventListener("click", () => {
-                introScene.hidden = true;
-                trainingScene.hidden = false;
-                updateTarget(activeTarget);
+            const showScene = (scene) => {
+                introScene.hidden = scene !== introScene;
+                demoScene.hidden = scene !== demoScene;
+                trainingScene.hidden = scene !== trainingScene;
+            };
+
+            const startChallenge = () => {
+                window.cancelAnimationFrame(demoTimer);
+                window.clearTimeout(demoIntroTimer);
+                demoVideo.pause();
+                demoProgressFill.style.width = "100%";
+                showScene(trainingScene);
                 loadModels().catch((error) => {
                     scoreTitle.textContent = "モデルを読み込めません";
                     scoreMessage.textContent = error.message;
                 });
-            });
+            };
 
-            targetSelect.value = activeTarget;
+            const updateDemoProgress = () => {
+                const elapsed = performance.now() - demoStartedAt;
+                const progress = clamp(elapsed / DEMO_DURATION_MS);
+                demoProgressFill.style.width = `${Math.round(progress * 100)}%`;
+                if (progress >= 1) {
+                    startChallenge();
+                    return;
+                }
+                demoTimer = window.requestAnimationFrame(updateDemoProgress);
+            };
+
+            const startDemo = () => {
+                updateLevel(currentLevelIndex);
+                demoProgressFill.style.width = "0%";
+                showScene(demoScene);
+                window.cancelAnimationFrame(demoTimer);
+                window.clearTimeout(demoIntroTimer);
+                demoVideo.pause();
+                demoVideo.currentTime = 0;
+                demoPanel.classList.add("is-previewing");
+                demoIntroOverlay.hidden = false;
+                demoIntroTimer = window.setTimeout(() => {
+                    demoPanel.classList.remove("is-previewing");
+                    demoIntroOverlay.hidden = true;
+                    demoVideo.currentTime = 0;
+                    demoVideo.play().catch(() => {});
+                    demoStartedAt = performance.now();
+                    demoTimer = window.requestAnimationFrame(updateDemoProgress);
+                }, DEMO_INTRO_MS);
+            };
+
+            startButton.addEventListener("click", () => {
+                startDemo();
+            });
+            skipDemoButton.addEventListener("click", startChallenge);
+
+            const initialLevelText = levelText();
+            demoIntroTitle.textContent = initialLevelText;
+            levelLabel.textContent = initialLevelText;
             setScore(0);
         });
     </script>
