@@ -445,7 +445,7 @@
             </article>
             <div id="demoIntroOverlay" class="demoIntroOverlay" hidden>
                 <div class="demoIntroCard">
-                    <h2 id="demoIntroTitle" class="demoIntroTitle">レベル0：中立</h2>
+                    <h2 id="demoIntroTitle" class="demoIntroTitle">レベル0：無表情</h2>
                     <p class="demoIntroText">まずは、お手本動画をよく見て観察しましょう。</p>
                 </div>
             </div>
@@ -476,8 +476,8 @@
                         <div class="ellipseGuide" aria-hidden="true"></div>
                         <div id="challengeIntroOverlay" class="challengeIntroOverlay" hidden>
                             <div class="demoIntroCard">
-                                <h2 id="challengeIntroTitle" class="demoIntroTitle">レベル0：中立</h2>
-                                <p id="challengeIntroText" class="demoIntroText">次はあなたの番です。中立表情に挑戦してみましょう！</p>
+                                <h2 id="challengeIntroTitle" class="demoIntroTitle">レベル0：無表情</h2>
+                                <p id="challengeIntroText" class="demoIntroText">次はあなたの番です。無表情に挑戦してみましょう！</p>
                             </div>
                         </div>
                         <div id="levelUpProgress" class="demoProgress levelUpProgress" hidden aria-hidden="true">
@@ -513,7 +513,7 @@
                 sad: { label: "悲しみ", vector: { happy: 0, surprised: 0, angry: 0.04, sad: 0.78, fearful: 0.06, disgusted: 0, neutral: 0.12 } },
                 fearful: { label: "恐れ", vector: { happy: 0, surprised: 0.16, angry: 0, sad: 0.08, fearful: 0.66, disgusted: 0, neutral: 0.10 } },
                 disgusted: { label: "嫌悪", vector: { happy: 0, surprised: 0, angry: 0.10, sad: 0.02, fearful: 0, disgusted: 0.76, neutral: 0.12 } },
-                neutral: { label: "中立", vector: { happy: 0.02, surprised: 0.02, angry: 0.02, sad: 0.02, fearful: 0.02, disgusted: 0.02, neutral: 0.88 } }
+                neutral: { label: "無表情", vector: { happy: 0.02, surprised: 0.02, angry: 0.02, sad: 0.02, fearful: 0.02, disgusted: 0.02, neutral: 0.88 } }
             };
             const LEVELS = [
                 { level: 0, key: "neutral" },
@@ -535,7 +535,7 @@
                 sad: ["02_悲しみ_100.mov", ...videoFiles("sad", "悲しみ")],
                 fearful: ["04_恐れ_85.mov", ...videoFiles("fearful", "恐れ", "fear")],
                 disgusted: ["06_嫌悪_99.mov", ...videoFiles("disgusted", "嫌悪", "disgust")],
-                neutral: ["00_無表情.mov", ...videoFiles("neutral", "中立")]
+                neutral: ["00_無表情.mov", ...videoFiles("neutral", "無表情")]
             };
 
             const $ = (id) => document.getElementById(id);
