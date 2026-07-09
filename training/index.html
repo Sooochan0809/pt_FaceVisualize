@@ -487,6 +487,14 @@
                 </article>
             </section>
         </main>
+
+        <section id="finalScene" class="scene introScene" hidden>
+            <div class="introContent">
+                <img class="introThumbnail" src="thumbnail.png" alt="サムネイル画像">
+                <h1 class="introTitle">おめでとうございます🎉</h1>
+                <p class="introText">すべての表情トレーニングが完了しました。<br>このトレーニングにより、あなたの表情は、他者にとって理解しやすい形へと調整されました。これからも、周囲に誤解を与えない模範的な表情表現を継続してください。</p>
+            </div>
+        </section>
     </div>
 
     <script>
@@ -544,6 +552,7 @@
             const introScene = $("introScene");
             const demoScene = $("demoScene");
             const trainingScene = $("trainingScene");
+            const finalScene = $("finalScene");
             const startButton = $("startButton");
             const skipDemoButton = $("skipDemoButton");
             const demoProgressFill = $("demoProgressFill");
@@ -717,6 +726,10 @@
                 clearChallengeTimers();
                 if (!hasNextLevel) {
                     hideLevelUpProgress();
+                    levelUpTimer = window.setTimeout(() => {
+                        challengeIntroOverlay.hidden = true;
+                        showScene(finalScene);
+                    }, LEVEL_UP_MS);
                     return;
                 }
 
@@ -838,6 +851,23 @@
                 introScene.hidden = scene !== introScene;
                 demoScene.hidden = scene !== demoScene;
                 trainingScene.hidden = scene !== trainingScene;
+                finalScene.hidden = scene !== finalScene;
+            };
+
+            const debugNextScene = () => {
+                if (!introScene.hidden) {
+                    startDemo();
+                    return;
+                }
+
+                if (!demoScene.hidden) {
+                    startChallenge();
+                    return;
+                }
+
+                if (!trainingScene.hidden) {
+                    completeLevel();
+                }
             };
 
             const startChallenge = () => {
@@ -908,6 +938,13 @@
                 startDemo();
             });
             skipDemoButton.addEventListener("click", startChallenge);
+            window.addEventListener("keydown", (event) => {
+                const tagName = event.target?.tagName;
+                if (tagName === "INPUT" || tagName === "TEXTAREA" || tagName === "SELECT") return;
+                if (event.code !== "Space") return;
+                event.preventDefault();
+                debugNextScene();
+            });
 
             syncLevelCopy();
             setScore(0);
