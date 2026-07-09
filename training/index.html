@@ -359,6 +359,24 @@
             background: var(--accent);
         }
 
+        .countdownOverlay {
+            position: absolute;
+            inset: 0;
+            z-index: 5;
+            display: grid;
+            place-items: center;
+            color: var(--score-accent, var(--accent));
+            font-size: clamp(5rem, 18vw, 9rem);
+            font-variant-numeric: tabular-nums;
+            line-height: 1;
+            pointer-events: none;
+            text-shadow: 0 6px 20px rgba(23, 32, 42, 0.24);
+        }
+
+        .countdownOverlay[hidden] {
+            display: none;
+        }
+
         .scoreText {
             grid-column: 1 / -1;
             min-width: 0;
@@ -417,7 +435,7 @@
         <section id="demoScene" class="scene demoScene" hidden>
             <article id="demoPanel" class="demoPanel">
                 <div class="demoVideoWrap">
-                    <video id="demoVideo" muted loop playsinline></video>
+                    <video id="demoVideo" muted playsinline></video>
                     <div id="demoPlaceholder" class="placeholder">お手本動画を読み込み中...</div>
                 </div>
             </article>
@@ -449,6 +467,7 @@
                             <span id="scoreNumber" class="scoreBubbleNumber">0</span>
                             <span class="scoreBubbleUnit">/100</span>
                         </div>
+                        <div id="countdownOverlay" class="countdownOverlay" hidden>3</div>
                         <div id="cameraPlaceholder" class="placeholder">Webcamを起動中...</div>
                         <div class="ellipseGuide" aria-hidden="true"></div>
                         <div id="challengeIntroOverlay" class="challengeIntroOverlay" hidden>
@@ -467,7 +486,10 @@
         window.addEventListener("load", () => {
             const MODEL_URL = "../modules/faceAPI/models";
             const DEMO_INTRO_MS = 2000;
-            const DEMO_DURATION_MS = 5000;
+            const DEMO_LOOP_COUNT = 3;
+            const CLEAR_SCORE = 0.82;
+            const CLEAR_HOLD_MS = 3000;
+            const LEVEL_UP_MS = 2000;
             const EXPRESSIONS = ["happy", "surprised", "angry", "sad", "fearful", "disgusted", "neutral"];
             const TARGETS = {
                 happy: { label: "喜び", vector: { happy: 0.82, surprised: 0.08, angry: 0, sad: 0, fearful: 0, disgusted: 0, neutral: 0.10 } },
@@ -525,6 +547,7 @@
             const scoreBubble = $("scoreBubble");
             const scoreNumber = $("scoreNumber");
             const scoreTitle = $("scoreTitle");
+            const countdownOverlay = $("countdownOverlay");
             const guideAudio = new Audio("guide.mp3");
             guideAudio.preload = "auto";
 
@@ -533,10 +556,15 @@
             let sampleLoadToken = 0;
             let demoTimer = 0;
             let demoIntroTimer = 0;
-            let demoStartedAt = 0;
+            let challengeIntroTimer = 0;
+            let demoPlayCount = 0;
             let running = false;
             let modelsLoading = false;
+            let modelsLoaded = false;
             let smoothedScore = 0;
+            let holdStartedAt = 0;
+            let challengeCleared = false;
+            let levelUpTimer = 0;
             scoreBar.innerHTML = Array.from({ length: 10 }, () => '<span class="scoreSegment"></span>').join("");
             const scoreSegments = [...scoreBar.querySelectorAll(".scoreSegment")];
 
@@ -547,12 +575,13 @@
                 const scoreAccent = rounded >= 72 ? "#27c28a" : rounded >= 44 ? "#ef8b39" : "#dd4d5d";
                 scoreBar.style.setProperty("--accent", scoreAccent);
                 scoreBubble.style.setProperty("--score-accent", scoreAccent);
+                countdownOverlay.style.setProperty("--score-accent", scoreAccent);
                 scoreNumber.textContent = String(rounded);
                 scoreSegments.forEach((segment, index) => {
                     segment.classList.toggle("is-filled", index < filledSegments);
                 });
 
-                if (rounded >= 82) {
+                if (normalized >= CLEAR_SCORE) {
                     scoreTitle.textContent = "かなり好ましい表情です！そのままキープしてください。";
                 } else if (rounded >= 58) {
                     scoreTitle.textContent = "だんだん好ましい表情に近づいています！";
@@ -622,6 +651,72 @@
                 setDemoVideoSource(activeTarget);
             };
 
+            const resetChallengeState = () => {
+                holdStartedAt = 0;
+                challengeCleared = false;
+                smoothedScore = 0;
+                setScore(0);
+                countdownOverlay.hidden = true;
+                scoreTitle.textContent = "準備中";
+            };
+
+            const clearDemoTimers = () => {
+                window.cancelAnimationFrame(demoTimer);
+                window.clearTimeout(demoIntroTimer);
+            };
+
+            const clearChallengeTimers = () => {
+                window.clearTimeout(challengeIntroTimer);
+                window.clearTimeout(levelUpTimer);
+            };
+
+            const completeLevel = () => {
+                if (challengeCleared) return;
+                challengeCleared = true;
+                running = false;
+                holdStartedAt = 0;
+                countdownOverlay.hidden = true;
+
+                const clearedLevel = LEVELS[currentLevelIndex];
+                currentLevelIndex += 1;
+                const hasNextLevel = currentLevelIndex < LEVELS.length;
+                challengeIntroTitle.textContent = hasNextLevel ? "レベルアップ！" : "全レベルクリア！";
+                challengeIntroText.textContent = hasNextLevel
+                    ? `レベル${clearedLevel.level}をクリアしました。次のレベルに進みます。`
+                    : "すべての表情トレーニングをクリアしました。";
+                challengeIntroOverlay.hidden = false;
+
+                clearChallengeTimers();
+                if (!hasNextLevel) return;
+                levelUpTimer = window.setTimeout(() => {
+                    challengeIntroOverlay.hidden = true;
+                    resetChallengeState();
+                    startDemo();
+                }, LEVEL_UP_MS);
+            };
+
+            const updateClearProgress = (score) => {
+                if (challengeCleared || score < CLEAR_SCORE) {
+                    holdStartedAt = 0;
+                    countdownOverlay.hidden = true;
+                    return;
+                }
+
+                const now = performance.now();
+                if (!holdStartedAt) {
+                    holdStartedAt = now;
+                }
+
+                const elapsed = now - holdStartedAt;
+                const remaining = Math.max(0, Math.ceil((CLEAR_HOLD_MS - elapsed) / 1000));
+                countdownOverlay.hidden = false;
+                countdownOverlay.textContent = String(Math.max(1, remaining));
+
+                if (elapsed >= CLEAR_HOLD_MS) {
+                    completeLevel();
+                }
+            };
+
             const scoreExpressions = (expressions) => {
                 const target = TARGETS[activeTarget].vector;
                 const maxDistance = Math.sqrt(EXPRESSIONS.length);
@@ -636,10 +731,17 @@
 
             const loadModels = async () => {
                 if (modelsLoading || running) return;
-                modelsLoading = true;
-                scoreTitle.textContent = "モデル読込中";
-                await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
-                await faceapi.nets.faceExpressionNet.loadFromUri(MODEL_URL);
+                if (!modelsLoaded) {
+                    modelsLoading = true;
+                    scoreTitle.textContent = "モデル読込中";
+                    try {
+                        await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
+                        await faceapi.nets.faceExpressionNet.loadFromUri(MODEL_URL);
+                        modelsLoaded = true;
+                    } finally {
+                        modelsLoading = false;
+                    }
+                }
                 scoreTitle.textContent = "Webcam起動中";
                 await startCamera();
             };
@@ -655,11 +757,12 @@
                         const expressions = Object.fromEntries(EXPRESSIONS.map((name) => [name, clamp(result.expressions[name])]));
                         const rawScore = scoreExpressions(expressions);
                         smoothedScore = smoothedScore ? smoothedScore * 0.72 + rawScore * 0.28 : rawScore;
-                        setScore(smoothedScore);
                     } else {
                         smoothedScore *= 0.88;
-                        setScore(smoothedScore);
                     }
+
+                    setScore(smoothedScore);
+                    updateClearProgress(smoothedScore);
                 } catch {
                     scoreTitle.textContent = "推定エラー";
                 } finally {
@@ -670,19 +773,22 @@
             const startCamera = async () => {
                 if (running) return;
                 try {
-                    const stream = await navigator.mediaDevices.getUserMedia({
-                        video: {
-                            width: { ideal: 1280 },
-                            height: { ideal: 960 },
-                            facingMode: "user"
-                        },
-                        audio: false
-                    });
-                    webcamVideo.srcObject = stream;
+                    let stream = webcamVideo.srcObject;
+                    if (!stream) {
+                        stream = await navigator.mediaDevices.getUserMedia({
+                            video: {
+                                width: { ideal: 1280 },
+                                height: { ideal: 960 },
+                                facingMode: "user"
+                            },
+                            audio: false
+                        });
+                        webcamVideo.srcObject = stream;
+                    }
                     await webcamVideo.play();
                     cameraPlaceholder.hidden = true;
+                    resetChallengeState();
                     running = true;
-                    smoothedScore = 0;
                     detectLoop();
                 } catch {
                     scoreTitle.textContent = "Webcamを開始できません";
@@ -698,13 +804,15 @@
             };
 
             const startChallenge = () => {
-                window.cancelAnimationFrame(demoTimer);
-                window.clearTimeout(demoIntroTimer);
+                clearDemoTimers();
+                clearChallengeTimers();
                 demoVideo.pause();
                 demoProgressFill.style.width = "100%";
                 showScene(trainingScene);
+                syncLevelCopy();
+                resetChallengeState();
                 challengeIntroOverlay.hidden = false;
-                window.setTimeout(() => {
+                challengeIntroTimer = window.setTimeout(() => {
                     challengeIntroOverlay.hidden = true;
                     loadModels().catch(() => {
                         scoreTitle.textContent = "モデルを読み込めません";
@@ -713,8 +821,9 @@
             };
 
             const updateDemoProgress = () => {
-                const elapsed = performance.now() - demoStartedAt;
-                const progress = clamp(elapsed / DEMO_DURATION_MS);
+                const duration = Number.isFinite(demoVideo.duration) ? demoVideo.duration : 0;
+                const currentLoopProgress = duration > 0 ? clamp(demoVideo.currentTime / duration) : 0;
+                const progress = clamp((demoPlayCount + currentLoopProgress) / DEMO_LOOP_COUNT);
                 demoProgressFill.style.width = `${Math.round(progress * 100)}%`;
                 if (progress >= 1) {
                     startChallenge();
@@ -723,12 +832,26 @@
                 demoTimer = window.requestAnimationFrame(updateDemoProgress);
             };
 
+            const handleDemoEnded = () => {
+                demoPlayCount += 1;
+                if (demoPlayCount >= DEMO_LOOP_COUNT) {
+                    startChallenge();
+                    return;
+                }
+
+                demoVideo.currentTime = 0;
+                demoVideo.play().catch(() => {});
+            };
+
+            demoVideo.addEventListener("ended", handleDemoEnded);
+
             const startDemo = () => {
                 updateLevel();
+                demoPlayCount = 0;
                 demoProgressFill.style.width = "0%";
                 showScene(demoScene);
-                window.cancelAnimationFrame(demoTimer);
-                window.clearTimeout(demoIntroTimer);
+                clearDemoTimers();
+                clearChallengeTimers();
                 demoVideo.pause();
                 demoVideo.currentTime = 0;
                 demoPanel.classList.add("is-previewing");
@@ -739,7 +862,6 @@
                     demoIntroOverlay.hidden = true;
                     demoVideo.currentTime = 0;
                     demoVideo.play().catch(() => {});
-                    demoStartedAt = performance.now();
                     demoTimer = window.requestAnimationFrame(updateDemoProgress);
                 }, DEMO_INTRO_MS);
             };
