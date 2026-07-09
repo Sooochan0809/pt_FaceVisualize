@@ -37,6 +37,62 @@
             overflow: hidden;
         }
 
+        .scene {
+            height: 100%;
+        }
+
+        .scene[hidden] {
+            display: none;
+        }
+
+        .introScene {
+            display: grid;
+            place-items: center;
+            padding: 24px;
+        }
+
+        .introContent {
+            width: min(480px, 100%);
+            display: grid;
+            gap: 20px;
+            justify-items: center;
+            text-align: center;
+        }
+
+        .introThumbnail {
+            width: min(256px, 42vw);
+            aspect-ratio: 1;
+            display: block;
+            object-fit: contain;
+        }
+
+        .introTitle {
+            margin: 0;
+            font-size: clamp(1.5rem, 3vw, 2rem);
+            line-height: 1.15;
+            letter-spacing: 0;
+        }
+
+        .introText {
+            margin: 0;
+            color: var(--muted);
+            font-size: clamp(0.95rem, 2vw, 1.08rem);
+            line-height: 1.9;
+            text-align: left;
+        }
+
+        .startButton {
+            min-height: 44px;
+            border: 1px solid var(--line);
+            border-radius: 6px;
+            background: var(--ink);
+            padding: 0 18px;
+            color: #fff;
+            font: inherit;
+            font-size: 0.98rem;
+            cursor: pointer;
+        }
+
         main {
             height: 100%;
             min-height: 0;
@@ -239,7 +295,16 @@
 
 <body>
     <div class="app">
-        <main>
+        <section id="introScene" class="scene introScene">
+            <div class="introContent">
+                <img class="introThumbnail" src="thumbnail.png" alt="サムネイル画像">
+                <h1 class="introTitle">ようこそ、表情クリニックへ</h1>
+                <p class="introText">表情クリニックとは、適切な表情表現ができるようになるための教育プログラムです。すべてのレベルをクリアして表情マスターとなり、コミュニケーション能力に優れた、模範的な人間を目指しましょう。</p>
+                <button id="startButton" class="startButton" type="button">さあ始めましょう →</button>
+            </div>
+        </section>
+
+        <main id="trainingScene" class="scene" hidden>
             <section class="practice" aria-label="training videos">
                 <article class="videoPanel">
                     <div class="panelHeader">
@@ -309,6 +374,9 @@
             const samplePlaceholder = $("samplePlaceholder");
             const webcamVideo = $("webcamVideo");
             const cameraPlaceholder = $("cameraPlaceholder");
+            const introScene = $("introScene");
+            const trainingScene = $("trainingScene");
+            const startButton = $("startButton");
             const targetSelect = $("targetSelect");
             const scoreRing = $("scoreRing");
             const scoreValue = $("scoreValue");
@@ -318,6 +386,7 @@
             let activeTarget = "happy";
             let sampleLoadToken = 0;
             let running = false;
+            let modelsLoading = false;
             let smoothedScore = 0;
 
             targetSelect.innerHTML = Object.entries(TARGETS)
@@ -400,6 +469,8 @@
             };
 
             const loadModels = async () => {
+                if (modelsLoading || running) return;
+                modelsLoading = true;
                 scoreTitle.textContent = "モデル読込中";
                 await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
                 await faceapi.nets.faceExpressionNet.loadFromUri(MODEL_URL);
@@ -457,13 +528,17 @@
             };
 
             targetSelect.addEventListener("change", () => updateTarget(targetSelect.value));
+            startButton.addEventListener("click", () => {
+                introScene.hidden = true;
+                trainingScene.hidden = false;
+                loadModels().catch((error) => {
+                    scoreTitle.textContent = "モデルを読み込めません";
+                    scoreMessage.textContent = error.message;
+                });
+            });
 
             updateTarget(activeTarget);
             setScore(0);
-            loadModels().catch((error) => {
-                scoreTitle.textContent = "モデルを読み込めません";
-                scoreMessage.textContent = error.message;
-            });
         });
     </script>
 </body>
