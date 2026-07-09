@@ -531,13 +531,14 @@
             startButton.addEventListener("click", () => {
                 introScene.hidden = true;
                 trainingScene.hidden = false;
+                updateTarget(activeTarget);
                 loadModels().catch((error) => {
                     scoreTitle.textContent = "モデルを読み込めません";
                     scoreMessage.textContent = error.message;
                 });
             });
 
-            updateTarget(activeTarget);
+            targetSelect.value = activeTarget;
             setScore(0);
         });
     </script>
