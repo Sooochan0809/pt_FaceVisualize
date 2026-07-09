@@ -210,6 +210,10 @@
             background: var(--accent);
         }
 
+        .levelUpProgress {
+            z-index: 9;
+        }
+
         main {
             height: 100%;
             min-height: 0;
@@ -476,7 +480,7 @@
                                 <p id="challengeIntroText" class="demoIntroText">次はあなたの番です。中立表情に挑戦してみましょう！</p>
                             </div>
                         </div>
-                        <div id="levelUpProgress" class="demoProgress" hidden aria-hidden="true">
+                        <div id="levelUpProgress" class="demoProgress levelUpProgress" hidden aria-hidden="true">
                             <span id="levelUpProgressFill" class="demoProgressFill"></span>
                         </div>
                     </div>
@@ -702,12 +706,11 @@
                 countdownOverlay.hidden = true;
                 playAudio(clearAudio);
 
-                const clearedLevel = LEVELS[currentLevelIndex];
                 currentLevelIndex += 1;
                 const hasNextLevel = currentLevelIndex < LEVELS.length;
                 challengeIntroTitle.textContent = hasNextLevel ? "レベルアップ！" : "全レベルクリア！";
                 challengeIntroText.textContent = hasNextLevel
-                    ? `レベル${clearedLevel.level}をクリアしました。次のレベルに進みます。`
+                    ? "次のレベルに進みます。"
                     : "すべての表情トレーニングをクリアしました。";
                 challengeIntroOverlay.hidden = false;
 
@@ -847,11 +850,11 @@
                 resetChallengeState();
                 hideLevelUpProgress();
                 challengeIntroOverlay.hidden = false;
+                loadModels().catch(() => {
+                    scoreTitle.textContent = "モデルを読み込めません";
+                });
                 challengeIntroTimer = window.setTimeout(() => {
                     challengeIntroOverlay.hidden = true;
-                    loadModels().catch(() => {
-                        scoreTitle.textContent = "モデルを読み込めません";
-                    });
                 }, DEMO_INTRO_MS);
             };
 
