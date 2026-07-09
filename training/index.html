@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>表情トレーニング</title>
+    <script defer src="../modules/faceAPI/face-api.min.js"></script>
+    <style>
+        :root {
+            --bg: #f7f8fa;
+            --panel: #ffffff;
+            --ink: #17202a;
+            --muted: #69727d;
+            --line: #d9dee5;
+            --accent: #27c28a;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        html,
+        body {
+            min-height: 100dvh;
+        }
+
+        body {
+            margin: 0;
+            background: var(--bg);
+            color: var(--ink);
+            font-family: "Yu Gothic Medium", "Yu Gothic", system-ui, sans-serif;
+        }
+
+        .app {
+            height: 100dvh;
+            overflow: hidden;
+        }
+
+        main {
+            height: 100%;
+            min-height: 0;
+            display: grid;
+            place-items: center;
+            padding: 12px;
+        }
+
+        .practice {
+            min-width: 0;
+            min-height: 0;
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 12px;
+            align-content: start;
+            justify-items: center;
+        }
+
+        .videoPanel {
+            width: min(100%, calc((100dvh - 80px) * 0.75));
+            min-width: 0;
+            display: grid;
+            grid-template-rows: 54px auto;
+            align-self: start;
+            overflow: hidden;
+            border: 1px solid var(--line);
+            border-radius: 6px;
+            background: var(--panel);
+        }
+
+        .panelHeader {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            min-height: 54px;
+            padding: 8px 12px;
+            border-bottom: 1px solid var(--line);
+        }
+
+        .panelTitle {
+            margin: 0;
+            font-size: 0.96rem;
+            line-height: 1.2;
+        }
+
+        .viewer {
+            position: relative;
+            width: 100%;
+            min-height: 0;
+            aspect-ratio: 3 / 4;
+            background: #111821;
+        }
+
+        .viewer video {
+            width: 100%;
+            height: 100%;
+            display: block;
+            object-fit: cover;
+            background: #111821;
+        }
+
+        .sampleVideo {
+            object-fit: contain;
+        }
+
+        #webcamVideo {
+            transform: scaleX(-1);
+        }
+
+        .placeholder {
+            position: absolute;
+            inset: 0;
+            display: grid;
+            place-items: center;
+            padding: 24px;
+            color: #dfe7ee;
+            text-align: center;
+            line-height: 1.7;
+            background: #151d27;
+        }
+
+        .placeholder[hidden] {
+            display: none;
+        }
+
+        .ellipseGuide {
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            width: min(72%, 300px);
+            height: min(76%, 430px);
+            border: 2px solid rgba(39, 194, 138, 0.88);
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+        }
+
+        .scoreHero {
+            position: absolute;
+            z-index: 4;
+            top: 10px;
+            left: 10px;
+            right: 10px;
+            display: grid;
+            grid-template-columns: auto minmax(0, 1fr);
+            gap: 6px 10px;
+            align-items: center;
+            padding: 10px;
+            border: 1px solid rgba(217, 222, 229, 0.72);
+            border-radius: 6px;
+            background: rgba(255, 255, 255, 0.78);
+            backdrop-filter: blur(8px);
+            color: var(--ink);
+            opacity: 0.88;
+            pointer-events: none;
+        }
+
+        .scoreRing {
+            --score: 0deg;
+            width: 100%;
+            height: 8px;
+            overflow: hidden;
+            border-radius: 999px;
+            background: #e7ecf1;
+        }
+
+        .scoreRing::before {
+            content: "";
+            display: block;
+            width: calc(var(--score) / 3.6 * 1%);
+            height: 100%;
+            border-radius: inherit;
+            background: var(--accent);
+            transition: width 120ms linear, background 120ms linear;
+        }
+
+        .scoreValue {
+            grid-row: span 2;
+            min-width: 54px;
+            font-size: 2rem;
+            font-weight: 700;
+            font-variant-numeric: tabular-nums;
+            line-height: 1;
+        }
+
+        .scoreText {
+            min-width: 0;
+        }
+
+        .scoreText strong {
+            display: block;
+            margin-bottom: 2px;
+            overflow: hidden;
+            font-size: 0.9rem;
+            line-height: 1.2;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .scoreText span {
+            color: var(--muted);
+            display: block;
+            overflow: hidden;
+            font-size: 0.72rem;
+            line-height: 1.35;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        select {
+            width: auto;
+            min-height: 30px;
+            border: 1px solid var(--line);
+            border-radius: 6px;
+            padding: 0 28px 0 8px;
+            background: #fff;
+            color: var(--ink);
+            font: inherit;
+            font-size: 0.82rem;
+        }
+
+        @media (max-width: 1120px) {
+            main {
+                overflow: auto;
+            }
+        }
+
+        @media (max-width: 760px) {
+            main {
+                padding: 10px;
+            }
+
+            .practice {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="app">
+        <main>
+            <section class="practice" aria-label="training videos">
+                <article class="videoPanel">
+                    <div class="panelHeader">
+                        <h2 class="panelTitle">Sample</h2>
+                        <select id="targetSelect" aria-label="トレーニングする表情"></select>
+                    </div>
+                    <div class="viewer">
+                        <video id="sampleVideo" class="sampleVideo" muted loop autoplay playsinline></video>
+                        <div id="samplePlaceholder" class="placeholder">サンプル動画を読み込み中...</div>
+                    </div>
+                </article>
+
+                <article class="videoPanel">
+                    <div class="panelHeader">
+                        <h2 class="panelTitle">Webcam</h2>
+                    </div>
+                    <div class="viewer">
+                        <video id="webcamVideo" autoplay muted playsinline></video>
+                        <div class="scoreHero">
+                            <span id="scoreValue" class="scoreValue">0</span>
+                            <div id="scoreRing" class="scoreRing"></div>
+                            <div class="scoreText">
+                                <strong id="scoreTitle">準備中</strong>
+                                <span id="scoreMessage">左のサンプルを真似してください。Webcamの映像からリアルタイムに採点します。</span>
+                            </div>
+                        </div>
+                        <div id="cameraPlaceholder" class="placeholder">Webcamを起動中...</div>
+                        <div class="ellipseGuide" aria-hidden="true"></div>
+                    </div>
+                </article>
+            </section>
+        </main>
+    </div>
+
+    <script>
+        window.addEventListener("load", () => {
+            const MODEL_URL = "../modules/faceAPI/models";
+            const EXPRESSIONS = ["happy", "surprised", "angry", "sad", "fearful", "disgusted", "neutral"];
+            const TARGETS = {
+                happy: { label: "喜び", vector: { happy: 0.82, surprised: 0.08, angry: 0, sad: 0, fearful: 0, disgusted: 0, neutral: 0.10 } },
+                surprised: { label: "驚き", vector: { happy: 0.08, surprised: 0.74, angry: 0, sad: 0, fearful: 0.10, disgusted: 0, neutral: 0.08 } },
+                angry: { label: "怒り", vector: { happy: 0, surprised: 0.02, angry: 0.78, sad: 0.04, fearful: 0, disgusted: 0.08, neutral: 0.08 } },
+                sad: { label: "悲しみ", vector: { happy: 0, surprised: 0, angry: 0.04, sad: 0.78, fearful: 0.06, disgusted: 0, neutral: 0.12 } },
+                fearful: { label: "恐れ", vector: { happy: 0, surprised: 0.16, angry: 0, sad: 0.08, fearful: 0.66, disgusted: 0, neutral: 0.10 } },
+                disgusted: { label: "嫌悪", vector: { happy: 0, surprised: 0, angry: 0.10, sad: 0.02, fearful: 0, disgusted: 0.76, neutral: 0.12 } },
+                neutral: { label: "中立", vector: { happy: 0.02, surprised: 0.02, angry: 0.02, sad: 0.02, fearful: 0.02, disgusted: 0.02, neutral: 0.88 } }
+            };
+            const videoFiles = (...names) => {
+                const extensions = ["mp4", "webm", "mov", "m4v"];
+                return names.flatMap((name) => extensions.map((extension) => `${name}.${extension}`));
+            };
+            const SAMPLE_VIDEO_CANDIDATES = {
+                happy: ["01_喜び_100.mov", ...videoFiles("happy", "喜び", "joy")],
+                surprised: ["05_驚き_100.mov", ...videoFiles("surprised", "驚き", "surprise")],
+                angry: ["03_怒り_99.mov", ...videoFiles("angry", "怒り", "anger")],
+                sad: ["02_悲しみ_100.mov", ...videoFiles("sad", "悲しみ")],
+                fearful: ["04_恐れ_85.mov", ...videoFiles("fearful", "恐れ", "fear")],
+                disgusted: ["06_嫌悪_99.mov", ...videoFiles("disgusted", "嫌悪", "disgust")],
+                neutral: ["00_無表情.mov", ...videoFiles("neutral", "中立")]
+            };
+
+            const $ = (id) => document.getElementById(id);
+            const clamp = (value, min = 0, max = 1) => Math.min(max, Math.max(min, Number(value || 0)));
+            const detectOptions = new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.45 });
+
+            const sampleVideo = $("sampleVideo");
+            const samplePlaceholder = $("samplePlaceholder");
+            const webcamVideo = $("webcamVideo");
+            const cameraPlaceholder = $("cameraPlaceholder");
+            const targetSelect = $("targetSelect");
+            const scoreRing = $("scoreRing");
+            const scoreValue = $("scoreValue");
+            const scoreTitle = $("scoreTitle");
+            const scoreMessage = $("scoreMessage");
+
+            let activeTarget = "happy";
+            let sampleLoadToken = 0;
+            let running = false;
+            let smoothedScore = 0;
+
+            targetSelect.innerHTML = Object.entries(TARGETS)
+                .map(([key, target]) => `<option value="${key}">${target.label}</option>`)
+                .join("");
+
+            const setScore = (score) => {
+                const normalized = clamp(score);
+                const rounded = Math.round(normalized * 100);
+                scoreRing.style.setProperty("--score", `${rounded * 3.6}deg`);
+                scoreValue.textContent = String(rounded);
+                scoreRing.style.setProperty("--accent", rounded >= 72 ? "#27c28a" : rounded >= 44 ? "#ef8b39" : "#dd4d5d");
+
+                if (rounded >= 82) {
+                    scoreTitle.textContent = "かなり近いです";
+                    scoreMessage.textContent = "目標の感情バランスに近づいています。そのまま数秒キープしてください。";
+                } else if (rounded >= 58) {
+                    scoreTitle.textContent = "もう少し";
+                    scoreMessage.textContent = "主感情は出ています。目標マーカーとの差が大きい項目を少し調整してください。";
+                } else if (running) {
+                    scoreTitle.textContent = "調整中";
+                    scoreMessage.textContent = "楕円の中央に顔を置き、選択した表情をもう少しはっきり作ってください。";
+                }
+            };
+
+            const sampleCandidatesFor = (key) => {
+                const files = SAMPLE_VIDEO_CANDIDATES[key] || [`${key}.mp4`];
+                return files.map((file) => `SampleVideo/${encodeURIComponent(file)}`);
+            };
+
+            const loadSampleVideo = (key) => {
+                const token = sampleLoadToken + 1;
+                sampleLoadToken = token;
+                const target = TARGETS[key];
+                const candidates = sampleCandidatesFor(key);
+                let index = 0;
+
+                samplePlaceholder.hidden = false;
+                samplePlaceholder.textContent = `${target.label}のサンプル動画を読み込み中...`;
+
+                const tryNext = () => {
+                    if (token !== sampleLoadToken) return;
+                    if (index >= candidates.length) {
+                        sampleVideo.removeAttribute("src");
+                        sampleVideo.load();
+                        samplePlaceholder.hidden = false;
+                        samplePlaceholder.textContent = `training/SampleVideo に ${target.label} の動画が見つかりません。`;
+                        return;
+                    }
+                    sampleVideo.src = candidates[index];
+                    index += 1;
+                    sampleVideo.load();
+                };
+
+                sampleVideo.onloadeddata = () => {
+                    if (token !== sampleLoadToken) return;
+                    samplePlaceholder.hidden = true;
+                    sampleVideo.play().catch(() => {});
+                };
+                sampleVideo.onerror = tryNext;
+                tryNext();
+            };
+
+            const updateTarget = (key) => {
+                activeTarget = key;
+                targetSelect.value = activeTarget;
+                loadSampleVideo(activeTarget);
+            };
+
+            const scoreExpressions = (expressions) => {
+                const target = TARGETS[activeTarget].vector;
+                const maxDistance = Math.sqrt(EXPRESSIONS.length);
+                const distance = Math.sqrt(EXPRESSIONS.reduce((sum, name) => {
+                    const diff = clamp(expressions[name]) - clamp(target[name]);
+                    return sum + diff * diff;
+                }, 0));
+                const primary = activeTarget === "neutral" ? expressions.neutral : expressions[activeTarget];
+                const distanceScore = 1 - distance / maxDistance;
+                return clamp(distanceScore * 0.58 + clamp(primary) * 0.42);
+            };
+
+            const loadModels = async () => {
+                scoreTitle.textContent = "モデル読込中";
+                await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
+                await faceapi.nets.faceExpressionNet.loadFromUri(MODEL_URL);
+                scoreTitle.textContent = "Webcam起動中";
+                scoreMessage.textContent = "カメラの使用を許可すると採点が始まります。";
+                await startCamera();
+            };
+
+            const detectLoop = async () => {
+                if (!running) return;
+                try {
+                    const result = await faceapi
+                        .detectSingleFace(webcamVideo, detectOptions)
+                        .withFaceExpressions();
+
+                    if (result?.expressions) {
+                        const expressions = Object.fromEntries(EXPRESSIONS.map((name) => [name, clamp(result.expressions[name])]));
+                        const rawScore = scoreExpressions(expressions);
+                        smoothedScore = smoothedScore ? smoothedScore * 0.72 + rawScore * 0.28 : rawScore;
+                        setScore(smoothedScore);
+                    } else {
+                        smoothedScore *= 0.88;
+                        setScore(smoothedScore);
+                    }
+                } catch (error) {
+                    scoreTitle.textContent = "推定エラー";
+                } finally {
+                    window.setTimeout(detectLoop, 90);
+                }
+            };
+
+            const startCamera = async () => {
+                if (running) return;
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({
+                        video: {
+                            width: { ideal: 1280 },
+                            height: { ideal: 960 },
+                            facingMode: "user"
+                        },
+                        audio: false
+                    });
+                    webcamVideo.srcObject = stream;
+                    await webcamVideo.play();
+                    cameraPlaceholder.hidden = true;
+                    running = true;
+                    smoothedScore = 0;
+                    detectLoop();
+                } catch (error) {
+                    scoreTitle.textContent = "Webcamを開始できません";
+                    scoreMessage.textContent = error.message;
+                    cameraPlaceholder.hidden = false;
+                    cameraPlaceholder.textContent = "Webcamを開始できません。";
+                }
+            };
+
+            targetSelect.addEventListener("change", () => updateTarget(targetSelect.value));
+
+            updateTarget(activeTarget);
+            setScore(0);
+            loadModels().catch((error) => {
+                scoreTitle.textContent = "モデルを読み込めません";
+                scoreMessage.textContent = error.message;
+            });
+        });
+    </script>
+</body>
+
+</html>
