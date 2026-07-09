@@ -127,7 +127,8 @@
             background: #111821;
         }
 
-        .demoIntroOverlay {
+        .demoIntroOverlay,
+        .challengeIntroOverlay {
             position: absolute;
             inset: 0;
             z-index: 6;
@@ -138,8 +139,13 @@
             backdrop-filter: blur(10px);
         }
 
-        .demoIntroOverlay[hidden] {
+        .demoIntroOverlay[hidden],
+        .challengeIntroOverlay[hidden] {
             display: none;
+        }
+
+        .challengeIntroOverlay {
+            z-index: 8;
         }
 
         .demoIntroCard {
@@ -229,11 +235,14 @@
             background: var(--panel);
         }
 
-        .levelBadge {
-            grid-column: 1 / -1;
-            color: var(--muted);
-            font-size: 0.82rem;
-            white-space: nowrap;
+        #trainingScene .videoPanel {
+            width: min(calc(100vw - 24px), calc((100dvh - 24px) * 0.75));
+            height: min(calc(100dvh - 24px), calc((100vw - 24px) * 1.333333));
+            align-self: center;
+        }
+
+        #trainingScene .viewer {
+            height: 100%;
         }
 
         .viewer {
@@ -287,71 +296,93 @@
         .scoreHero {
             position: absolute;
             z-index: 4;
-            top: 10px;
-            left: 10px;
-            right: 10px;
+            top: 8px;
+            left: 8px;
+            right: 8px;
             display: grid;
-            grid-template-columns: auto minmax(0, 1fr);
-            gap: 6px 10px;
+            grid-template-columns: minmax(0, 1fr) auto;
+            gap: 8px 16px;
             align-items: center;
-            padding: 10px;
-            border: 1px solid rgba(217, 222, 229, 0.72);
+            padding: 8px;
+            border: 0;
             border-radius: 6px;
-            background: rgba(255, 255, 255, 0.78);
-            backdrop-filter: blur(8px);
+            background: rgba(255, 255, 255, 0.7);
+            /* backdrop-filter: blur(8px); */
             color: var(--ink);
             opacity: 0.88;
             pointer-events: none;
         }
 
-        .scoreRing {
-            --score: 0deg;
-            width: 100%;
-            height: 8px;
-            overflow: hidden;
-            border-radius: 999px;
-            background: #e7ecf1;
-        }
-
-        .scoreRing::before {
-            content: "";
-            display: block;
-            width: calc(var(--score) / 3.6 * 1%);
-            height: 100%;
-            border-radius: inherit;
-            background: var(--accent);
-            transition: width 120ms linear, background 120ms linear;
-        }
-
-        .scoreValue {
-            grid-row: span 3;
-            min-width: 54px;
-            font-size: 2rem;
-            font-weight: 700;
+        .scoreBubble {
+            position: absolute;
+            right: 12px;
+            bottom: 12px;
+            z-index: 4;
+            width: 124px;
+            aspect-ratio: 1;
+            display: grid;
+            grid-template-rows: auto 1fr auto;
+            align-items: center;
+            justify-items: center;
+            padding: 14px 12px 12px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.82);
             font-variant-numeric: tabular-nums;
+            text-align: center;
+            pointer-events: none;
+        }
+
+        .scoreBubbleLabel {
+            color: var(--score-accent, var(--accent));
+            font-size: 0.9rem;
             line-height: 1;
         }
 
+        .scoreBubbleNumber {
+            color: var(--score-accent, var(--accent));
+            font-size: 3.8rem;
+            line-height: 0.92;
+        }
+
+        .scoreBubbleUnit {
+            justify-self: end;
+            margin-right: 14px;
+            color: var(--muted);
+            font-size: 0.85rem;
+            line-height: 1;
+        }
+
+        .scoreBar {
+            width: 100%;
+            display: grid;
+            grid-template-columns: repeat(10, minmax(0, 1fr));
+            gap: 3px;
+        }
+
+        .scoreSegment {
+            display: block;
+            height: 9px;
+            border-radius: 999px;
+            background: #e7ecf1;
+            transition: background 120ms linear;
+        }
+
+        .scoreSegment.is-filled {
+            background: var(--accent);
+        }
+
         .scoreText {
+            grid-column: 1 / -1;
             min-width: 0;
         }
 
         .scoreText strong {
             display: block;
-            margin-bottom: 2px;
             overflow: hidden;
-            font-size: 0.9rem;
-            line-height: 1.2;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-        }
-
-        .scoreText span {
-            color: var(--muted);
-            display: block;
-            overflow: hidden;
-            font-size: 0.72rem;
-            line-height: 1.35;
+            font-size: 1.6rem;
+            font-weight: 400;
+            line-height: 1.4;
+            text-align: center;
             text-overflow: ellipsis;
             white-space: nowrap;
         }
@@ -363,8 +394,28 @@
         }
 
         @media (max-width: 760px) {
+            .demoScene,
             main {
-                padding: 10px;
+                padding: 0;
+                overflow: hidden;
+            }
+
+            .practice {
+                height: 100%;
+            }
+
+            .demoPanel,
+            #trainingScene .videoPanel {
+                width: 100vw;
+                height: 100dvh;
+                border: 0;
+                border-radius: 0;
+            }
+
+            .demoVideoWrap,
+            #trainingScene .viewer {
+                height: 100%;
+                aspect-ratio: auto;
             }
         }
     </style>
@@ -376,7 +427,7 @@
             <div class="introContent">
                 <img class="introThumbnail" src="thumbnail.png" alt="サムネイル画像">
                 <h1 class="introTitle">ようこそ、表情クリニックへ</h1>
-                <p class="introText">表情クリニックとは、適切な表情表現ができるようになるための教育プログラムです。全７つのすべてのレベルをクリアして表情マスターとなり、コミュニケーション能力に優れた、模範的な人間を目指しましょう。</p>
+                <p class="introText">表情クリニックとは、適切な表情表現を身につけるための教育プログラムです。全7段階のトレーニングを通して、正しい表情の作り方を学び、コミュニケーション能力に優れた、模範的な人間を目指しましょう。</p>
                 <button id="startButton" class="startButton" type="button">さあ始めましょう →</button>
             </div>
         </section>
@@ -391,7 +442,7 @@
             <div id="demoIntroOverlay" class="demoIntroOverlay" hidden>
                 <div class="demoIntroCard">
                     <h2 id="demoIntroTitle" class="demoIntroTitle">レベル0：中立</h2>
-                    <p class="demoIntroText">まずは、お手本動画を見て観察しましょう。</p>
+                    <p class="demoIntroText">まずは、お手本動画をよく見て観察しましょう。</p>
                 </div>
             </div>
             <button id="skipDemoButton" class="skipButton" type="button">スキップ →</button>
@@ -406,16 +457,24 @@
                     <div class="viewer">
                         <video id="webcamVideo" autoplay muted playsinline></video>
                         <div class="scoreHero">
-                            <span id="scoreValue" class="scoreValue">0</span>
-                            <span id="levelLabel" class="levelBadge">レベル0：中立</span>
-                            <div id="scoreRing" class="scoreRing"></div>
                             <div class="scoreText">
                                 <strong id="scoreTitle">準備中</strong>
-                                <span id="scoreMessage">左のサンプルを真似してください。Webcamの映像からリアルタイムに採点します。</span>
                             </div>
+                            <div id="scoreBar" class="scoreBar" aria-hidden="true"></div>
+                        </div>
+                        <div id="scoreBubble" class="scoreBubble" aria-label="score">
+                            <span class="scoreBubbleLabel">Score</span>
+                            <span id="scoreNumber" class="scoreBubbleNumber">0</span>
+                            <span class="scoreBubbleUnit">/100</span>
                         </div>
                         <div id="cameraPlaceholder" class="placeholder">Webcamを起動中...</div>
                         <div class="ellipseGuide" aria-hidden="true"></div>
+                        <div id="challengeIntroOverlay" class="challengeIntroOverlay" hidden>
+                            <div class="demoIntroCard">
+                                <h2 id="challengeIntroTitle" class="demoIntroTitle">レベル0：中立</h2>
+                                <p id="challengeIntroText" class="demoIntroText">次はあなたの番です。中立表情に挑戦してみましょう！</p>
+                            </div>
+                        </div>
                     </div>
                 </article>
             </section>
@@ -477,11 +536,13 @@
             const startButton = $("startButton");
             const skipDemoButton = $("skipDemoButton");
             const demoProgressFill = $("demoProgressFill");
-            const levelLabel = $("levelLabel");
-            const scoreRing = $("scoreRing");
-            const scoreValue = $("scoreValue");
+            const challengeIntroOverlay = $("challengeIntroOverlay");
+            const challengeIntroTitle = $("challengeIntroTitle");
+            const challengeIntroText = $("challengeIntroText");
+            const scoreBar = $("scoreBar");
+            const scoreBubble = $("scoreBubble");
+            const scoreNumber = $("scoreNumber");
             const scoreTitle = $("scoreTitle");
-            const scoreMessage = $("scoreMessage");
 
             let currentLevelIndex = 0;
             let activeTarget = LEVELS[currentLevelIndex].key;
@@ -492,23 +553,27 @@
             let running = false;
             let modelsLoading = false;
             let smoothedScore = 0;
+            scoreBar.innerHTML = Array.from({ length: 10 }, () => '<span class="scoreSegment"></span>').join("");
+            const scoreSegments = [...scoreBar.querySelectorAll(".scoreSegment")];
 
             const setScore = (score) => {
                 const normalized = clamp(score);
                 const rounded = Math.round(normalized * 100);
-                scoreRing.style.setProperty("--score", `${rounded * 3.6}deg`);
-                scoreValue.textContent = String(rounded);
-                scoreRing.style.setProperty("--accent", rounded >= 72 ? "#27c28a" : rounded >= 44 ? "#ef8b39" : "#dd4d5d");
+                const filledSegments = Math.ceil(normalized * scoreSegments.length);
+                const scoreAccent = rounded >= 72 ? "#27c28a" : rounded >= 44 ? "#ef8b39" : "#dd4d5d";
+                scoreBar.style.setProperty("--accent", scoreAccent);
+                scoreBubble.style.setProperty("--score-accent", scoreAccent);
+                scoreNumber.textContent = String(rounded);
+                scoreSegments.forEach((segment, index) => {
+                    segment.classList.toggle("is-filled", index < filledSegments);
+                });
 
                 if (rounded >= 82) {
-                    scoreTitle.textContent = "かなり近いです";
-                    scoreMessage.textContent = "目標の感情バランスに近づいています。そのまま数秒キープしてください。";
+                    scoreTitle.textContent = "かなり好ましい表情です！そのままキープしてください。";
                 } else if (rounded >= 58) {
-                    scoreTitle.textContent = "もう少し";
-                    scoreMessage.textContent = "主感情は出ています。目標マーカーとの差が大きい項目を少し調整してください。";
+                    scoreTitle.textContent = "だんだん好ましい表情に近づいています！";
                 } else if (running) {
-                    scoreTitle.textContent = "まだまだです";
-                    scoreMessage.textContent = "楕円の中央に顔を置き、選択した表情をもう少しはっきり作ってください。";
+                    scoreTitle.textContent = "好ましい表情ではありません";
                 }
             };
 
@@ -558,7 +623,8 @@
                 activeTarget = LEVELS[currentLevelIndex].key;
                 const text = levelText();
                 demoIntroTitle.textContent = text;
-                levelLabel.textContent = text;
+                challengeIntroTitle.textContent = text;
+                challengeIntroText.textContent = `次はあなたの番です。${TARGETS[activeTarget].label}表情に挑戦してみましょう！`;
                 setDemoVideoSource(activeTarget);
             };
 
@@ -581,7 +647,6 @@
                 await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
                 await faceapi.nets.faceExpressionNet.loadFromUri(MODEL_URL);
                 scoreTitle.textContent = "Webcam起動中";
-                scoreMessage.textContent = "カメラの使用を許可すると採点が始まります。";
                 await startCamera();
             };
 
@@ -627,7 +692,6 @@
                     detectLoop();
                 } catch (error) {
                     scoreTitle.textContent = "Webcamを開始できません";
-                    scoreMessage.textContent = error.message;
                     cameraPlaceholder.hidden = false;
                     cameraPlaceholder.textContent = "Webcamを開始できません。";
                 }
@@ -645,10 +709,13 @@
                 demoVideo.pause();
                 demoProgressFill.style.width = "100%";
                 showScene(trainingScene);
-                loadModels().catch((error) => {
-                    scoreTitle.textContent = "モデルを読み込めません";
-                    scoreMessage.textContent = error.message;
-                });
+                challengeIntroOverlay.hidden = false;
+                window.setTimeout(() => {
+                    challengeIntroOverlay.hidden = true;
+                    loadModels().catch((error) => {
+                        scoreTitle.textContent = "モデルを読み込めません";
+                    });
+                }, DEMO_INTRO_MS);
             };
 
             const updateDemoProgress = () => {
@@ -689,7 +756,8 @@
 
             const initialLevelText = levelText();
             demoIntroTitle.textContent = initialLevelText;
-            levelLabel.textContent = initialLevelText;
+            challengeIntroTitle.textContent = initialLevelText;
+            challengeIntroText.textContent = `次はあなたの番です。${TARGETS[activeTarget].label}表情に挑戦してみましょう！`;
             setScore(0);
         });
     </script>
