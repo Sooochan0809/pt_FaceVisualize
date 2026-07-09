@@ -476,6 +476,9 @@
                                 <p id="challengeIntroText" class="demoIntroText">次はあなたの番です。中立表情に挑戦してみましょう！</p>
                             </div>
                         </div>
+                        <div id="levelUpProgress" class="demoProgress" hidden aria-hidden="true">
+                            <span id="levelUpProgressFill" class="demoProgressFill"></span>
+                        </div>
                     </div>
                 </article>
             </section>
@@ -489,7 +492,7 @@
             const DEMO_LOOP_COUNT = 3;
             const CLEAR_SCORE = 0.82;
             const CLEAR_HOLD_MS = 3000;
-            const LEVEL_UP_MS = 2000;
+            const LEVEL_UP_MS = 4000;
             const EXPRESSIONS = ["happy", "surprised", "angry", "sad", "fearful", "disgusted", "neutral"];
             const TARGETS = {
                 happy: { label: "喜び", vector: { happy: 0.82, surprised: 0.08, angry: 0, sad: 0, fearful: 0, disgusted: 0, neutral: 0.10 } },
@@ -540,6 +543,8 @@
             const startButton = $("startButton");
             const skipDemoButton = $("skipDemoButton");
             const demoProgressFill = $("demoProgressFill");
+            const levelUpProgress = $("levelUpProgress");
+            const levelUpProgressFill = $("levelUpProgressFill");
             const challengeIntroOverlay = $("challengeIntroOverlay");
             const challengeIntroTitle = $("challengeIntroTitle");
             const challengeIntroText = $("challengeIntroText");
@@ -549,7 +554,9 @@
             const scoreTitle = $("scoreTitle");
             const countdownOverlay = $("countdownOverlay");
             const guideAudio = new Audio("guide.mp3");
+            const clearAudio = new Audio("clear.mp3");
             guideAudio.preload = "auto";
+            clearAudio.preload = "auto";
 
             let currentLevelIndex = 0;
             let activeTarget = LEVELS[currentLevelIndex].key;
@@ -557,6 +564,8 @@
             let demoTimer = 0;
             let demoIntroTimer = 0;
             let challengeIntroTimer = 0;
+            let levelUpProgressTimer = 0;
+            let levelUpStartedAt = 0;
             let demoPlayCount = 0;
             let running = false;
             let modelsLoading = false;
@@ -590,10 +599,10 @@
                 }
             };
 
-            const playGuide = () => {
-                guideAudio.pause();
-                guideAudio.currentTime = 0;
-                guideAudio.play().catch(() => {});
+            const playAudio = (audio) => {
+                audio.pause();
+                audio.currentTime = 0;
+                audio.play().catch(() => {});
             };
 
             const sampleCandidatesFor = (key) => {
@@ -668,6 +677,21 @@
             const clearChallengeTimers = () => {
                 window.clearTimeout(challengeIntroTimer);
                 window.clearTimeout(levelUpTimer);
+                window.cancelAnimationFrame(levelUpProgressTimer);
+            };
+
+            const hideLevelUpProgress = () => {
+                levelUpProgress.hidden = true;
+                levelUpProgressFill.style.width = "0%";
+            };
+
+            const updateLevelUpProgress = () => {
+                const elapsed = performance.now() - levelUpStartedAt;
+                const progress = clamp(elapsed / LEVEL_UP_MS);
+                levelUpProgressFill.style.width = `${Math.round(progress * 100)}%`;
+                if (progress < 1) {
+                    levelUpProgressTimer = window.requestAnimationFrame(updateLevelUpProgress);
+                }
             };
 
             const completeLevel = () => {
@@ -676,6 +700,7 @@
                 running = false;
                 holdStartedAt = 0;
                 countdownOverlay.hidden = true;
+                playAudio(clearAudio);
 
                 const clearedLevel = LEVELS[currentLevelIndex];
                 currentLevelIndex += 1;
@@ -687,9 +712,18 @@
                 challengeIntroOverlay.hidden = false;
 
                 clearChallengeTimers();
-                if (!hasNextLevel) return;
+                if (!hasNextLevel) {
+                    hideLevelUpProgress();
+                    return;
+                }
+
+                levelUpStartedAt = performance.now();
+                levelUpProgress.hidden = false;
+                levelUpProgressFill.style.width = "0%";
+                levelUpProgressTimer = window.requestAnimationFrame(updateLevelUpProgress);
                 levelUpTimer = window.setTimeout(() => {
                     challengeIntroOverlay.hidden = true;
+                    hideLevelUpProgress();
                     resetChallengeState();
                     startDemo();
                 }, LEVEL_UP_MS);
@@ -811,6 +845,7 @@
                 showScene(trainingScene);
                 syncLevelCopy();
                 resetChallengeState();
+                hideLevelUpProgress();
                 challengeIntroOverlay.hidden = false;
                 challengeIntroTimer = window.setTimeout(() => {
                     challengeIntroOverlay.hidden = true;
@@ -856,7 +891,7 @@
                 demoVideo.currentTime = 0;
                 demoPanel.classList.add("is-previewing");
                 demoIntroOverlay.hidden = false;
-                playGuide();
+                playAudio(guideAudio);
                 demoIntroTimer = window.setTimeout(() => {
                     demoPanel.classList.remove("is-previewing");
                     demoIntroOverlay.hidden = true;
