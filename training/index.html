@@ -100,13 +100,17 @@
             padding: 12px;
         }
 
-        .demoPanel {
-            width: min(100%, calc((100dvh - 24px) * 0.75));
+        .demoPanel,
+        .videoPanel {
             min-width: 0;
             overflow: hidden;
             border: 1px solid var(--line);
             border-radius: 6px;
             background: var(--panel);
+        }
+
+        .demoPanel {
+            width: min(100%, calc((100dvh - 24px) * 0.75));
         }
 
         .demoPanel.is-previewing {
@@ -216,38 +220,24 @@
 
         .practice {
             width: 100%;
+            height: 100%;
             min-width: 0;
             min-height: 0;
             display: grid;
             grid-template-columns: minmax(0, 1fr);
-            gap: 12px;
-            align-content: start;
-            justify-items: center;
+            place-items: center;
         }
 
         .videoPanel {
-            width: min(100%, calc((100dvh - 24px) * 0.75));
-            min-width: 0;
-            align-self: start;
-            overflow: hidden;
-            border: 1px solid var(--line);
-            border-radius: 6px;
-            background: var(--panel);
-        }
-
-        #trainingScene .videoPanel {
             width: min(calc(100vw - 24px), calc((100dvh - 24px) * 0.75));
             height: min(calc(100dvh - 24px), calc((100vw - 24px) * 1.333333));
             align-self: center;
         }
 
-        #trainingScene .viewer {
-            height: 100%;
-        }
-
         .viewer {
             position: relative;
             width: 100%;
+            height: 100%;
             min-height: 0;
             aspect-ratio: 3 / 4;
             background: #111821;
@@ -285,8 +275,8 @@
             position: absolute;
             left: 50%;
             top: 50%;
-            width: min(72%, 300px);
-            height: min(76%, 430px);
+            width: min(72%, 600px);
+            height: min(76%, 860px);
             border: 2px solid rgba(39, 194, 138, 0.88);
             border-radius: 50%;
             transform: translate(-50%, -50%);
@@ -300,14 +290,12 @@
             left: 8px;
             right: 8px;
             display: grid;
-            grid-template-columns: minmax(0, 1fr) auto;
-            gap: 8px 16px;
+            grid-template-columns: minmax(0, 1fr);
+            gap: 8px;
             align-items: center;
             padding: 8px;
-            border: 0;
             border-radius: 6px;
             background: rgba(255, 255, 255, 0.7);
-            /* backdrop-filter: blur(8px); */
             color: var(--ink);
             opacity: 0.88;
             pointer-events: none;
@@ -391,21 +379,15 @@
             main {
                 overflow: auto;
             }
-        }
 
-        @media (max-width: 760px) {
             .demoScene,
             main {
                 padding: 0;
                 overflow: hidden;
             }
 
-            .practice {
-                height: 100%;
-            }
-
             .demoPanel,
-            #trainingScene .videoPanel {
+            .videoPanel {
                 width: 100vw;
                 height: 100dvh;
                 border: 0;
@@ -413,7 +395,7 @@
             }
 
             .demoVideoWrap,
-            #trainingScene .viewer {
+            .viewer {
                 height: 100%;
                 aspect-ratio: auto;
             }
@@ -485,7 +467,7 @@
         window.addEventListener("load", () => {
             const MODEL_URL = "../modules/faceAPI/models";
             const DEMO_INTRO_MS = 2000;
-            const DEMO_DURATION_MS = 10000;
+            const DEMO_DURATION_MS = 5000;
             const EXPRESSIONS = ["happy", "surprised", "angry", "sad", "fearful", "disgusted", "neutral"];
             const TARGETS = {
                 happy: { label: "喜び", vector: { happy: 0.82, surprised: 0.08, angry: 0, sad: 0, fearful: 0, disgusted: 0, neutral: 0.10 } },
@@ -543,6 +525,8 @@
             const scoreBubble = $("scoreBubble");
             const scoreNumber = $("scoreNumber");
             const scoreTitle = $("scoreTitle");
+            const guideAudio = new Audio("guide.mp3");
+            guideAudio.preload = "auto";
 
             let currentLevelIndex = 0;
             let activeTarget = LEVELS[currentLevelIndex].key;
@@ -575,6 +559,12 @@
                 } else if (running) {
                     scoreTitle.textContent = "好ましい表情ではありません";
                 }
+            };
+
+            const playGuide = () => {
+                guideAudio.pause();
+                guideAudio.currentTime = 0;
+                guideAudio.play().catch(() => {});
             };
 
             const sampleCandidatesFor = (key) => {
@@ -618,13 +608,17 @@
                 tryNext();
             };
 
-            const updateLevel = (index) => {
-                currentLevelIndex = Math.min(Math.max(index, 0), LEVELS.length - 1);
-                activeTarget = LEVELS[currentLevelIndex].key;
+            const syncLevelCopy = () => {
                 const text = levelText();
                 demoIntroTitle.textContent = text;
                 challengeIntroTitle.textContent = text;
                 challengeIntroText.textContent = `次はあなたの番です。${TARGETS[activeTarget].label}表情に挑戦してみましょう！`;
+            };
+
+            const updateLevel = () => {
+                currentLevelIndex = Math.min(Math.max(currentLevelIndex, 0), LEVELS.length - 1);
+                activeTarget = LEVELS[currentLevelIndex].key;
+                syncLevelCopy();
                 setDemoVideoSource(activeTarget);
             };
 
@@ -666,7 +660,7 @@
                         smoothedScore *= 0.88;
                         setScore(smoothedScore);
                     }
-                } catch (error) {
+                } catch {
                     scoreTitle.textContent = "推定エラー";
                 } finally {
                     window.setTimeout(detectLoop, 90);
@@ -690,7 +684,7 @@
                     running = true;
                     smoothedScore = 0;
                     detectLoop();
-                } catch (error) {
+                } catch {
                     scoreTitle.textContent = "Webcamを開始できません";
                     cameraPlaceholder.hidden = false;
                     cameraPlaceholder.textContent = "Webcamを開始できません。";
@@ -712,7 +706,7 @@
                 challengeIntroOverlay.hidden = false;
                 window.setTimeout(() => {
                     challengeIntroOverlay.hidden = true;
-                    loadModels().catch((error) => {
+                    loadModels().catch(() => {
                         scoreTitle.textContent = "モデルを読み込めません";
                     });
                 }, DEMO_INTRO_MS);
@@ -730,7 +724,7 @@
             };
 
             const startDemo = () => {
-                updateLevel(currentLevelIndex);
+                updateLevel();
                 demoProgressFill.style.width = "0%";
                 showScene(demoScene);
                 window.cancelAnimationFrame(demoTimer);
@@ -739,6 +733,7 @@
                 demoVideo.currentTime = 0;
                 demoPanel.classList.add("is-previewing");
                 demoIntroOverlay.hidden = false;
+                playGuide();
                 demoIntroTimer = window.setTimeout(() => {
                     demoPanel.classList.remove("is-previewing");
                     demoIntroOverlay.hidden = true;
@@ -754,10 +749,7 @@
             });
             skipDemoButton.addEventListener("click", startChallenge);
 
-            const initialLevelText = levelText();
-            demoIntroTitle.textContent = initialLevelText;
-            challengeIntroTitle.textContent = initialLevelText;
-            challengeIntroText.textContent = `次はあなたの番です。${TARGETS[activeTarget].label}表情に挑戦してみましょう！`;
+            syncLevelCopy();
             setScore(0);
         });
     </script>
