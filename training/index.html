@@ -1060,6 +1060,17 @@
                 assistOverlayTimer = window.setTimeout(showAssistOverlay, ASSIST_OVERLAY_DELAY_MS);
             };
 
+            const toggleAssistOverlay = () => {
+                if (!running || challengeCleared || trainingScene.hidden) return;
+                if (assistVideo.hidden) {
+                    window.clearTimeout(assistOverlayTimer);
+                    showAssistOverlay();
+                } else {
+                    hideAssistOverlay();
+                    startAssistOverlayTimer();
+                }
+            };
+
             const hideCoachTips = () => {
                 window.clearTimeout(coachTipsTimer);
                 coaching = false;
@@ -1428,6 +1439,11 @@
                 if (event.code === "Space" && !introScene.hidden) {
                     event.preventDefault();
                     toggleRecordingEnabled();
+                    return;
+                }
+                if (event.code === "KeyH") {
+                    event.preventDefault();
+                    toggleAssistOverlay();
                     return;
                 }
                 if (event.code !== "ArrowRight" && event.code !== "ArrowLeft") return;
