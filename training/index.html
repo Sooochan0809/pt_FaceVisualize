@@ -753,6 +753,15 @@
 
             const clearScoreFor = (key = activeTarget) => CLEAR_SCORE_BY_EXPRESSION[key] || CLEAR_SCORE;
 
+            const expressionVector = (source) => {
+                return Object.fromEntries(EXPRESSION_KEYS.map((name) => [name, clamp(source[name])]));
+            };
+
+            const applyScore = (score, expressions = null) => {
+                setScore(score, expressions);
+                updateClearProgress(score, expressions);
+            };
+
             const setScore = (score, expressions = null) => {
                 const normalized = clamp(score);
                 const rounded = Math.round(normalized * 100);
@@ -993,7 +1002,7 @@
 
             const isFearClearReady = (expressions) => {
                 if (!expressions) return false;
-                const fearLike = clamp(expressions.angry) + clamp(expressions.sad) + clamp(expressions.fearful);
+                const fearLike = ["angry", "sad", "fearful"].reduce((sum, name) => sum + clamp(expressions[name]), 0);
                 return fearLike >= clearScoreFor("fearful");
             };
 
@@ -1072,15 +1081,13 @@
                         .withFaceExpressions();
 
                     if (result?.expressions) {
-                        const expressions = Object.fromEntries(EXPRESSION_KEYS.map((name) => [name, clamp(result.expressions[name])]));
+                        const expressions = expressionVector(result.expressions);
                         const rawScore = scoreExpressions(expressions);
                         smoothedScore = smoothedScore ? smoothedScore * 0.72 + rawScore * 0.28 : rawScore;
-                        setScore(smoothedScore, expressions);
-                        updateClearProgress(smoothedScore, expressions);
+                        applyScore(smoothedScore, expressions);
                     } else {
                         smoothedScore *= 0.88;
-                        setScore(smoothedScore);
-                        updateClearProgress(smoothedScore);
+                        applyScore(smoothedScore);
                     }
                 } catch {
                     scoreTitle.textContent = "推定エラー";
@@ -1123,6 +1130,12 @@
                 finalScene.hidden = scene !== finalScene;
             };
 
+            const goToChallengeLevel = (index) => {
+                currentLevelIndex = Math.min(Math.max(index, 0), LEVELS.length - 1);
+                updateLevel();
+                startChallenge();
+            };
+
             const debugNextScene = () => {
                 if (!introScene.hidden) {
                     startDemo();
@@ -1136,6 +1149,35 @@
 
                 if (!trainingScene.hidden) {
                     completeLevel();
+                }
+            };
+
+            const debugPreviousScene = () => {
+                if (!finalScene.hidden) {
+                    goToChallengeLevel(LEVELS.length - 1);
+                    return;
+                }
+
+                if (!trainingScene.hidden) {
+                    running = false;
+                    challengeIntroOverlay.hidden = true;
+                    hideAssistOverlay();
+                    startDemo();
+                    return;
+                }
+
+                if (!demoScene.hidden) {
+                    clearDemoTimers();
+                    demoVideo.pause();
+                    demoIntroOverlay.hidden = true;
+                    demoPanel.classList.remove("is-previewing");
+
+                    if (currentLevelIndex <= 0) {
+                        showScene(introScene);
+                        return;
+                    }
+
+                    goToChallengeLevel(currentLevelIndex - 1);
                 }
             };
 
@@ -1221,9 +1263,13 @@
             window.addEventListener("keydown", (event) => {
                 const tagName = event.target?.tagName;
                 if (tagName === "INPUT" || tagName === "TEXTAREA" || tagName === "SELECT") return;
-                if (event.code !== "Space") return;
+                if (event.code !== "ArrowRight" && event.code !== "ArrowLeft") return;
                 event.preventDefault();
-                debugNextScene();
+                if (event.code === "ArrowRight") {
+                    debugNextScene();
+                } else {
+                    debugPreviousScene();
+                }
             });
 
             syncLevelCopy();
