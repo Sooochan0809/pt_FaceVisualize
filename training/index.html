@@ -131,8 +131,7 @@
             background: #111821;
         }
 
-        .demoIntroOverlay,
-        .challengeIntroOverlay {
+        .sceneOverlay {
             position: absolute;
             inset: 0;
             z-index: 6;
@@ -143,8 +142,7 @@
             backdrop-filter: blur(10px);
         }
 
-        .demoIntroOverlay[hidden],
-        .challengeIntroOverlay[hidden] {
+        .sceneOverlay[hidden] {
             display: none;
         }
 
@@ -545,7 +543,7 @@
                     <div id="demoPlaceholder" class="placeholder">お手本動画を読み込み中...</div>
                 </div>
             </article>
-            <div id="demoIntroOverlay" class="demoIntroOverlay" hidden>
+            <div id="demoIntroOverlay" class="sceneOverlay demoIntroOverlay" hidden>
                 <div class="demoIntroCard">
                     <h2 id="demoIntroTitle" class="demoIntroTitle">レベル0：無表情</h2>
                     <p class="demoIntroText">まずは、お手本動画をよく見て観察しましょう。</p>
@@ -582,7 +580,7 @@
                         </div>
                         <div id="cameraPlaceholder" class="placeholder">Webcamを起動中...</div>
                         <div class="ellipseGuide" aria-hidden="true"></div>
-                        <div id="challengeIntroOverlay" class="challengeIntroOverlay" hidden>
+                        <div id="challengeIntroOverlay" class="sceneOverlay challengeIntroOverlay" hidden>
                             <div class="demoIntroCard">
                                 <h2 id="challengeIntroTitle" class="demoIntroTitle">レベル0：無表情</h2>
                                 <p id="challengeIntroText" class="demoIntroText">次はあなたの番です。無表情に挑戦してみましょう！</p>
@@ -612,9 +610,16 @@
             const DEMO_LOOP_COUNT = 3;
             const CLEAR_SCORE = 0.82;
             const CLEAR_HOLD_MS = 3000;
-            const LEVEL_UP_MS = 4000;
+            const LEVEL_UP_MS = 3000;
             const COACH_TIP_MS = 3000;
-            const EXPRESSIONS = ["happy", "surprised", "angry", "sad", "fearful", "disgusted", "neutral"];
+            const SCORE_SEGMENT_COUNT = 10;
+            const SAMPLE_VIDEO_DIR = "samplevideo";
+            const SCORE_MESSAGES = {
+                clear: "かなり好ましい表情です！そのままキープしてください。",
+                improving: "だんだん好ましい表情に近づいています！",
+                low: "好ましい表情ではありません"
+            };
+            const EXPRESSION_KEYS = ["happy", "surprised", "angry", "sad", "fearful", "disgusted", "neutral"];
             const TARGETS = {
                 happy: { label: "喜び", vector: { happy: 0.82, surprised: 0.08, angry: 0, sad: 0, fearful: 0, disgusted: 0, neutral: 0.10 } },
                 surprised: { label: "驚き", vector: { happy: 0.08, surprised: 0.74, angry: 0, sad: 0, fearful: 0.10, disgusted: 0, neutral: 0.08 } },
@@ -692,7 +697,6 @@
             let challengeIntroTimer = 0;
             let coachTipsTimer = 0;
             let levelUpProgressTimer = 0;
-            let levelUpStartedAt = 0;
             let demoPlayCount = 0;
             let running = false;
             let modelsLoading = false;
@@ -703,10 +707,20 @@
             let coachTipsShown = false;
             let coaching = false;
             let levelUpTimer = 0;
-            scoreBar.innerHTML = Array.from({ length: 10 }, () => '<span class="scoreSegment"></span>').join("");
+            scoreBar.innerHTML = Array.from({ length: SCORE_SEGMENT_COUNT }, () => '<span class="scoreSegment"></span>').join("");
             const scoreSegments = [...scoreBar.querySelectorAll(".scoreSegment")];
             const coachTipItems = [...coachTips.querySelectorAll(".coachTip")];
             const coachFocusTargets = [scoreHero, ellipseGuide, scoreBubble, scoreHero];
+
+            const setProgress = (fill, progress) => {
+                fill.style.width = `${Math.round(clamp(progress) * 100)}%`;
+            };
+
+            const setChallengeOverlay = (title, text) => {
+                challengeIntroTitle.textContent = title;
+                challengeIntroText.textContent = text;
+                challengeIntroOverlay.hidden = false;
+            };
 
             const setScore = (score) => {
                 const normalized = clamp(score);
@@ -722,11 +736,11 @@
                 });
 
                 if (normalized >= CLEAR_SCORE) {
-                    scoreTitle.textContent = "かなり好ましい表情です！そのままキープしてください。";
+                    scoreTitle.textContent = SCORE_MESSAGES.clear;
                 } else if (rounded >= 58) {
-                    scoreTitle.textContent = "だんだん好ましい表情に近づいています！";
+                    scoreTitle.textContent = SCORE_MESSAGES.improving;
                 } else if (running) {
-                    scoreTitle.textContent = "好ましい表情ではありません";
+                    scoreTitle.textContent = SCORE_MESSAGES.low;
                 }
             };
 
@@ -738,7 +752,7 @@
 
             const sampleCandidatesFor = (key) => {
                 const files = SAMPLE_VIDEO_CANDIDATES[key] || [`${key}.mp4`];
-                return files.map((file) => `samplevideo/${encodeURIComponent(file)}`);
+                return files.map((file) => `${SAMPLE_VIDEO_DIR}/${encodeURIComponent(file)}`);
             };
 
             const levelText = () => {
@@ -761,7 +775,7 @@
                         demoVideo.removeAttribute("src");
                         demoVideo.load();
                         demoPlaceholder.hidden = false;
-                        demoPlaceholder.textContent = `training/samplevideo に ${target.label} の動画が見つかりません。`;
+                        demoPlaceholder.textContent = `training/${SAMPLE_VIDEO_DIR} に ${target.label} の動画が見つかりません。`;
                         return;
                     }
                     demoVideo.src = candidates[index];
@@ -852,15 +866,34 @@
 
             const hideLevelUpProgress = () => {
                 levelUpProgress.hidden = true;
-                levelUpProgressFill.style.width = "0%";
+                setProgress(levelUpProgressFill, 0);
             };
 
-            const updateLevelUpProgress = () => {
-                const elapsed = performance.now() - levelUpStartedAt;
-                const progress = clamp(elapsed / LEVEL_UP_MS);
-                levelUpProgressFill.style.width = `${Math.round(progress * 100)}%`;
-                if (progress < 1) {
-                    levelUpProgressTimer = window.requestAnimationFrame(updateLevelUpProgress);
+            const startLevelUpProgress = () => {
+                const startedAt = performance.now();
+                levelUpProgress.hidden = false;
+                setProgress(levelUpProgressFill, 0);
+
+                const update = () => {
+                    const progress = (performance.now() - startedAt) / LEVEL_UP_MS;
+                    setProgress(levelUpProgressFill, progress);
+                    if (progress < 1) {
+                        levelUpProgressTimer = window.requestAnimationFrame(update);
+                    }
+                };
+
+                levelUpProgressTimer = window.requestAnimationFrame(update);
+            };
+
+            const continueAfterClear = (hasNextLevel) => {
+                challengeIntroOverlay.hidden = true;
+                hideLevelUpProgress();
+
+                if (hasNextLevel) {
+                    resetChallengeState();
+                    startDemo();
+                } else {
+                    showScene(finalScene);
                 }
             };
 
@@ -875,32 +908,16 @@
 
                 currentLevelIndex += 1;
                 const hasNextLevel = currentLevelIndex < LEVELS.length;
-                challengeIntroTitle.textContent = hasNextLevel ? "レベルアップ！" : "全レベルクリア！";
-                challengeIntroText.textContent = hasNextLevel
-                    ? "次のレベルに進みます。"
-                    : "すべての表情トレーニングをクリアしました。";
-                challengeIntroOverlay.hidden = false;
+                setChallengeOverlay(
+                    hasNextLevel ? "レベルアップ！" : "全レベルクリア！",
+                    hasNextLevel
+                        ? "次のレベルに進みます。"
+                        : "すべての表情トレーニングをクリアしました。"
+                );
 
                 clearChallengeTimers();
-                if (!hasNextLevel) {
-                    hideLevelUpProgress();
-                    levelUpTimer = window.setTimeout(() => {
-                        challengeIntroOverlay.hidden = true;
-                        showScene(finalScene);
-                    }, LEVEL_UP_MS);
-                    return;
-                }
-
-                levelUpStartedAt = performance.now();
-                levelUpProgress.hidden = false;
-                levelUpProgressFill.style.width = "0%";
-                levelUpProgressTimer = window.requestAnimationFrame(updateLevelUpProgress);
-                levelUpTimer = window.setTimeout(() => {
-                    challengeIntroOverlay.hidden = true;
-                    hideLevelUpProgress();
-                    resetChallengeState();
-                    startDemo();
-                }, LEVEL_UP_MS);
+                startLevelUpProgress();
+                levelUpTimer = window.setTimeout(() => continueAfterClear(hasNextLevel), LEVEL_UP_MS);
             };
 
             const updateClearProgress = (score) => {
@@ -927,8 +944,8 @@
 
             const scoreExpressions = (expressions) => {
                 const target = TARGETS[activeTarget].vector;
-                const maxDistance = Math.sqrt(EXPRESSIONS.length);
-                const distance = Math.sqrt(EXPRESSIONS.reduce((sum, name) => {
+                const maxDistance = Math.sqrt(EXPRESSION_KEYS.length);
+                const distance = Math.sqrt(EXPRESSION_KEYS.reduce((sum, name) => {
                     const diff = clamp(expressions[name]) - clamp(target[name]);
                     return sum + diff * diff;
                 }, 0));
@@ -967,7 +984,7 @@
                         .withFaceExpressions();
 
                     if (result?.expressions) {
-                        const expressions = Object.fromEntries(EXPRESSIONS.map((name) => [name, clamp(result.expressions[name])]));
+                        const expressions = Object.fromEntries(EXPRESSION_KEYS.map((name) => [name, clamp(result.expressions[name])]));
                         const rawScore = scoreExpressions(expressions);
                         smoothedScore = smoothedScore ? smoothedScore * 0.72 + rawScore * 0.28 : rawScore;
                     } else {
@@ -1037,13 +1054,16 @@
                 clearDemoTimers();
                 clearChallengeTimers();
                 demoVideo.pause();
-                demoProgressFill.style.width = "100%";
+                setProgress(demoProgressFill, 1);
                 showScene(trainingScene);
                 syncLevelCopy();
                 resetChallengeState();
                 hideLevelUpProgress();
                 hideCoachTips();
-                challengeIntroOverlay.hidden = false;
+                setChallengeOverlay(
+                    levelText(),
+                    `次はあなたの番です。${TARGETS[activeTarget].label}表情に挑戦してみましょう！`
+                );
                 loadModels().catch(() => {
                     scoreTitle.textContent = "モデルを読み込めません";
                 });
@@ -1057,7 +1077,7 @@
                 const duration = Number.isFinite(demoVideo.duration) ? demoVideo.duration : 0;
                 const currentLoopProgress = duration > 0 ? clamp(demoVideo.currentTime / duration) : 0;
                 const progress = clamp((demoPlayCount + currentLoopProgress) / DEMO_LOOP_COUNT);
-                demoProgressFill.style.width = `${Math.round(progress * 100)}%`;
+                setProgress(demoProgressFill, progress);
                 if (progress >= 1) {
                     startChallenge();
                     return;
@@ -1081,7 +1101,7 @@
             const startDemo = () => {
                 updateLevel();
                 demoPlayCount = 0;
-                demoProgressFill.style.width = "0%";
+                setProgress(demoProgressFill, 0);
                 showScene(demoScene);
                 clearDemoTimers();
                 clearChallengeTimers();
