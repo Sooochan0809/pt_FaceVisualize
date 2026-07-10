@@ -615,8 +615,8 @@
                         <div id="coachTips" class="coachTips" hidden aria-hidden="true">
                             <div class="coachTip coachTip--status">上の表示は判定コメントです。達成率バーが塗られるほど、目標の表情に近づいています。</div>
                             <div class="coachTip coachTip--face">顔を楕円の中に入れて、正面を向いてください。</div>
-                            <div class="coachTip coachTip--score">右下の円は現在の点数です。目標点以上を目指しましょう。</div>
-                            <div class="coachTip coachTip--assist">30秒経ってもクリアできない場合は、お手本動画が薄く重なって表示されます。</div>
+                            <div class="coachTip coachTip--score">右下の円は現在の点数です。高得点を目指しましょう。</div>
+                            <div class="coachTip coachTip--assist">クリアが難しい場合は、お手本動画が薄く重なって表示されます。</div>
                             <div class="coachTip coachTip--clear">高得点の状態を3秒キープすると、このレベルをクリアできます。</div>
                         </div>
                         <div id="cameraPlaceholder" class="placeholder">Webcamを起動中...</div>
@@ -758,7 +758,6 @@
             let challengeCleared = false;
             let coachTipsShown = false;
             let coaching = false;
-            let coachAssistPreview = false;
             let coachCountdownTimer = 0;
             let levelUpTimer = 0;
             let assistOverlayTimer = 0;
@@ -773,10 +772,14 @@
             scoreBar.innerHTML = Array.from({ length: SCORE_SEGMENT_COUNT }, () => '<span class="scoreSegment"></span>').join("");
             const scoreSegments = [...scoreBar.querySelectorAll(".scoreSegment")];
             const coachTipItems = [...coachTips.querySelectorAll(".coachTip")];
-            const coachFocusTargets = [scoreHero, ellipseGuide, scoreBubble, viewer, scoreHero];
-            const uniqueCoachFocusTargets = [...new Set(coachFocusTargets.filter(Boolean))];
-            const scoreCoachTip = document.querySelector(".coachTip--score");
-            const clearCoachTip = document.querySelector(".coachTip--clear");
+            const coachFocusByTip = new Map([
+                [document.querySelector(".coachTip--status"), scoreHero],
+                [document.querySelector(".coachTip--face"), ellipseGuide],
+                [document.querySelector(".coachTip--score"), scoreBubble],
+                [document.querySelector(".coachTip--assist"), viewer],
+                [document.querySelector(".coachTip--clear"), scoreHero]
+            ]);
+            const coachFocusTargets = [...new Set([...coachFocusByTip.values()].filter(Boolean))];
 
             const clampLevelIndex = (index) => Math.min(Math.max(index, 0), LEVELS.length - 1);
             const currentLevel = () => LEVELS[currentLevelIndex];
@@ -1101,14 +1104,11 @@
                 coaching = false;
                 holdStartedAt = 0;
                 countdownOverlay.hidden = true;
-                if (coachAssistPreview) {
-                    coachAssistPreview = false;
-                    hideAssistOverlay();
-                }
+                hideAssistOverlay();
                 viewer.classList.remove("is-coaching");
                 coachTips.hidden = true;
                 coachTipItems.forEach((tip) => tip.classList.remove("is-active"));
-                uniqueCoachFocusTargets.forEach((target) => target.classList.remove("coachFocus"));
+                coachFocusTargets.forEach((target) => target.classList.remove("coachFocus"));
             };
 
             const hideCoachCountdownPreview = () => {
@@ -1124,6 +1124,28 @@
                 }
             };
 
+            const setCoachAssistPreview = (visible) => {
+                if (visible) {
+                    window.clearTimeout(assistOverlayTimer);
+                    showAssistOverlay(true);
+                } else {
+                    hideAssistOverlay();
+                }
+            };
+
+            const setCoachCountdownPreview = (visible) => {
+                if (visible) {
+                    showCoachCountdownPreview();
+                } else {
+                    hideCoachCountdownPreview();
+                }
+            };
+
+            const syncCoachPreviews = (tip) => {
+                setCoachAssistPreview(tip?.classList.contains("coachTip--assist"));
+                setCoachCountdownPreview(tip?.classList.contains("coachTip--clear"));
+            };
+
             const showCoachTipStep = (index = 0) => {
                 if (index >= coachTipItems.length) {
                     hideCoachTips();
@@ -1134,27 +1156,13 @@
                 }
 
                 const activeTip = coachTipItems[index];
-                const shouldPreviewAssist = activeTip?.classList.contains("coachTip--assist");
-                const shouldPreviewCountdown = activeTip?.classList.contains("coachTip--clear");
-                if (shouldPreviewAssist) {
-                    coachAssistPreview = true;
-                    window.clearTimeout(assistOverlayTimer);
-                    showAssistOverlay(true);
-                } else if (coachAssistPreview) {
-                    coachAssistPreview = false;
-                    hideAssistOverlay();
-                }
-                if (shouldPreviewCountdown) {
-                    showCoachCountdownPreview();
-                } else {
-                    hideCoachCountdownPreview();
-                }
+                syncCoachPreviews(activeTip);
 
                 coachTipItems.forEach((tip, tipIndex) => {
                     tip.classList.toggle("is-active", tipIndex === index);
                 });
-                const activeFocusTarget = coachFocusTargets[index];
-                uniqueCoachFocusTargets.forEach((target) => {
+                const activeFocusTarget = coachFocusByTip.get(activeTip);
+                coachFocusTargets.forEach((target) => {
                     target.classList.toggle("coachFocus", target === activeFocusTarget);
                 });
                 coachTipsTimer = window.setTimeout(() => showCoachTipStep(index + 1), COACH_TIP_MS);
@@ -1166,9 +1174,6 @@
                 coaching = true;
                 holdStartedAt = 0;
                 countdownOverlay.hidden = true;
-                const clearScoreText = Math.round(clearScoreFor() * 100);
-                scoreCoachTip.textContent = `右下の円は現在の点数です。${clearScoreText}点以上を目指しましょう。`;
-                clearCoachTip.textContent = `${clearScoreText}点以上の状態を3秒キープすると、このレベルをクリアできます。`;
                 viewer.classList.add("is-coaching");
                 coachTips.hidden = false;
                 window.clearTimeout(coachTipsTimer);
