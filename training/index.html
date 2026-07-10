@@ -755,6 +755,12 @@
             const scoreCoachTip = document.querySelector(".coachTip--score");
             const clearCoachTip = document.querySelector(".coachTip--clear");
 
+            const clampLevelIndex = (index) => Math.min(Math.max(index, 0), LEVELS.length - 1);
+            const currentLevel = () => LEVELS[currentLevelIndex];
+            const targetFor = (key = activeTarget) => TARGETS[key];
+            const activeTargetLabel = () => targetFor().label;
+            const challengeCopy = () => `次はあなたの番です。${activeTargetLabel()}表情に挑戦してみましょう！`;
+
             const setProgress = (fill, progress) => {
                 fill.style.width = `${Math.round(clamp(progress) * 100)}%`;
             };
@@ -832,7 +838,7 @@
             };
 
             const downloadRecording = (blob, level) => {
-                const target = TARGETS[level.key];
+                const target = targetFor(level.key);
                 const filename = `${archiveSessionName}_${safeName(`level${level.level}_${target.label}`)}.webm`;
                 const url = URL.createObjectURL(blob);
                 const anchor = document.createElement("a");
@@ -845,9 +851,18 @@
                 URL.revokeObjectURL(url);
             };
 
-            const stopChallengeRecording = () => {
+            const cancelRecordingFrame = () => {
                 window.cancelAnimationFrame(recordingFrame);
                 recordingFrame = 0;
+            };
+
+            const resetRecordingBuffer = () => {
+                recordedChunks = [];
+                recordingLevel = null;
+            };
+
+            const stopChallengeRecording = () => {
+                cancelRecordingFrame();
                 if (!mediaRecorder || mediaRecorder.state === "inactive") return;
                 mediaRecorder.stop();
             };
@@ -895,36 +910,33 @@
                 if (!recordingEnabled || !webcamVideo.srcObject || mediaRecorder?.state === "recording") return;
                 if (typeof MediaRecorder === "undefined") return;
 
-                recordedChunks = [];
-                recordingLevel = LEVELS[currentLevelIndex];
+                resetRecordingBuffer();
+                recordingLevel = currentLevel();
                 const mimeType = recordingMimeType();
                 recordingCanvas = recordingCanvas || document.createElement("canvas");
                 syncRecordingCanvasSize();
                 recordingContext = recordingCanvas.getContext("2d");
                 if (!recordingContext || !recordingCanvas.captureStream) {
-                    recordedChunks = [];
-                    recordingLevel = null;
+                    resetRecordingBuffer();
                     return;
                 }
 
                 try {
                     mediaRecorder = new MediaRecorder(recordingCanvas.captureStream(30), mimeType ? { mimeType } : undefined);
                 } catch {
-                    recordedChunks = [];
-                    recordingLevel = null;
+                    resetRecordingBuffer();
                     return;
                 }
                 mediaRecorder.ondataavailable = (event) => {
                     if (event.data?.size) recordedChunks.push(event.data);
                 };
                 mediaRecorder.onstop = () => {
-                    if (!recordedChunks.length || !recordingLevel) return;
-                    const blob = new Blob(recordedChunks, { type: mediaRecorder.mimeType || "video/webm" });
-                    downloadRecording(blob, recordingLevel);
-                    recordedChunks = [];
-                    recordingLevel = null;
-                    window.cancelAnimationFrame(recordingFrame);
-                    recordingFrame = 0;
+                    cancelRecordingFrame();
+                    if (recordedChunks.length && recordingLevel) {
+                        const blob = new Blob(recordedChunks, { type: mediaRecorder.mimeType || "video/webm" });
+                        downloadRecording(blob, recordingLevel);
+                    }
+                    resetRecordingBuffer();
                 };
                 mediaRecorder.start();
                 drawRecordingFrame();
@@ -936,8 +948,8 @@
             };
 
             const levelText = () => {
-                const level = LEVELS[currentLevelIndex];
-                return `レベル${level.level}：${TARGETS[level.key].label}`;
+                const level = currentLevel();
+                return `レベル${level.level}：${targetFor(level.key).label}`;
             };
 
             const setDemoVideoSource = (key) => {
@@ -975,14 +987,24 @@
                 const text = levelText();
                 demoIntroTitle.textContent = text;
                 challengeIntroTitle.textContent = text;
-                challengeIntroText.textContent = `次はあなたの番です。${TARGETS[activeTarget].label}表情に挑戦してみましょう！`;
+                challengeIntroText.textContent = challengeCopy();
             };
 
             const updateLevel = () => {
-                currentLevelIndex = Math.min(Math.max(currentLevelIndex, 0), LEVELS.length - 1);
-                activeTarget = LEVELS[currentLevelIndex].key;
+                currentLevelIndex = clampLevelIndex(currentLevelIndex);
+                activeTarget = currentLevel().key;
                 syncLevelCopy();
                 setDemoVideoSource(activeTarget);
+            };
+
+            const pauseDemoVideo = (resetTime = false) => {
+                demoVideo.pause();
+                if (resetTime) demoVideo.currentTime = 0;
+            };
+
+            const resetDemoIntro = (previewing = false) => {
+                demoPanel.classList.toggle("is-previewing", previewing);
+                demoIntroOverlay.hidden = !previewing;
             };
 
             const resetChallengeState = () => {
@@ -1083,6 +1105,16 @@
                 return true;
             };
 
+            const stopChallengeSession = () => {
+                stopChallengeRecording();
+                running = false;
+                holdStartedAt = 0;
+                countdownOverlay.hidden = true;
+                challengeIntroOverlay.hidden = true;
+                hideAssistOverlay();
+                hideCoachTips();
+            };
+
             const hideLevelUpProgress = () => {
                 levelUpProgress.hidden = true;
                 setProgress(levelUpProgressFill, 0);
@@ -1119,12 +1151,7 @@
             const completeLevel = () => {
                 if (challengeCleared) return;
                 challengeCleared = true;
-                running = false;
-                holdStartedAt = 0;
-                countdownOverlay.hidden = true;
-                stopChallengeRecording();
-                hideCoachTips();
-                hideAssistOverlay();
+                stopChallengeSession();
                 playAudio(clearAudio);
 
                 currentLevelIndex += 1;
@@ -1177,7 +1204,7 @@
             };
 
             const scoreExpressions = (expressions) => {
-                const target = TARGETS[activeTarget].vector;
+                const target = targetFor().vector;
                 const confusionCredit = CONFUSION_CREDIT[activeTarget] || {};
                 const maxDistance = Math.sqrt(EXPRESSION_KEYS.length);
                 const distance = Math.sqrt(EXPRESSION_KEYS.reduce((sum, name) => {
@@ -1273,7 +1300,7 @@
             };
 
             const goToChallengeLevel = (index) => {
-                currentLevelIndex = Math.min(Math.max(index, 0), LEVELS.length - 1);
+                currentLevelIndex = clampLevelIndex(index);
                 updateLevel();
                 startChallenge();
             };
@@ -1301,19 +1328,15 @@
                 }
 
                 if (!trainingScene.hidden) {
-                    stopChallengeRecording();
-                    running = false;
-                    challengeIntroOverlay.hidden = true;
-                    hideAssistOverlay();
+                    stopChallengeSession();
                     startDemo();
                     return;
                 }
 
                 if (!demoScene.hidden) {
                     clearDemoTimers();
-                    demoVideo.pause();
-                    demoIntroOverlay.hidden = true;
-                    demoPanel.classList.remove("is-previewing");
+                    pauseDemoVideo();
+                    resetDemoIntro();
 
                     if (currentLevelIndex <= 0) {
                         showScene(introScene);
@@ -1327,7 +1350,7 @@
             const startChallenge = () => {
                 clearDemoTimers();
                 clearChallengeTimers();
-                demoVideo.pause();
+                pauseDemoVideo();
                 setProgress(demoProgressFill, 1);
                 showScene(trainingScene);
                 syncLevelCopy();
@@ -1338,7 +1361,7 @@
                 hideAssistOverlay();
                 setChallengeOverlay(
                     levelText(),
-                    `次はあなたの番です。${TARGETS[activeTarget].label}表情に挑戦してみましょう！`
+                    challengeCopy()
                 );
                 loadModels().catch(() => {
                     scoreTitle.textContent = "モデルを読み込めません";
@@ -1383,18 +1406,13 @@
                 showScene(demoScene);
                 clearDemoTimers();
                 clearChallengeTimers();
-                stopChallengeRecording();
-                hideAssistOverlay();
-                hideCoachTips();
-                demoVideo.pause();
-                demoVideo.currentTime = 0;
-                demoPanel.classList.add("is-previewing");
-                demoIntroOverlay.hidden = false;
+                stopChallengeSession();
+                pauseDemoVideo(true);
+                resetDemoIntro(true);
                 playAudio(guideAudio);
                 demoIntroTimer = window.setTimeout(() => {
-                    demoPanel.classList.remove("is-previewing");
-                    demoIntroOverlay.hidden = true;
-                    demoVideo.currentTime = 0;
+                    resetDemoIntro();
+                    pauseDemoVideo(true);
                     demoVideo.play().catch(() => {});
                     demoTimer = window.requestAnimationFrame(updateDemoProgress);
                 }, DEMO_INTRO_MS);
