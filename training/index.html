@@ -266,6 +266,21 @@
             transform: scaleX(-1);
         }
 
+        .assistVideo {
+            position: absolute;
+            inset: 0;
+            z-index: 2;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            opacity: 0.28;
+            pointer-events: none;
+        }
+
+        .assistVideo[hidden] {
+            display: none;
+        }
+
         .placeholder {
             position: absolute;
             inset: 0;
@@ -560,6 +575,7 @@
                 <article class="videoPanel">
                     <div class="viewer">
                         <video id="webcamVideo" autoplay muted playsinline></video>
+                        <video id="assistVideo" class="assistVideo" muted playsinline loop hidden></video>
                         <div class="scoreHero">
                             <div class="scoreText">
                                 <strong id="scoreTitle">準備中</strong>
@@ -575,7 +591,7 @@
                         <div id="coachTips" class="coachTips" hidden aria-hidden="true">
                             <div class="coachTip coachTip--status">上の表示は判定コメントです。達成率バーが塗られるほど、目標の表情に近づいています。</div>
                             <div class="coachTip coachTip--face">顔を楕円の中に入れて、正面を向いてください。</div>
-                            <div class="coachTip coachTip--score">右下の円は現在の点数です。82点以上を目指しましょう。</div>
+                            <div class="coachTip coachTip--score">右下の円は現在の点数です。目標点以上を目指しましょう。</div>
                             <div class="coachTip coachTip--clear">高得点の状態を3秒キープすると、このレベルをクリアできます。</div>
                         </div>
                         <div id="cameraPlaceholder" class="placeholder">Webcamを起動中...</div>
@@ -609,9 +625,14 @@
             const DEMO_INTRO_MS = 2000;
             const DEMO_LOOP_COUNT = 3;
             const CLEAR_SCORE = 0.82;
+            const CLEAR_SCORE_BY_EXPRESSION = {
+                fearful: 0.72,
+                disgusted: 0.76
+            };
             const CLEAR_HOLD_MS = 3000;
             const LEVEL_UP_MS = 3000;
             const COACH_TIP_MS = 3000;
+            const ASSIST_OVERLAY_DELAY_MS = 30000;
             const SCORE_SEGMENT_COUNT = 10;
             const SAMPLE_VIDEO_DIR = "samplevideo";
             const SCORE_MESSAGES = {
@@ -620,13 +641,17 @@
                 low: "好ましい表情ではありません"
             };
             const EXPRESSION_KEYS = ["happy", "surprised", "angry", "sad", "fearful", "disgusted", "neutral"];
+            const CONFUSION_CREDIT = {
+                fearful: { angry: 0.32, sad: 0.44 },
+                disgusted: { angry: 0.28, sad: 0.08 }
+            };
             const TARGETS = {
                 happy: { label: "喜び", vector: { happy: 0.82, surprised: 0.08, angry: 0, sad: 0, fearful: 0, disgusted: 0, neutral: 0.10 } },
                 surprised: { label: "驚き", vector: { happy: 0.08, surprised: 0.74, angry: 0, sad: 0, fearful: 0.10, disgusted: 0, neutral: 0.08 } },
                 angry: { label: "怒り", vector: { happy: 0, surprised: 0.02, angry: 0.78, sad: 0.04, fearful: 0, disgusted: 0.08, neutral: 0.08 } },
                 sad: { label: "悲しみ", vector: { happy: 0, surprised: 0, angry: 0.04, sad: 0.78, fearful: 0.06, disgusted: 0, neutral: 0.12 } },
-                fearful: { label: "恐怖", vector: { happy: 0, surprised: 0.16, angry: 0, sad: 0.08, fearful: 0.66, disgusted: 0, neutral: 0.10 } },
-                disgusted: { label: "嫌悪", vector: { happy: 0, surprised: 0, angry: 0.10, sad: 0.02, fearful: 0, disgusted: 0.76, neutral: 0.12 } },
+                fearful: { label: "恐怖", vector: { happy: 0, surprised: 0.02, angry: 0.18, sad: 0.34, fearful: 0.38, disgusted: 0.02, neutral: 0.06 } },
+                disgusted: { label: "嫌悪", vector: { happy: 0, surprised: 0.02, angry: 0.22, sad: 0.04, fearful: 0.02, disgusted: 0.58, neutral: 0.12 } },
                 neutral: { label: "無表情", vector: { happy: 0.02, surprised: 0.02, angry: 0.02, sad: 0.02, fearful: 0.02, disgusted: 0.02, neutral: 0.88 } }
             };
             const LEVELS = [
@@ -665,6 +690,7 @@
             const scoreHero = document.querySelector(".scoreHero");
             const ellipseGuide = document.querySelector(".ellipseGuide");
             const webcamVideo = $("webcamVideo");
+            const assistVideo = $("assistVideo");
             const cameraPlaceholder = $("cameraPlaceholder");
             const introScene = $("introScene");
             const demoScene = $("demoScene");
@@ -707,10 +733,13 @@
             let coachTipsShown = false;
             let coaching = false;
             let levelUpTimer = 0;
+            let assistOverlayTimer = 0;
             scoreBar.innerHTML = Array.from({ length: SCORE_SEGMENT_COUNT }, () => '<span class="scoreSegment"></span>').join("");
             const scoreSegments = [...scoreBar.querySelectorAll(".scoreSegment")];
             const coachTipItems = [...coachTips.querySelectorAll(".coachTip")];
             const coachFocusTargets = [scoreHero, ellipseGuide, scoreBubble, scoreHero];
+            const scoreCoachTip = document.querySelector(".coachTip--score");
+            const clearCoachTip = document.querySelector(".coachTip--clear");
 
             const setProgress = (fill, progress) => {
                 fill.style.width = `${Math.round(clamp(progress) * 100)}%`;
@@ -722,7 +751,9 @@
                 challengeIntroOverlay.hidden = false;
             };
 
-            const setScore = (score) => {
+            const clearScoreFor = (key = activeTarget) => CLEAR_SCORE_BY_EXPRESSION[key] || CLEAR_SCORE;
+
+            const setScore = (score, expressions = null) => {
                 const normalized = clamp(score);
                 const rounded = Math.round(normalized * 100);
                 const filledSegments = Math.ceil(normalized * scoreSegments.length);
@@ -735,7 +766,7 @@
                     segment.classList.toggle("is-filled", index < filledSegments);
                 });
 
-                if (normalized >= CLEAR_SCORE) {
+                if (isClearReady(normalized, expressions)) {
                     scoreTitle.textContent = SCORE_MESSAGES.clear;
                 } else if (rounded >= 58) {
                     scoreTitle.textContent = SCORE_MESSAGES.improving;
@@ -823,7 +854,39 @@
                 window.clearTimeout(challengeIntroTimer);
                 window.clearTimeout(coachTipsTimer);
                 window.clearTimeout(levelUpTimer);
+                window.clearTimeout(assistOverlayTimer);
                 window.cancelAnimationFrame(levelUpProgressTimer);
+            };
+
+            const hideAssistOverlay = () => {
+                window.clearTimeout(assistOverlayTimer);
+                assistVideo.pause();
+                assistVideo.hidden = true;
+            };
+
+            const syncAssistVideoSource = () => {
+                const source = demoVideo.currentSrc || demoVideo.src;
+                if (!source || assistVideo.src === source) return;
+                assistVideo.src = source;
+                assistVideo.load();
+            };
+
+            const showAssistOverlay = () => {
+                if (!running || challengeCleared || trainingScene.hidden) return;
+                if (coaching) {
+                    assistOverlayTimer = window.setTimeout(showAssistOverlay, 1000);
+                    return;
+                }
+
+                syncAssistVideoSource();
+                assistVideo.hidden = false;
+                assistVideo.currentTime = 0;
+                assistVideo.play().catch(() => {});
+            };
+
+            const startAssistOverlayTimer = () => {
+                hideAssistOverlay();
+                assistOverlayTimer = window.setTimeout(showAssistOverlay, ASSIST_OVERLAY_DELAY_MS);
             };
 
             const hideCoachTips = () => {
@@ -840,6 +903,9 @@
             const showCoachTipStep = (index = 0) => {
                 if (index >= coachTipItems.length) {
                     hideCoachTips();
+                    if (running && !challengeCleared && !trainingScene.hidden) {
+                        startAssistOverlayTimer();
+                    }
                     return;
                 }
 
@@ -853,15 +919,19 @@
             };
 
             const showCoachTips = () => {
-                if (coachTipsShown || currentLevelIndex !== 0) return;
+                if (coachTipsShown || currentLevelIndex !== 0) return false;
                 coachTipsShown = true;
                 coaching = true;
                 holdStartedAt = 0;
                 countdownOverlay.hidden = true;
+                const clearScoreText = Math.round(clearScoreFor() * 100);
+                scoreCoachTip.textContent = `右下の円は現在の点数です。${clearScoreText}点以上を目指しましょう。`;
+                clearCoachTip.textContent = `${clearScoreText}点以上の状態を3秒キープすると、このレベルをクリアできます。`;
                 viewer.classList.add("is-coaching");
                 coachTips.hidden = false;
                 window.clearTimeout(coachTipsTimer);
                 showCoachTipStep();
+                return true;
             };
 
             const hideLevelUpProgress = () => {
@@ -904,6 +974,7 @@
                 holdStartedAt = 0;
                 countdownOverlay.hidden = true;
                 hideCoachTips();
+                hideAssistOverlay();
                 playAudio(clearAudio);
 
                 currentLevelIndex += 1;
@@ -920,8 +991,21 @@
                 levelUpTimer = window.setTimeout(() => continueAfterClear(hasNextLevel), LEVEL_UP_MS);
             };
 
-            const updateClearProgress = (score) => {
-                if (coaching || challengeCleared || score < CLEAR_SCORE) {
+            const isFearClearReady = (expressions) => {
+                if (!expressions) return false;
+                const fearLike = clamp(expressions.angry) + clamp(expressions.sad) + clamp(expressions.fearful);
+                return fearLike >= clearScoreFor("fearful");
+            };
+
+            const isClearReady = (score, expressions = null) => {
+                if (activeTarget === "fearful") {
+                    return score >= clearScoreFor() && isFearClearReady(expressions);
+                }
+                return score >= clearScoreFor();
+            };
+
+            const updateClearProgress = (score, expressions = null) => {
+                if (coaching || challengeCleared || !isClearReady(score, expressions)) {
                     holdStartedAt = 0;
                     countdownOverlay.hidden = true;
                     return;
@@ -944,14 +1028,18 @@
 
             const scoreExpressions = (expressions) => {
                 const target = TARGETS[activeTarget].vector;
+                const confusionCredit = CONFUSION_CREDIT[activeTarget] || {};
                 const maxDistance = Math.sqrt(EXPRESSION_KEYS.length);
                 const distance = Math.sqrt(EXPRESSION_KEYS.reduce((sum, name) => {
                     const diff = clamp(expressions[name]) - clamp(target[name]);
                     return sum + diff * diff;
                 }, 0));
                 const primary = activeTarget === "neutral" ? expressions.neutral : expressions[activeTarget];
+                const blendedPrimary = Object.entries(confusionCredit).reduce((score, [name, weight]) => {
+                    return score + clamp(expressions[name]) * weight;
+                }, clamp(primary));
                 const distanceScore = 1 - distance / maxDistance;
-                return clamp(distanceScore * 0.58 + clamp(primary) * 0.42);
+                return clamp(distanceScore * 0.58 + clamp(blendedPrimary) * 0.42);
             };
 
             const loadModels = async () => {
@@ -987,12 +1075,13 @@
                         const expressions = Object.fromEntries(EXPRESSION_KEYS.map((name) => [name, clamp(result.expressions[name])]));
                         const rawScore = scoreExpressions(expressions);
                         smoothedScore = smoothedScore ? smoothedScore * 0.72 + rawScore * 0.28 : rawScore;
+                        setScore(smoothedScore, expressions);
+                        updateClearProgress(smoothedScore, expressions);
                     } else {
                         smoothedScore *= 0.88;
+                        setScore(smoothedScore);
+                        updateClearProgress(smoothedScore);
                     }
-
-                    setScore(smoothedScore);
-                    updateClearProgress(smoothedScore);
                 } catch {
                     scoreTitle.textContent = "推定エラー";
                 } finally {
@@ -1060,6 +1149,8 @@
                 resetChallengeState();
                 hideLevelUpProgress();
                 hideCoachTips();
+                syncAssistVideoSource();
+                hideAssistOverlay();
                 setChallengeOverlay(
                     levelText(),
                     `次はあなたの番です。${TARGETS[activeTarget].label}表情に挑戦してみましょう！`
@@ -1069,7 +1160,9 @@
                 });
                 challengeIntroTimer = window.setTimeout(() => {
                     challengeIntroOverlay.hidden = true;
-                    showCoachTips();
+                    if (!showCoachTips()) {
+                        startAssistOverlayTimer();
+                    }
                 }, DEMO_INTRO_MS);
             };
 
@@ -1105,6 +1198,7 @@
                 showScene(demoScene);
                 clearDemoTimers();
                 clearChallengeTimers();
+                hideAssistOverlay();
                 hideCoachTips();
                 demoVideo.pause();
                 demoVideo.currentTime = 0;
