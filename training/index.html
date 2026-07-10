@@ -93,6 +93,11 @@
             cursor: pointer;
         }
 
+        .startButton.is-recording {
+            border-color: var(--accent);
+            background: var(--accent);
+        }
+
         .demoScene {
             position: relative;
             display: grid;
@@ -635,6 +640,7 @@
             const ASSIST_OVERLAY_DELAY_MS = 30000;
             const SCORE_SEGMENT_COUNT = 10;
             const SAMPLE_VIDEO_DIR = "samplevideo";
+            const ARCHIVE_DIR = "training/archives";
             const SCORE_MESSAGES = {
                 clear: "かなり好ましい表情です！そのままキープしてください。",
                 improving: "だんだん好ましい表情に近づいています！",
@@ -734,6 +740,14 @@
             let coaching = false;
             let levelUpTimer = 0;
             let assistOverlayTimer = 0;
+            let recordingEnabled = false;
+            let archiveSessionName = "";
+            let mediaRecorder = null;
+            let recordedChunks = [];
+            let recordingLevel = null;
+            let recordingCanvas = null;
+            let recordingContext = null;
+            let recordingFrame = 0;
             scoreBar.innerHTML = Array.from({ length: SCORE_SEGMENT_COUNT }, () => '<span class="scoreSegment"></span>').join("");
             const scoreSegments = [...scoreBar.querySelectorAll(".scoreSegment")];
             const coachTipItems = [...coachTips.querySelectorAll(".coachTip")];
@@ -788,6 +802,132 @@
                 audio.pause();
                 audio.currentTime = 0;
                 audio.play().catch(() => {});
+            };
+
+            const timestampName = () => {
+                const date = new Date();
+                const pad = (value) => String(value).padStart(2, "0");
+                return [
+                    date.getFullYear(),
+                    pad(date.getMonth() + 1),
+                    pad(date.getDate())
+                ].join("-") + "_" + [
+                    pad(date.getHours()),
+                    pad(date.getMinutes()),
+                    pad(date.getSeconds())
+                ].join("-");
+            };
+
+            const safeName = (value) => String(value).replace(/[^\w\u3040-\u30ff\u3400-\u9fff-]+/g, "_");
+
+            const toggleRecordingEnabled = () => {
+                recordingEnabled = !recordingEnabled;
+                archiveSessionName = recordingEnabled ? timestampName() : "";
+                startButton.classList.toggle("is-recording", recordingEnabled);
+            };
+
+            const recordingMimeType = () => {
+                const types = ["video/webm;codecs=vp9", "video/webm;codecs=vp8", "video/webm"];
+                return types.find((type) => MediaRecorder.isTypeSupported(type)) || "";
+            };
+
+            const downloadRecording = (blob, level) => {
+                const target = TARGETS[level.key];
+                const filename = `${archiveSessionName}_${safeName(`level${level.level}_${target.label}`)}.webm`;
+                const url = URL.createObjectURL(blob);
+                const anchor = document.createElement("a");
+                anchor.href = url;
+                anchor.download = filename;
+                anchor.dataset.archivePath = `${ARCHIVE_DIR}/${archiveSessionName}/${filename}`;
+                document.body.append(anchor);
+                anchor.click();
+                anchor.remove();
+                URL.revokeObjectURL(url);
+            };
+
+            const stopChallengeRecording = () => {
+                window.cancelAnimationFrame(recordingFrame);
+                recordingFrame = 0;
+                if (!mediaRecorder || mediaRecorder.state === "inactive") return;
+                mediaRecorder.stop();
+            };
+
+            const syncRecordingCanvasSize = () => {
+                const rect = webcamVideo.getBoundingClientRect();
+                const width = Math.max(2, Math.round(rect.width || webcamVideo.clientWidth || 720));
+                const height = Math.max(2, Math.round(rect.height || webcamVideo.clientHeight || 960));
+                if (recordingCanvas.width !== width) recordingCanvas.width = width;
+                if (recordingCanvas.height !== height) recordingCanvas.height = height;
+            };
+
+            const drawRecordingFrame = () => {
+                if (!recordingContext || !recordingCanvas || !mediaRecorder || mediaRecorder.state !== "recording") return;
+                syncRecordingCanvasSize();
+                const sourceWidth = webcamVideo.videoWidth;
+                const sourceHeight = webcamVideo.videoHeight;
+                if (sourceWidth > 0 && sourceHeight > 0) {
+                    const targetRatio = recordingCanvas.width / recordingCanvas.height;
+                    const sourceRatio = sourceWidth / sourceHeight;
+                    let sx = 0;
+                    let sy = 0;
+                    let sw = sourceWidth;
+                    let sh = sourceHeight;
+
+                    if (sourceRatio > targetRatio) {
+                        sw = sourceHeight * targetRatio;
+                        sx = (sourceWidth - sw) / 2;
+                    } else {
+                        sh = sourceWidth / targetRatio;
+                        sy = (sourceHeight - sh) / 2;
+                    }
+
+                    recordingContext.save();
+                    recordingContext.clearRect(0, 0, recordingCanvas.width, recordingCanvas.height);
+                    recordingContext.translate(recordingCanvas.width, 0);
+                    recordingContext.scale(-1, 1);
+                    recordingContext.drawImage(webcamVideo, sx, sy, sw, sh, 0, 0, recordingCanvas.width, recordingCanvas.height);
+                    recordingContext.restore();
+                }
+                recordingFrame = window.requestAnimationFrame(drawRecordingFrame);
+            };
+
+            const startChallengeRecording = () => {
+                if (!recordingEnabled || !webcamVideo.srcObject || mediaRecorder?.state === "recording") return;
+                if (typeof MediaRecorder === "undefined") return;
+
+                recordedChunks = [];
+                recordingLevel = LEVELS[currentLevelIndex];
+                const mimeType = recordingMimeType();
+                recordingCanvas = recordingCanvas || document.createElement("canvas");
+                syncRecordingCanvasSize();
+                recordingContext = recordingCanvas.getContext("2d");
+                if (!recordingContext || !recordingCanvas.captureStream) {
+                    recordedChunks = [];
+                    recordingLevel = null;
+                    return;
+                }
+
+                try {
+                    mediaRecorder = new MediaRecorder(recordingCanvas.captureStream(30), mimeType ? { mimeType } : undefined);
+                } catch {
+                    recordedChunks = [];
+                    recordingLevel = null;
+                    return;
+                }
+                mediaRecorder.ondataavailable = (event) => {
+                    if (event.data?.size) recordedChunks.push(event.data);
+                };
+                mediaRecorder.onstop = () => {
+                    if (!recordedChunks.length || !recordingLevel) return;
+                    const blob = new Blob(recordedChunks, { type: mediaRecorder.mimeType || "video/webm" });
+                    downloadRecording(blob, recordingLevel);
+                    recordedChunks = [];
+                    recordingLevel = null;
+                    window.cancelAnimationFrame(recordingFrame);
+                    recordingFrame = 0;
+                };
+                mediaRecorder.start();
+                drawRecordingFrame();
             };
 
             const sampleCandidatesFor = (key) => {
@@ -982,6 +1122,7 @@
                 running = false;
                 holdStartedAt = 0;
                 countdownOverlay.hidden = true;
+                stopChallengeRecording();
                 hideCoachTips();
                 hideAssistOverlay();
                 playAudio(clearAudio);
@@ -1115,6 +1256,7 @@
                     cameraPlaceholder.hidden = true;
                     resetChallengeState();
                     running = true;
+                    startChallengeRecording();
                     detectLoop();
                 } catch {
                     scoreTitle.textContent = "Webcamを開始できません";
@@ -1159,6 +1301,7 @@
                 }
 
                 if (!trainingScene.hidden) {
+                    stopChallengeRecording();
                     running = false;
                     challengeIntroOverlay.hidden = true;
                     hideAssistOverlay();
@@ -1240,6 +1383,7 @@
                 showScene(demoScene);
                 clearDemoTimers();
                 clearChallengeTimers();
+                stopChallengeRecording();
                 hideAssistOverlay();
                 hideCoachTips();
                 demoVideo.pause();
@@ -1263,6 +1407,11 @@
             window.addEventListener("keydown", (event) => {
                 const tagName = event.target?.tagName;
                 if (tagName === "INPUT" || tagName === "TEXTAREA" || tagName === "SELECT") return;
+                if (event.code === "Space" && !introScene.hidden) {
+                    event.preventDefault();
+                    toggleRecordingEnabled();
+                    return;
+                }
                 if (event.code !== "ArrowRight" && event.code !== "ArrowLeft") return;
                 event.preventDefault();
                 if (event.code === "ArrowRight") {
