@@ -461,16 +461,6 @@
             transform: translate(-50%, calc(-50% - 186px));
         }
 
-        .coachTip--assist {
-            left: 50%;
-            bottom: 128px;
-            transform: translate(-50%, 6px);
-        }
-
-        .coachTip--assist.is-active {
-            transform: translate(-50%, 0);
-        }
-
         .coachTip--clear {
             left: 50%;
             top: 60%;
@@ -616,7 +606,6 @@
                             <div class="coachTip coachTip--status">上の表示は判定コメントです。達成率バーが塗られるほど、目標の表情に近づいています。</div>
                             <div class="coachTip coachTip--face">顔を楕円の中に入れて、正面を向いてください。</div>
                             <div class="coachTip coachTip--score">右下の円は現在の点数です。高得点を目指しましょう。</div>
-                            <div class="coachTip coachTip--assist">クリアが難しい場合は、お手本動画が薄く重なって表示されます。</div>
                             <div class="coachTip coachTip--clear">高得点の状態を3秒キープすると、このレベルをクリアできます。</div>
                         </div>
                         <div id="cameraPlaceholder" class="placeholder">Webcamを起動中...</div>
@@ -657,7 +646,6 @@
             const CLEAR_HOLD_MS = 3000;
             const LEVEL_UP_MS = 3000;
             const COACH_TIP_MS = 5000;
-            const ASSIST_OVERLAY_DELAY_MS = 30000;
             const SCORE_SEGMENT_COUNT = 10;
             const SAMPLE_VIDEO_DIR = "samplevideo";
             const ARCHIVE_DIR = "training/archives";
@@ -760,7 +748,6 @@
             let coaching = false;
             let coachCountdownTimer = 0;
             let levelUpTimer = 0;
-            let assistOverlayTimer = 0;
             let recordingEnabled = false;
             let archiveSessionName = "";
             let mediaRecorder = null;
@@ -776,7 +763,6 @@
                 [document.querySelector(".coachTip--status"), scoreHero],
                 [document.querySelector(".coachTip--face"), ellipseGuide],
                 [document.querySelector(".coachTip--score"), scoreBubble],
-                [document.querySelector(".coachTip--assist"), viewer],
                 [document.querySelector(".coachTip--clear"), scoreHero]
             ]);
             const coachFocusTargets = [...new Set([...coachFocusByTip.values()].filter(Boolean))];
@@ -1052,12 +1038,10 @@
                 window.clearTimeout(coachTipsTimer);
                 window.clearTimeout(coachCountdownTimer);
                 window.clearTimeout(levelUpTimer);
-                window.clearTimeout(assistOverlayTimer);
                 window.cancelAnimationFrame(levelUpProgressTimer);
             };
 
             const hideAssistOverlay = () => {
-                window.clearTimeout(assistOverlayTimer);
                 assistVideo.pause();
                 assistVideo.hidden = true;
             };
@@ -1069,32 +1053,20 @@
                 assistVideo.load();
             };
 
-            const showAssistOverlay = (force = false) => {
+            const showAssistOverlay = () => {
                 if (!running || challengeCleared || trainingScene.hidden) return;
-                if (coaching && !force) {
-                    assistOverlayTimer = window.setTimeout(showAssistOverlay, 1000);
-                    return;
-                }
-
                 syncAssistVideoSource();
                 assistVideo.hidden = false;
                 assistVideo.currentTime = 0;
                 assistVideo.play().catch(() => {});
             };
 
-            const startAssistOverlayTimer = () => {
-                hideAssistOverlay();
-                assistOverlayTimer = window.setTimeout(showAssistOverlay, ASSIST_OVERLAY_DELAY_MS);
-            };
-
             const toggleAssistOverlay = () => {
                 if (!running || challengeCleared || trainingScene.hidden) return;
                 if (assistVideo.hidden) {
-                    window.clearTimeout(assistOverlayTimer);
                     showAssistOverlay();
                 } else {
                     hideAssistOverlay();
-                    startAssistOverlayTimer();
                 }
             };
 
@@ -1124,15 +1096,6 @@
                 }
             };
 
-            const setCoachAssistPreview = (visible) => {
-                if (visible) {
-                    window.clearTimeout(assistOverlayTimer);
-                    showAssistOverlay(true);
-                } else {
-                    hideAssistOverlay();
-                }
-            };
-
             const setCoachCountdownPreview = (visible) => {
                 if (visible) {
                     showCoachCountdownPreview();
@@ -1141,22 +1104,14 @@
                 }
             };
 
-            const syncCoachPreviews = (tip) => {
-                setCoachAssistPreview(tip?.classList.contains("coachTip--assist"));
-                setCoachCountdownPreview(tip?.classList.contains("coachTip--clear"));
-            };
-
             const showCoachTipStep = (index = 0) => {
                 if (index >= coachTipItems.length) {
                     hideCoachTips();
-                    if (running && !challengeCleared && !trainingScene.hidden) {
-                        startAssistOverlayTimer();
-                    }
                     return;
                 }
 
                 const activeTip = coachTipItems[index];
-                syncCoachPreviews(activeTip);
+                setCoachCountdownPreview(activeTip?.classList.contains("coachTip--clear"));
 
                 coachTipItems.forEach((tip, tipIndex) => {
                     tip.classList.toggle("is-active", tipIndex === index);
@@ -1444,9 +1399,7 @@
                 });
                 challengeIntroTimer = window.setTimeout(() => {
                     challengeIntroOverlay.hidden = true;
-                    if (!showCoachTips()) {
-                        startAssistOverlayTimer();
-                    }
+                    showCoachTips();
                 }, DEMO_INTRO_MS);
             };
 
