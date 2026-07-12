@@ -646,6 +646,8 @@
             const CLEAR_HOLD_MS = 3000;
             const LEVEL_UP_MS = 3000;
             const COACH_TIP_MS = 5000;
+            const CHALLENGE_ATTEMPT_MS = 90 * 1000;
+            const MAX_CHALLENGE_ATTEMPTS = 3;
             const SCORE_SEGMENT_COUNT = 10;
             const SAMPLE_VIDEO_DIR = "samplevideo";
             const ARCHIVE_DIR = "training/archives";
@@ -726,8 +728,10 @@
             const coachTips = $("coachTips");
             const guideAudio = new Audio("guide.mp3");
             const clearAudio = new Audio("clear.mp3");
+            const restartAudio = new Audio("restart.mp3");
             guideAudio.preload = "auto";
             clearAudio.preload = "auto";
+            restartAudio.preload = "auto";
 
             let currentLevelIndex = 0;
             let activeTarget = LEVELS[currentLevelIndex].key;
@@ -736,6 +740,7 @@
             let demoIntroTimer = 0;
             let challengeIntroTimer = 0;
             let coachTipsTimer = 0;
+            let challengeTimeoutTimer = 0;
             let levelUpProgressTimer = 0;
             let demoPlayCount = 0;
             let running = false;
@@ -744,6 +749,7 @@
             let smoothedScore = 0;
             let holdStartedAt = 0;
             let challengeCleared = false;
+            let challengeAttemptCount = 0;
             let coachTipsShown = false;
             let coaching = false;
             let coachCountdownTimer = 0;
@@ -1036,6 +1042,7 @@
             const clearChallengeTimers = () => {
                 window.clearTimeout(challengeIntroTimer);
                 window.clearTimeout(coachTipsTimer);
+                window.clearTimeout(challengeTimeoutTimer);
                 window.clearTimeout(coachCountdownTimer);
                 window.clearTimeout(levelUpTimer);
                 window.cancelAnimationFrame(levelUpProgressTimer);
@@ -1104,9 +1111,15 @@
                 }
             };
 
+            const startChallengeTimer = () => {
+                window.clearTimeout(challengeTimeoutTimer);
+                challengeTimeoutTimer = window.setTimeout(handleChallengeTimeout, CHALLENGE_ATTEMPT_MS);
+            };
+
             const showCoachTipStep = (index = 0) => {
                 if (index >= coachTipItems.length) {
                     hideCoachTips();
+                    startChallengeTimer();
                     return;
                 }
 
@@ -1140,6 +1153,7 @@
                 stopChallengeRecording();
                 running = false;
                 holdStartedAt = 0;
+                window.clearTimeout(challengeTimeoutTimer);
                 countdownOverlay.hidden = true;
                 challengeIntroOverlay.hidden = true;
                 hideAssistOverlay();
@@ -1167,7 +1181,7 @@
                 levelUpProgressTimer = window.requestAnimationFrame(update);
             };
 
-            const continueAfterClear = (hasNextLevel) => {
+            const proceedAfterTransition = (hasNextLevel) => {
                 challengeIntroOverlay.hidden = true;
                 hideLevelUpProgress();
 
@@ -1179,24 +1193,59 @@
                 }
             };
 
+            const startResultTransition = ({ title, text, hasNextLevel, audio = null }) => {
+                if (audio) playAudio(audio);
+                setChallengeOverlay(title, text);
+                clearChallengeTimers();
+                startLevelUpProgress();
+                levelUpTimer = window.setTimeout(() => proceedAfterTransition(hasNextLevel), LEVEL_UP_MS);
+            };
+
+            const advanceLevel = () => {
+                currentLevelIndex += 1;
+                challengeAttemptCount = 0;
+                return currentLevelIndex < LEVELS.length;
+            };
+
+            const handleChallengeTimeout = () => {
+                if (!running || challengeCleared || trainingScene.hidden) return;
+                challengeCleared = true;
+                challengeAttemptCount += 1;
+                stopChallengeSession();
+
+                if (challengeAttemptCount < MAX_CHALLENGE_ATTEMPTS) {
+                    startResultTransition({
+                        title: "ナイストライ！",
+                        text: "もう一度、お手本を観察してみましょう。",
+                        hasNextLevel: true,
+                        audio: restartAudio
+                    });
+                    return;
+                }
+
+                const hasNextLevel = advanceLevel();
+                startResultTransition({
+                    title: hasNextLevel ? "ナイスファイト！" : "全レベル終了",
+                    text: "お疲れ様でした。少し休んで、次の表情に挑戦してみましょう！",
+                    hasNextLevel,
+                    audio: clearAudio
+                });
+            };
+
             const completeLevel = () => {
                 if (challengeCleared) return;
                 challengeCleared = true;
                 stopChallengeSession();
-                playAudio(clearAudio);
 
-                currentLevelIndex += 1;
-                const hasNextLevel = currentLevelIndex < LEVELS.length;
-                setChallengeOverlay(
-                    hasNextLevel ? "レベルアップ！" : "全レベルクリア！",
-                    hasNextLevel
+                const hasNextLevel = advanceLevel();
+                startResultTransition({
+                    title: hasNextLevel ? "レベルアップ！" : "全レベルクリア！",
+                    text: hasNextLevel
                         ? "次のレベルに進みます。"
-                        : "すべての表情トレーニングをクリアしました。"
-                );
-
-                clearChallengeTimers();
-                startLevelUpProgress();
-                levelUpTimer = window.setTimeout(() => continueAfterClear(hasNextLevel), LEVEL_UP_MS);
+                        : "すべての表情トレーニングをクリアしました。",
+                    hasNextLevel,
+                    audio: clearAudio
+                });
             };
 
             const isFearClearReady = (expressions) => {
@@ -1332,6 +1381,7 @@
 
             const goToChallengeLevel = (index) => {
                 currentLevelIndex = clampLevelIndex(index);
+                challengeAttemptCount = 0;
                 updateLevel();
                 startChallenge();
             };
@@ -1399,7 +1449,9 @@
                 });
                 challengeIntroTimer = window.setTimeout(() => {
                     challengeIntroOverlay.hidden = true;
-                    showCoachTips();
+                    if (!showCoachTips()) {
+                        startChallengeTimer();
+                    }
                 }, DEMO_INTRO_MS);
             };
 
