@@ -575,7 +575,7 @@
             <div id="demoIntroOverlay" class="sceneOverlay demoIntroOverlay" hidden>
                 <div class="demoIntroCard">
                     <h2 id="demoIntroTitle" class="demoIntroTitle">レベル0：無表情</h2>
-                    <p class="demoIntroText">まずは、お手本動画をよく見て観察しましょう。</p>
+                    <p id="demoIntroText" class="demoIntroText">まずは、お手本動画をよく見て観察しましょう。</p>
                 </div>
             </div>
             <button id="skipDemoButton" class="skipButton" type="button">スキップ →</button>
@@ -636,7 +636,7 @@
     <script>
         window.addEventListener("load", () => {
             const MODEL_URL = "../modules/faceAPI/models";
-            const DEMO_INTRO_MS = 2000;
+            const DEMO_INTRO_MS = 4000;
             const DEMO_LOOP_COUNT = 3;
             const CLEAR_SCORE = 0.82;
             const CLEAR_SCORE_BY_EXPRESSION = {
@@ -644,10 +644,12 @@
                 disgusted: 0.76
             };
             const CLEAR_HOLD_MS = 3000;
-            const LEVEL_UP_MS = 3000;
+            const LEVEL_UP_MS = 4000;
             const COACH_TIP_MS = 5000;
             const CHALLENGE_ATTEMPT_MS = 90 * 1000;
             const MAX_CHALLENGE_ATTEMPTS = 3;
+            const PAUSE_TITLE = "休憩中...";
+            const PAUSE_TEXT = "少し休んで、表情筋の強張りをほぐしましょう";
             const SCORE_SEGMENT_COUNT = 10;
             const SAMPLE_VIDEO_DIR = "samplevideo";
             const ARCHIVE_DIR = "training/archives";
@@ -702,6 +704,7 @@
             const demoPlaceholder = $("demoPlaceholder");
             const demoIntroOverlay = $("demoIntroOverlay");
             const demoIntroTitle = $("demoIntroTitle");
+            const demoIntroText = $("demoIntroText");
             const viewer = document.querySelector(".viewer");
             const scoreHero = document.querySelector(".scoreHero");
             const ellipseGuide = document.querySelector(".ellipseGuide");
@@ -738,12 +741,18 @@
             let sampleLoadToken = 0;
             let demoTimer = 0;
             let demoIntroTimer = 0;
+            let demoIntroStartedAt = 0;
+            let demoIntroRemainingMs = DEMO_INTRO_MS;
+            let demoIntroActive = false;
             let challengeIntroTimer = 0;
             let coachTipsTimer = 0;
             let challengeTimeoutTimer = 0;
+            let challengeTimerStartedAt = 0;
+            let challengeTimerRemainingMs = CHALLENGE_ATTEMPT_MS;
             let levelUpProgressTimer = 0;
             let demoPlayCount = 0;
             let running = false;
+            let paused = false;
             let modelsLoading = false;
             let modelsLoaded = false;
             let smoothedScore = 0;
@@ -1004,6 +1013,7 @@
             const syncLevelCopy = () => {
                 const text = levelText();
                 demoIntroTitle.textContent = text;
+                demoIntroText.textContent = "まずは、お手本動画をよく見て観察しましょう。";
                 challengeIntroTitle.textContent = text;
                 challengeIntroText.textContent = challengeCopy();
             };
@@ -1023,11 +1033,22 @@
             const resetDemoIntro = (previewing = false) => {
                 demoPanel.classList.toggle("is-previewing", previewing);
                 demoIntroOverlay.hidden = !previewing;
+                if (previewing) syncLevelCopy();
+            };
+
+            const setDemoOverlay = (title, text) => {
+                demoIntroTitle.textContent = title;
+                demoIntroText.textContent = text;
+                demoPanel.classList.add("is-previewing");
+                demoIntroOverlay.hidden = false;
             };
 
             const resetChallengeState = () => {
                 holdStartedAt = 0;
                 challengeCleared = false;
+                paused = false;
+                challengeTimerRemainingMs = CHALLENGE_ATTEMPT_MS;
+                challengeTimerStartedAt = 0;
                 smoothedScore = 0;
                 setScore(0);
                 countdownOverlay.hidden = true;
@@ -1037,12 +1058,14 @@
             const clearDemoTimers = () => {
                 window.cancelAnimationFrame(demoTimer);
                 window.clearTimeout(demoIntroTimer);
+                demoIntroStartedAt = 0;
             };
 
             const clearChallengeTimers = () => {
                 window.clearTimeout(challengeIntroTimer);
                 window.clearTimeout(coachTipsTimer);
                 window.clearTimeout(challengeTimeoutTimer);
+                challengeTimerStartedAt = 0;
                 window.clearTimeout(coachCountdownTimer);
                 window.clearTimeout(levelUpTimer);
                 window.cancelAnimationFrame(levelUpProgressTimer);
@@ -1113,7 +1136,62 @@
 
             const startChallengeTimer = () => {
                 window.clearTimeout(challengeTimeoutTimer);
-                challengeTimeoutTimer = window.setTimeout(handleChallengeTimeout, CHALLENGE_ATTEMPT_MS);
+                challengeTimerStartedAt = performance.now();
+                challengeTimeoutTimer = window.setTimeout(handleChallengeTimeout, challengeTimerRemainingMs);
+            };
+
+            const pauseChallengeTimer = () => {
+                window.clearTimeout(challengeTimeoutTimer);
+                if (challengeTimerStartedAt) {
+                    challengeTimerRemainingMs = Math.max(0, challengeTimerRemainingMs - (performance.now() - challengeTimerStartedAt));
+                    challengeTimerStartedAt = 0;
+                }
+            };
+
+            const finishDemoIntro = () => {
+                if (paused) return;
+                demoIntroActive = false;
+                demoIntroRemainingMs = 0;
+                demoIntroStartedAt = 0;
+                resetDemoIntro();
+                pauseDemoVideo(true);
+                demoVideo.play().catch(() => {});
+                demoTimer = window.requestAnimationFrame(updateDemoProgress);
+            };
+
+            const startDemoIntroTimer = () => {
+                window.clearTimeout(demoIntroTimer);
+                demoIntroActive = true;
+                demoIntroStartedAt = performance.now();
+                demoIntroTimer = window.setTimeout(finishDemoIntro, demoIntroRemainingMs);
+            };
+
+            const pauseDemoScene = () => {
+                window.clearTimeout(demoIntroTimer);
+                window.cancelAnimationFrame(demoTimer);
+
+                if (demoIntroActive && demoIntroStartedAt) {
+                    demoIntroRemainingMs = Math.max(0, demoIntroRemainingMs - (performance.now() - demoIntroStartedAt));
+                    demoIntroStartedAt = 0;
+                } else {
+                    pauseDemoVideo();
+                }
+
+                guideAudio.pause();
+                setDemoOverlay(PAUSE_TITLE, PAUSE_TEXT);
+            };
+
+            const resumeDemoScene = () => {
+                if (demoIntroActive) {
+                    resetDemoIntro(true);
+                    guideAudio.play().catch(() => {});
+                    startDemoIntroTimer();
+                    return;
+                }
+
+                resetDemoIntro();
+                demoVideo.play().catch(() => {});
+                demoTimer = window.requestAnimationFrame(updateDemoProgress);
             };
 
             const showCoachTipStep = (index = 0) => {
@@ -1149,11 +1227,40 @@
                 return true;
             };
 
+            const togglePause = () => {
+                const pausingDemo = !demoScene.hidden;
+                const pausingChallenge = !trainingScene.hidden;
+                if (!pausingDemo && !pausingChallenge) return;
+                if (pausingChallenge && (!running || challengeCleared || coaching || (!paused && !challengeIntroOverlay.hidden))) return;
+
+                paused = !paused;
+                holdStartedAt = 0;
+                countdownOverlay.hidden = true;
+
+                if (paused) {
+                    if (pausingDemo) {
+                        pauseDemoScene();
+                    } else {
+                        pauseChallengeTimer();
+                        setChallengeOverlay(PAUSE_TITLE, PAUSE_TEXT);
+                    }
+                } else {
+                    if (pausingDemo) {
+                        resumeDemoScene();
+                    } else {
+                        challengeIntroOverlay.hidden = true;
+                        startChallengeTimer();
+                    }
+                }
+            };
+
             const stopChallengeSession = () => {
                 stopChallengeRecording();
                 running = false;
+                paused = false;
                 holdStartedAt = 0;
                 window.clearTimeout(challengeTimeoutTimer);
+                challengeTimerStartedAt = 0;
                 countdownOverlay.hidden = true;
                 challengeIntroOverlay.hidden = true;
                 hideAssistOverlay();
@@ -1262,7 +1369,7 @@
             };
 
             const updateClearProgress = (score, expressions = null) => {
-                if (coaching || challengeCleared || !isClearReady(score, expressions)) {
+                if (paused || coaching || challengeCleared || !isClearReady(score, expressions)) {
                     holdStartedAt = 0;
                     countdownOverlay.hidden = true;
                     return;
@@ -1318,7 +1425,7 @@
 
             const detectLoop = async () => {
                 if (!running) return;
-                if (coaching) {
+                if (paused || coaching) {
                     window.setTimeout(detectLoop, 90);
                     return;
                 }
@@ -1456,6 +1563,7 @@
             };
 
             const updateDemoProgress = () => {
+                if (paused) return;
                 const duration = Number.isFinite(demoVideo.duration) ? demoVideo.duration : 0;
                 const currentLoopProgress = duration > 0 ? clamp(demoVideo.currentTime / duration) : 0;
                 const progress = clamp((demoPlayCount + currentLoopProgress) / DEMO_LOOP_COUNT);
@@ -1468,6 +1576,7 @@
             };
 
             const handleDemoEnded = () => {
+                if (paused) return;
                 demoPlayCount += 1;
                 if (demoPlayCount >= DEMO_LOOP_COUNT) {
                     startChallenge();
@@ -1483,6 +1592,9 @@
             const startDemo = () => {
                 updateLevel();
                 demoPlayCount = 0;
+                demoIntroActive = false;
+                demoIntroRemainingMs = DEMO_INTRO_MS;
+                demoIntroStartedAt = 0;
                 setProgress(demoProgressFill, 0);
                 showScene(demoScene);
                 clearDemoTimers();
@@ -1491,12 +1603,7 @@
                 pauseDemoVideo(true);
                 resetDemoIntro(true);
                 playAudio(guideAudio);
-                demoIntroTimer = window.setTimeout(() => {
-                    resetDemoIntro();
-                    pauseDemoVideo(true);
-                    demoVideo.play().catch(() => {});
-                    demoTimer = window.requestAnimationFrame(updateDemoProgress);
-                }, DEMO_INTRO_MS);
+                startDemoIntroTimer();
             };
 
             startButton.addEventListener("click", () => {
@@ -1514,6 +1621,11 @@
                 if (event.code === "KeyH") {
                     event.preventDefault();
                     toggleAssistOverlay();
+                    return;
+                }
+                if (event.code === "KeyS") {
+                    event.preventDefault();
+                    togglePause();
                     return;
                 }
                 if (event.code !== "ArrowRight" && event.code !== "ArrowLeft") return;
