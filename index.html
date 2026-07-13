@@ -1,68 +1,110 @@
 <!DOCTYPE html>
-<html>
+<html lang="ja">
 
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>pt_FaceVisualize</title>
 
     <style>
-        html,
-        body {
-            overflow: hidden;
-        }
-
         body {
             font-family: "Yu Gothic Medium", "Yu Gothic", sans-serif;
             background-color: #f0f0f0;
             margin: 0;
-        }
-
-        h1 {
-            margin: 0.4em 0 0 0;
-            line-height: 1.2;
+            color: #222;
         }
 
         .container {
-            width: 100dvw;
-            height: 100dvh;
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
-            gap: 1rem;
+            width: min(100% - 2rem, 72rem);
+            margin: 0 auto;
+            padding: 3rem 0;
         }
 
-        .container a {
-            font-size: 1.6rem;
-            text-decoration: underline 1px;
+        header {
+            margin-bottom: 2rem;
+        }
+
+        h1,
+        h2 {
+            margin: 0;
+            line-height: 1.3;
+        }
+
+        header p {
+            margin: 0.5rem 0 0;
+        }
+
+        nav {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(min(16rem, 100%), 1fr));
+            gap: 2rem;
+        }
+
+        ul {
+            margin: 0.75rem 0 0;
+            padding-left: 1.4rem;
+        }
+
+        li + li {
+            margin-top: 0.65rem;
+        }
+
+        a {
+            font-size: 1.15rem;
             color: inherit;
-            background: none;
-            border: none;
-            outline: none;
-            cursor: pointer;
+            text-underline-offset: 0.2em;
         }
     </style>
 </head>
 
 <body>
-    <div class="container">
-        <h1>分析系</h1>
-        <a href="analysis/index.html">Analysis of Emotion</a>
-        <a href="correlation-of-movements/index.html">Correlation of Motion</a>
-        <h1>ビジュアライズ</h1>
-        <a href="emotion/index.html">Emotion</a>
-        <a href="motion/index.html">Motion</a>
-        <h1>プロトタイプ</h1>
-        <a href="adjust-to-the-past/index.html">《収斂と発散》モチーフ</a>
-        <a href="facetime/index.html">《FaceTime》モチーフ</a>
-        <a href="face-shape/index.html">かおのかたち</a>
-        <a href="face-shape_rev2.0/index.html">かおのしま</a>
-        <a href="training/index.html">表情クリニック</a>
-        <h1>シミュレーション</h1>
-        <a href="ripples/index.html">水面の波紋</a>
-        <a href="metronom/index.html">メトロノーム</a>
-        <a href="overlap/index.html">表情の重ね合わせ</a>
-    </div>
+    <main class="container">
+        <header>
+            <h1>pt_FaceVisualize</h1>
+        </header>
+
+        <nav aria-label="コンテンツ一覧">
+            <section>
+                <h2>分析系</h2>
+                <ul>
+                    <li><a href="analysis/index.html">Emotion Detection from Video</a></li>
+                    <li><a href="analysis-webm/index.html">WebM Expression Picker Img</a></li>
+                    <li><a href="analysis-movie-webm/index.html">WebM Expression Picker Movie</a></li>
+                    <li><a href="correlation-of-movements/index.html">Correlation of Movements</a></li>
+                </ul>
+            </section>
+
+            <section>
+                <h2>ビジュアライズ</h2>
+                <ul>
+                    <li><a href="emotion/index.html">Emotion</a></li>
+                    <li><a href="motion/index.html">Motion</a></li>
+                    <li><a href="blendshape/index.html">BlendShape</a></li>
+                    <li><a href="mesh-control/index.html">Blendshape Motion Gain</a></li>
+                </ul>
+            </section>
+
+            <section>
+                <h2>プロトタイプ</h2>
+                <ul>
+                    <li><a href="adjust-to-the-past/index.html">《収斂と発散》モチーフ</a></li>
+                    <li><a href="facetime/index.html">《FaceTime》モチーフ</a></li>
+                    <li><a href="face-shape/index.html">かおのかたち</a></li>
+                    <li><a href="face-shape_rev2.0/index.html">かおのしま</a></li>
+                    <li><a href="training/index.html">表情クリニック</a></li>
+                </ul>
+            </section>
+
+            <section>
+                <h2>シミュレーション</h2>
+                <ul>
+                    <li><a href="ripples/index.html">水面の波紋</a></li>
+                    <li><a href="metronom/index.html">メトロノーム</a></li>
+                    <li><a href="overlap/index.html">表情の重ね合わせ</a></li>
+                </ul>
+            </section>
+        </nav>
+    </main>
 </body>
 
 </html>
