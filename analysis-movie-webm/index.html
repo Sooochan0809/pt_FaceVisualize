@@ -1,0 +1,739 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebM Picker ２</title>
+    <script defer src="../modules/faceAPI/face-api.min.js"></script>
+    <style>
+        :root {
+            color-scheme: light;
+            --line: #d8d8d8;
+            --muted: #666;
+            --text: #171717;
+            --bg: #fff;
+            --soft: #f6f6f6;
+            --accent: #111;
+            --good: #137333;
+            --warn: #a15c00;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            background: var(--bg);
+            color: var(--text);
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        }
+
+        main {
+            width: clamp(320px, calc(100vw - 32px), 1120px);
+            margin: 24px auto 40px;
+        }
+
+        h1 {
+            margin: 0 0 6px;
+            font-size: 22px;
+            font-weight: 650;
+        }
+
+        .lead {
+            margin: 0 0 18px;
+            color: var(--muted);
+            font-size: 13px;
+        }
+
+        .panel {
+            display: grid;
+            gap: 14px;
+            padding: 16px;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            background: #fff;
+        }
+
+        .controls {
+            display: grid;
+            grid-template-columns: minmax(230px, 1.6fr) repeat(4, minmax(125px, 1fr));
+            gap: 10px;
+            align-items: end;
+        }
+
+        label {
+            display: grid;
+            gap: 6px;
+            color: var(--muted);
+            font-size: 12px;
+        }
+
+        input,
+        select,
+        button {
+            width: 100%;
+            min-height: 36px;
+            border: 1px solid var(--line);
+            border-radius: 6px;
+            background: #fff;
+            color: var(--text);
+            font: inherit;
+        }
+
+        input,
+        select {
+            padding: 6px 8px;
+        }
+
+        button {
+            padding: 7px 12px;
+            cursor: pointer;
+        }
+
+        button.primary {
+            border-color: var(--accent);
+            background: var(--accent);
+            color: #fff;
+        }
+
+        button:disabled {
+            cursor: not-allowed;
+            opacity: 0.45;
+        }
+
+        #sourceVideo {
+            width: 100%;
+            max-height: 52vh;
+            display: block;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            background: #eee;
+        }
+
+        .status {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px 16px;
+            align-items: center;
+            min-height: 22px;
+            color: var(--muted);
+            font-size: 13px;
+            font-variant-numeric: tabular-nums;
+        }
+
+        progress {
+            width: min(240px, 42vw);
+            height: 8px;
+            accent-color: #111;
+        }
+
+        .results {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 14px;
+            margin-top: 16px;
+        }
+
+        .card {
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            overflow: hidden;
+            background: #fff;
+        }
+
+        .card video {
+            width: 100%;
+            aspect-ratio: 16 / 9;
+            display: block;
+            object-fit: contain;
+            background: var(--soft);
+        }
+
+        .placeholder {
+            display: grid;
+            aspect-ratio: 16 / 9;
+            place-items: center;
+            padding: 20px;
+            background: var(--soft);
+            color: var(--muted);
+            text-align: center;
+            font-size: 13px;
+        }
+
+        .meta {
+            display: grid;
+            gap: 6px;
+            padding: 11px;
+            color: var(--muted);
+            font-size: 12px;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .meta strong {
+            color: var(--text);
+            font-size: 14px;
+            font-weight: 650;
+        }
+
+        .badge {
+            width: fit-content;
+            padding: 3px 7px;
+            border-radius: 999px;
+            background: #f1f3f4;
+            color: var(--muted);
+            font-weight: 650;
+        }
+
+        .badge.good {
+            background: #e6f4ea;
+            color: var(--good);
+        }
+
+        .badge.warn {
+            background: #fff4e5;
+            color: var(--warn);
+        }
+
+        .actions {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            margin-top: 3px;
+        }
+
+        .empty {
+            margin-top: 16px;
+            padding: 18px;
+            border: 1px dashed var(--line);
+            border-radius: 8px;
+            color: var(--muted);
+            text-align: center;
+        }
+
+        @media (max-width: 880px) {
+            main {
+                width: clamp(320px, calc(100vw - 20px), 1120px);
+                margin-top: 12px;
+            }
+
+            .controls {
+                grid-template-columns: 1fr 1fr;
+            }
+
+            .controls label:first-child,
+            .controls button.primary {
+                grid-column: 1 / -1;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <main>
+        <h1>WebM Picker ２</h1>
+        <p class="lead">指定した表情から別の表情へ変わる区間を探し、正面度とともに数秒の WebM 動画として切り抜きます。</p>
+        <section class="panel">
+            <div class="controls">
+                <label>
+                    動画
+                    <input id="file" type="file" accept="video/webm,video/*">
+                </label>
+                <label>
+                    開始表情
+                    <select id="fromEmotion">
+                        <option value="neutral">neutral</option>
+                        <option value="happy">happy</option>
+                        <option value="sad">sad</option>
+                        <option value="angry">angry</option>
+                        <option value="fearful">fearful</option>
+                        <option value="disgusted">disgusted</option>
+                        <option value="surprised">surprised</option>
+                    </select>
+                </label>
+                <label>
+                    終了表情
+                    <select id="toEmotion">
+                        <option value="happy">happy</option>
+                        <option value="neutral">neutral</option>
+                        <option value="sad">sad</option>
+                        <option value="angry">angry</option>
+                        <option value="fearful">fearful</option>
+                        <option value="disgusted">disgusted</option>
+                        <option value="surprised">surprised</option>
+                    </select>
+                </label>
+                <label>
+                    切り抜き数
+                    <input id="count" type="number" min="1" max="8" step="1" value="3">
+                </label>
+                <label>
+                    解析間隔（秒）
+                    <input id="interval" type="number" min="0.15" max="2" step="0.05" value="0.25">
+                </label>
+                <label>
+                    表情の最小スコア
+                    <input id="minScore" type="number" min="0" max="1" step="0.01" value="0.35">
+                </label>
+                <label>
+                    変化の最大秒数
+                    <input id="maxTransition" type="number" min="0.5" max="12" step="0.5" value="4">
+                </label>
+                <label>
+                    前後の余白（秒）
+                    <input id="padding" type="number" min="0" max="5" step="0.25" value="1">
+                </label>
+                <label>
+                    正面度の基準
+                    <input id="frontThreshold" type="number" min="0" max="1" step="0.01" value="0.65">
+                </label>
+                <label>
+                    正面の区間だけ
+                    <select id="frontOnly">
+                        <option value="yes">はい</option>
+                        <option value="no">いいえ（判定のみ表示）</option>
+                    </select>
+                </label>
+                <button id="analyze" class="primary" type="button" disabled>変化を解析して切り抜く</button>
+            </div>
+            <video id="sourceVideo" controls playsinline muted></video>
+            <div class="status">
+                <span id="message">モデルを読み込んでいます</span>
+                <progress id="progress" value="0" max="1" hidden></progress>
+                <button id="downloadAll" type="button" disabled>すべて保存</button>
+            </div>
+        </section>
+        <div id="results" class="results"></div>
+        <div id="empty" class="empty">動画を選び、開始表情と終了表情を設定してください。</div>
+    </main>
+
+    <script>
+        window.addEventListener("load", async () => {
+            const $ = (id) => document.getElementById(id);
+            const MODEL_URL = "../modules/faceAPI/models";
+            const EMOTIONS = ["neutral", "happy", "sad", "angry", "fearful", "disgusted", "surprised"];
+            const ids = [
+                "file", "sourceVideo", "fromEmotion", "toEmotion", "count", "interval", "minScore",
+                "maxTransition", "padding", "frontThreshold", "frontOnly", "analyze", "progress",
+                "message", "results", "empty", "downloadAll"
+            ];
+            const [
+                file, video, fromEmotion, toEmotion, count, interval, minScore, maxTransition, padding,
+                frontThreshold, frontOnly, analyze, progress, message, results, empty, downloadAll
+            ] = ids.map($);
+            const detectorOptions = new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.35 });
+
+            let objectUrl = "";
+            let samples = [];
+            let picks = [];
+            let token = 0;
+            let modelsReady = false;
+            let videoReady = false;
+
+            const models = Promise.all([
+                faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
+                faceapi.nets.faceLandmark68TinyNet.loadFromUri(MODEL_URL),
+                faceapi.nets.faceExpressionNet.loadFromUri(MODEL_URL)
+            ]);
+
+            const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+            const mean = (values) => values.reduce((sum, value) => sum + value, 0) / Math.max(1, values.length);
+            const distance = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+            const centerOf = (points) => ({
+                x: mean(points.map((point) => point.x)),
+                y: mean(points.map((point) => point.y))
+            });
+            const formatTime = (seconds) => {
+                const min = Math.floor(seconds / 60);
+                const sec = (seconds - min * 60).toFixed(1).padStart(4, "0");
+                return `${min}:${sec}`;
+            };
+            const waitForMetadata = (target) => {
+                if (target.readyState >= 1) return Promise.resolve();
+                return new Promise((resolve, reject) => {
+                    const onLoaded = () => {
+                        target.removeEventListener("error", onError);
+                        resolve();
+                    };
+                    const onError = () => {
+                        target.removeEventListener("loadedmetadata", onLoaded);
+                        reject(new Error("動画を読み込めませんでした"));
+                    };
+                    target.addEventListener("loadedmetadata", onLoaded, { once: true });
+                    target.addEventListener("error", onError, { once: true });
+                });
+            };
+
+            const setStatus = (text, current = 0, total = 0) => {
+                message.textContent = text;
+                progress.hidden = !total;
+                progress.max = Math.max(1, total);
+                progress.value = current;
+            };
+
+            const updateAnalyzeState = () => {
+                analyze.disabled = !(modelsReady && videoReady);
+            };
+
+            const seekMedia = (media, time) => new Promise((resolve) => {
+                const duration = Number.isFinite(media.duration) ? media.duration : 0;
+                const target = clamp(time, 0, Math.max(0, duration - 0.04));
+                if (Math.abs(media.currentTime - target) < 0.002 && media.readyState >= 2) {
+                    requestAnimationFrame(resolve);
+                    return;
+                }
+                media.addEventListener("seeked", () => requestAnimationFrame(resolve), { once: true });
+                media.currentTime = target;
+            });
+
+            const frontalScoreFrom = (detection) => {
+                const positions = detection.landmarks.positions;
+                const leftEye = centerOf(positions.slice(36, 42));
+                const rightEye = centerOf(positions.slice(42, 48));
+                const nose = positions[30];
+                const mouth = centerOf(positions.slice(48, 68));
+                const eyeDistance = Math.max(1, distance(leftEye, rightEye));
+                const yaw = clamp(1 - Math.abs(distance(nose, leftEye) - distance(nose, rightEye)) / eyeDistance * 1.8, 0, 1);
+                const roll = clamp(1 - Math.abs(leftEye.y - rightEye.y) / eyeDistance * 2.2, 0, 1);
+                const pitch = clamp(1 - Math.abs((mouth.y - nose.y) / eyeDistance - 0.55), 0, 1);
+                return (yaw + roll + pitch) / 3;
+            };
+
+            const releasePicks = () => {
+                picks.forEach((pick) => {
+                    if (pick.clipUrl) URL.revokeObjectURL(pick.clipUrl);
+                });
+                picks = [];
+            };
+
+            const findTransitions = () => {
+                const from = fromEmotion.value;
+                const to = toEmotion.value;
+                const threshold = clamp(Number(minScore.value) || 0, 0, 1);
+                const maxSeconds = clamp(Number(maxTransition.value) || 4, 0.5, 12);
+                const pad = clamp(Number(padding.value) || 0, 0, 5);
+                const frontalThreshold = clamp(Number(frontThreshold.value) || 0, 0, 1);
+                const onlyFrontal = frontOnly.value === "yes";
+                const candidates = [];
+
+                for (let startIndex = 0; startIndex < samples.length; startIndex++) {
+                    const start = samples[startIndex];
+                    if (!start.detected || start.expressions[from] < threshold) continue;
+                    const previous = samples[Math.max(0, startIndex - 1)];
+                    const next = samples[Math.min(samples.length - 1, startIndex + 1)];
+                    if (start.expressions[from] < previous.expressions[from] || start.expressions[from] < next.expressions[from]) continue;
+
+                    let best = null;
+                    for (let endIndex = startIndex + 1; endIndex < samples.length; endIndex++) {
+                        const end = samples[endIndex];
+                        const transitionSeconds = end.time - start.time;
+                        if (transitionSeconds > maxSeconds) break;
+                        if (!end.detected || end.expressions[to] < threshold) continue;
+
+                        const range = samples.slice(startIndex, endIndex + 1);
+                        const detected = range.filter((sample) => sample.detected);
+                        const detectionRatio = detected.length / range.length;
+                        if (detectionRatio < 0.7) continue;
+                        const frontalMean = mean(detected.map((sample) => sample.frontalScore));
+                        const frontalRatio = detected.filter((sample) => sample.frontalScore >= frontalThreshold).length / detected.length;
+                        const isFrontal = frontalMean >= frontalThreshold && frontalRatio >= 0.75;
+                        if (onlyFrontal && !isFrontal) continue;
+
+                        const fromDrop = clamp(start.expressions[from] - end.expressions[from], 0, 1);
+                        const toRise = clamp(end.expressions[to] - start.expressions[to], 0, 1);
+                        const switchStrength = (fromDrop + toRise) / 2;
+                        const durationScore = clamp(1 - Math.abs(transitionSeconds - Math.min(2, maxSeconds / 2)) / maxSeconds, 0, 1);
+                        const score = start.expressions[from] * 0.23
+                            + end.expressions[to] * 0.23
+                            + switchStrength * 0.25
+                            + frontalMean * 0.19
+                            + durationScore * 0.10;
+                        const candidate = {
+                            startTime: start.time,
+                            endTime: end.time,
+                            clipStart: Math.max(0, start.time - pad),
+                            clipEnd: Math.min(video.duration, end.time + pad),
+                            fromScore: start.expressions[from],
+                            toScore: end.expressions[to],
+                            frontalMean,
+                            frontalRatio,
+                            detectionRatio,
+                            isFrontal,
+                            score,
+                            clipUrl: "",
+                            blob: null
+                        };
+                        if (!best || candidate.score > best.score) best = candidate;
+                    }
+                    if (best) candidates.push(best);
+                }
+
+                candidates.sort((a, b) => b.score - a.score);
+                const selected = [];
+                const targetCount = clamp(Math.round(Number(count.value) || 3), 1, 8);
+                for (const candidate of candidates) {
+                    if (selected.length >= targetCount) break;
+                    const overlaps = selected.some((item) => candidate.clipStart < item.clipEnd && candidate.clipEnd > item.clipStart);
+                    if (!overlaps) selected.push(candidate);
+                }
+                return selected;
+            };
+
+            const supportedMimeType = () => {
+                if (!window.MediaRecorder) return "";
+                return ["video/webm;codecs=vp9", "video/webm;codecs=vp8", "video/webm"]
+                    .find((type) => MediaRecorder.isTypeSupported(type)) || "";
+            };
+
+            const recordClip = async (pick, runToken) => {
+                const clipVideo = document.createElement("video");
+                clipVideo.src = objectUrl;
+                clipVideo.preload = "auto";
+                clipVideo.playsInline = true;
+                clipVideo.muted = true;
+                await waitForMetadata(clipVideo);
+                await seekMedia(clipVideo, pick.clipStart);
+                if (runToken !== token) return null;
+
+                const capture = clipVideo.captureStream || clipVideo.mozCaptureStream;
+                const mimeType = supportedMimeType();
+                if (!capture || !mimeType) return null;
+                const stream = capture.call(clipVideo);
+                if (!stream.getVideoTracks().length) return null;
+
+                return new Promise(async (resolve, reject) => {
+                    const chunks = [];
+                    let recorder;
+                    try {
+                        recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 4_000_000 });
+                    } catch (error) {
+                        reject(error);
+                        return;
+                    }
+                    const cleanup = () => {
+                        clipVideo.pause();
+                        stream.getTracks().forEach((track) => track.stop());
+                        clipVideo.removeAttribute("src");
+                        clipVideo.load();
+                    };
+                    recorder.addEventListener("dataavailable", (event) => {
+                        if (event.data.size) chunks.push(event.data);
+                    });
+                    recorder.addEventListener("error", (event) => {
+                        cleanup();
+                        reject(event.error || new Error("切り抜きに失敗しました"));
+                    }, { once: true });
+                    recorder.addEventListener("stop", () => {
+                        cleanup();
+                        resolve(chunks.length ? new Blob(chunks, { type: mimeType }) : null);
+                    }, { once: true });
+
+                    recorder.start(250);
+                    try {
+                        await clipVideo.play();
+                    } catch (error) {
+                        recorder.stop();
+                        reject(error);
+                        return;
+                    }
+                    const watch = () => {
+                        if (runToken !== token || clipVideo.currentTime >= pick.clipEnd - 0.04 || clipVideo.ended) {
+                            if (recorder.state !== "inactive") recorder.stop();
+                            return;
+                        }
+                        requestAnimationFrame(watch);
+                    };
+                    watch();
+                });
+            };
+
+            const playSourceSegment = async (pick) => {
+                video.pause();
+                await seekMedia(video, pick.clipStart);
+                await video.play();
+                const stopAtEnd = () => {
+                    if (video.currentTime >= pick.clipEnd - 0.04) {
+                        video.pause();
+                        video.removeEventListener("timeupdate", stopAtEnd);
+                    }
+                };
+                video.addEventListener("timeupdate", stopAtEnd);
+            };
+
+            const filenameFor = (pick, index) => {
+                const from = fromEmotion.value;
+                const to = toEmotion.value;
+                return `${from}-to-${to}_${String(index + 1).padStart(2, "0")}_${pick.clipStart.toFixed(1)}-${pick.clipEnd.toFixed(1)}s.webm`;
+            };
+
+            const downloadBlob = (pick, index) => {
+                if (!pick.clipUrl) return;
+                const anchor = document.createElement("a");
+                anchor.href = pick.clipUrl;
+                anchor.download = filenameFor(pick, index);
+                anchor.click();
+            };
+
+            const renderResults = () => {
+                results.innerHTML = "";
+                empty.hidden = picks.length > 0;
+                downloadAll.disabled = !picks.some((pick) => pick.clipUrl);
+                picks.forEach((pick, index) => {
+                    const card = document.createElement("article");
+                    card.className = "card";
+                    const media = pick.clipUrl
+                        ? `<video src="${pick.clipUrl}" controls playsinline muted></video>`
+                        : `<div class="placeholder">区間は検出できましたが、このブラウザでは WebM の切り抜きを生成できません。元動画で確認できます。</div>`;
+                    card.innerHTML = `
+                        ${media}
+                        <div class="meta">
+                            <strong>${index + 1}位　${formatTime(pick.startTime)} → ${formatTime(pick.endTime)}</strong>
+                            <span class="badge ${pick.isFrontal ? "good" : "warn"}">${pick.isFrontal ? "正面を維持" : "正面から外れる可能性"}</span>
+                            <span>clip ${formatTime(pick.clipStart)}–${formatTime(pick.clipEnd)}（${(pick.clipEnd - pick.clipStart).toFixed(1)}秒）</span>
+                            <span>${fromEmotion.value} ${pick.fromScore.toFixed(3)} → ${toEmotion.value} ${pick.toScore.toFixed(3)}</span>
+                            <span>front 平均 ${pick.frontalMean.toFixed(3)} · 基準内 ${(pick.frontalRatio * 100).toFixed(0)}% · face検出 ${(pick.detectionRatio * 100).toFixed(0)}%</span>
+                            <span>transition score ${pick.score.toFixed(3)}</span>
+                            <div class="actions">
+                                <button class="play-source" type="button">元動画で確認</button>
+                                <button class="download" type="button" ${pick.clipUrl ? "" : "disabled"}>保存</button>
+                            </div>
+                        </div>
+                    `;
+                    card.querySelector(".play-source").addEventListener("click", () => playSourceSegment(pick));
+                    card.querySelector(".download").addEventListener("click", () => downloadBlob(pick, index));
+                    results.appendChild(card);
+                });
+            };
+
+            const analyzeVideo = async () => {
+                if (!videoReady || !Number.isFinite(video.duration)) return;
+                if (fromEmotion.value === toEmotion.value) {
+                    setStatus("開始表情と終了表情には別の表情を選んでください");
+                    return;
+                }
+                const runToken = ++token;
+                analyze.disabled = true;
+                downloadAll.disabled = true;
+                results.innerHTML = "";
+                empty.hidden = false;
+                empty.textContent = "顔と表情を解析しています。";
+                releasePicks();
+                samples = [];
+                const currentTime = video.currentTime;
+
+                try {
+                    await models;
+                    video.pause();
+                    const step = clamp(Number(interval.value) || 0.25, 0.15, 2);
+                    const total = Math.max(1, Math.ceil(video.duration / step));
+                    for (let i = 0; i < total; i++) {
+                        if (runToken !== token) return;
+                        const time = Math.min(i * step, Math.max(0, video.duration - 0.04));
+                        setStatus(`顔・表情を解析中 ${i + 1}/${total}`, i + 1, total);
+                        await seekMedia(video, time);
+                        const detection = await faceapi
+                            .detectSingleFace(video, detectorOptions)
+                            .withFaceLandmarks(true)
+                            .withFaceExpressions();
+                        const expressions = EMOTIONS.reduce((memo, key) => ({ ...memo, [key]: detection?.expressions[key] || 0 }), {});
+                        samples.push({
+                            time,
+                            detected: Boolean(detection),
+                            expressions,
+                            frontalScore: detection ? frontalScoreFrom(detection) : 0
+                        });
+                    }
+
+                    picks = findTransitions();
+                    if (!picks.length) {
+                        empty.textContent = "条件に合う表情変化がありませんでした。表情の最小スコアや正面度を下げるか、変化の最大秒数を広げてください。";
+                        setStatus(`${samples.length}点を解析 / 該当区間なし`);
+                        return;
+                    }
+
+                    empty.textContent = "該当区間を WebM に切り抜いています。切り抜き時間と同程度かかります。";
+                    for (let i = 0; i < picks.length; i++) {
+                        if (runToken !== token) return;
+                        setStatus(`WebM を切り抜き中 ${i + 1}/${picks.length}`, i, picks.length);
+                        try {
+                            const blob = await recordClip(picks[i], runToken);
+                            if (blob && runToken === token) {
+                                picks[i].blob = blob;
+                                picks[i].clipUrl = URL.createObjectURL(blob);
+                            }
+                        } catch (error) {
+                            console.error(error);
+                        }
+                    }
+                    if (runToken !== token) return;
+                    renderResults();
+                    setStatus(`${samples.length}点を解析 / ${picks.length}区間を検出`);
+                } catch (error) {
+                    console.error(error);
+                    empty.hidden = false;
+                    empty.textContent = "解析中にエラーが発生しました。動画形式を確認して、もう一度お試しください。";
+                    setStatus("解析に失敗しました");
+                } finally {
+                    if (runToken === token) {
+                        await seekMedia(video, currentTime);
+                        updateAnalyzeState();
+                    }
+                }
+            };
+
+            file.addEventListener("change", () => {
+                if (!file.files[0]) return;
+                token += 1;
+                video.pause();
+                releasePicks();
+                if (objectUrl) URL.revokeObjectURL(objectUrl);
+                objectUrl = URL.createObjectURL(file.files[0]);
+                videoReady = false;
+                video.src = objectUrl;
+                samples = [];
+                results.innerHTML = "";
+                empty.hidden = false;
+                empty.textContent = "動画を読み込んでいます。";
+                setStatus(file.files[0].name);
+                downloadAll.disabled = true;
+                updateAnalyzeState();
+            });
+
+            video.addEventListener("loadedmetadata", () => {
+                videoReady = Number.isFinite(video.duration) && video.duration > 0;
+                empty.textContent = "開始表情と終了表情を確認し、「変化を解析して切り抜く」を押してください。";
+                setStatus(`${file.files[0]?.name || "動画"} / ${formatTime(video.duration)}`);
+                updateAnalyzeState();
+            });
+
+            analyze.addEventListener("click", analyzeVideo);
+            downloadAll.addEventListener("click", () => {
+                downloadAll.disabled = true;
+                picks.forEach((pick, index) => {
+                    if (pick.clipUrl) setTimeout(() => downloadBlob(pick, index), index * 220);
+                });
+                setTimeout(() => {
+                    downloadAll.disabled = !picks.some((pick) => pick.clipUrl);
+                }, Math.max(300, picks.length * 220));
+            });
+
+            window.addEventListener("beforeunload", () => {
+                releasePicks();
+                if (objectUrl) URL.revokeObjectURL(objectUrl);
+            });
+
+            try {
+                await models;
+                modelsReady = true;
+                setStatus("動画を選択してください");
+                updateAnalyzeState();
+            } catch (error) {
+                console.error(error);
+                setStatus("モデルの読み込みに失敗しました");
+            }
+        });
+    </script>
+</body>
+
+</html>

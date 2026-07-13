@@ -138,10 +138,17 @@
             display: none;
         }
 
-        .stageToggleButton {
+        .stageControls {
             position: absolute;
             top: 10px;
-            z-index: 3;
+            right: 10px;
+            z-index: 5;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .stageToggleButton {
             min-width: 76px;
             height: 32px;
             padding: 0 10px;
@@ -158,18 +165,6 @@
 
         .stageToggleButton[hidden] {
             display: none;
-        }
-
-        .monoToggleButton {
-            right: 96px;
-        }
-
-        .alignToggleButton {
-            right: 10px;
-        }
-
-        .cropToggleButton {
-            left: 10px;
         }
 
         .stage.is-cropping {
@@ -512,12 +507,14 @@
                     <div class="stageImageArea" id="stageImageArea" hidden></div>
                     <canvas class="morphCanvas" id="morphCanvas" hidden></canvas>
                     <div class="cropSelection" id="cropSelection" hidden></div>
-                    <button class="stageToggleButton cropToggleButton is-off" id="cropToggleButton" type="button"
-                        aria-pressed="false">トリミング OFF</button>
-                    <button class="stageToggleButton monoToggleButton is-off" id="monoToggleButton" type="button"
-                        aria-pressed="false">モノクロ OFF</button>
-                    <button class="stageToggleButton alignToggleButton" id="alignToggleButton" type="button"
-                        aria-pressed="true">顔位置 ON</button>
+                    <div class="stageControls">
+                        <button class="stageToggleButton cropToggleButton is-off" id="cropToggleButton" type="button"
+                            aria-pressed="false">トリミング</button>
+                        <button class="stageToggleButton monoToggleButton is-off" id="monoToggleButton" type="button"
+                            aria-pressed="false">モノクロ</button>
+                        <button class="stageToggleButton alignToggleButton" id="alignToggleButton" type="button"
+                            aria-pressed="true">顔位置</button>
+                    </div>
                 </div>
             </section>
         </main>
@@ -1471,7 +1468,6 @@
             }
             stage.classList.toggle("is-cropping", cropEnabled);
             cropToggleButton.classList.toggle("is-off", !cropEnabled);
-            cropToggleButton.textContent = cropEnabled ? "トリミング ON" : "トリミング OFF";
             cropToggleButton.setAttribute("aria-pressed", String(cropEnabled));
             cropControls.hidden = !cropEnabled;
         }
@@ -1878,11 +1874,9 @@
             fileInput.disabled = layers.length >= MAX_IMAGES;
             addLayerSlot.hidden = layers.length >= MAX_IMAGES;
             monoToggleButton.classList.toggle("is-off", !monochromeEnabled);
-            monoToggleButton.textContent = monochromeEnabled ? "モノクロ ON" : "モノクロ OFF";
             monoToggleButton.setAttribute("aria-pressed", String(monochromeEnabled));
             alignToggleButton.hidden = mode !== MODE_OVERLAY;
             alignToggleButton.classList.toggle("is-off", !alignmentEnabled);
-            alignToggleButton.textContent = alignmentEnabled ? "顔位置 ON" : "顔位置 OFF";
             alignToggleButton.setAttribute("aria-pressed", String(alignmentEnabled));
             overlayModeButton.classList.toggle("is-active", mode === MODE_OVERLAY);
             morphModeButton.classList.toggle("is-active", mode === MODE_MORPH);
