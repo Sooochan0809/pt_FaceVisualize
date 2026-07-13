@@ -80,6 +80,21 @@ import Delaunator from "https://cdn.jsdelivr.net/npm/delaunator@5/+esm";
             });
         }
 
+        function loadVideo(src) {
+            return new Promise((resolve, reject) => {
+                const video = document.createElement("video");
+                video.muted = true;
+                video.loop = true;
+                video.autoplay = true;
+                video.playsInline = true;
+                video.preload = "auto";
+                video.onloadeddata = () => resolve(video);
+                video.onerror = reject;
+                video.src = src;
+                video.load();
+            });
+        }
+
         function readFileAsDataUrl(file) {
             return new Promise((resolve, reject) => {
                 const reader = new FileReader();
@@ -110,15 +125,30 @@ import Delaunator from "https://cdn.jsdelivr.net/npm/delaunator@5/+esm";
             return faceLandmarkerPromise;
         }
 
-        async function makeFaceData(image) {
+        function getMediaSize(media) {
+            return {
+                width: media.videoWidth || media.naturalWidth || media.width || 1,
+                height: media.videoHeight || media.naturalHeight || media.height || 1
+            };
+        }
+
+        function createVideoFrameCanvas(video) {
+            const { width, height } = getMediaSize(video);
+            const canvas = document.createElement("canvas");
+            const ctx = prepareCanvas(canvas, width, height);
+            ctx.drawImage(video, 0, 0, width, height);
+            return canvas;
+        }
+
+        async function makeFaceData(media, includeMorph = true) {
             try {
                 const faceLandmarker = await getFaceLandmarker();
-                const width = image.naturalWidth || image.width || 1;
-                const height = image.naturalHeight || image.height || 1;
+                const source = includeMorph ? media : createVideoFrameCanvas(media);
+                const { width, height } = getMediaSize(source);
 
                 return {
-                    landmarks: detectFaceLandmarksFromSource(faceLandmarker, image, width, height),
-                    morph: makeMorphData(faceLandmarker, image)
+                    landmarks: detectFaceLandmarksFromSource(faceLandmarker, source, width, height),
+                    morph: includeMorph ? makeMorphData(faceLandmarker, media) : null
                 };
             } catch (error) {
                 console.warn("Face data preparation failed.", error);
@@ -191,19 +221,30 @@ import Delaunator from "https://cdn.jsdelivr.net/npm/delaunator@5/+esm";
         }
 
         async function makeLayer(file) {
-            const src = await readFileAsDataUrl(file);
-            const image = await loadImage(src);
-            const size = {
-                width: image.naturalWidth || image.width || 1,
-                height: image.naturalHeight || image.height || 1
-            };
-            const { landmarks, morph } = await makeFaceData(image);
+            const isVideo = file.type.startsWith("video/");
+            const objectUrl = isVideo ? URL.createObjectURL(file) : null;
+            const src = objectUrl || await readFileAsDataUrl(file);
+            let media;
+
+            try {
+                media = isVideo ? await loadVideo(src) : await loadImage(src);
+            } catch (error) {
+                if (objectUrl) URL.revokeObjectURL(objectUrl);
+                throw error;
+            }
+
+            const size = getMediaSize(media);
+            const { landmarks, morph } = await makeFaceData(media, !isVideo);
+            if (isVideo) media.play().catch(() => {});
 
             return {
                 id: createId(),
                 name: file.name,
                 src,
-                image,
+                image: media,
+                mediaType: isVideo ? "video" : "image",
+                objectUrl,
+                stageElement: null,
                 width: size.width,
                 height: size.height,
                 landmarks,
@@ -222,14 +263,16 @@ import Delaunator from "https://cdn.jsdelivr.net/npm/delaunator@5/+esm";
         }
 
         async function addFiles(fileList) {
-            const imageFiles = Array.from(fileList).filter((file) => file.type.startsWith("image/"));
+            const mediaFiles = Array.from(fileList).filter((file) => (
+                file.type.startsWith("image/") || file.type.startsWith("video/")
+            ));
             const slots = MAX_IMAGES - layers.length;
 
-            if (imageFiles.length > slots) {
-                alert(`画像は最大${MAX_IMAGES}枚まで追加できます。`);
+            if (mediaFiles.length > slots) {
+                alert(`画像・動画は合計${MAX_IMAGES}点まで追加できます。`);
             }
 
-            const selectedFiles = imageFiles.slice(0, slots);
+            const selectedFiles = mediaFiles.slice(0, slots);
 
             if (selectedFiles.length === 0) {
                 render();
@@ -316,7 +359,15 @@ import Delaunator from "https://cdn.jsdelivr.net/npm/delaunator@5/+esm";
             render();
         }
 
+        function disposeLayer(layer) {
+            if (!layer) return;
+            if (layer.mediaType === "video") layer.image.pause();
+            layer.stageElement?.remove();
+            if (layer.objectUrl) URL.revokeObjectURL(layer.objectUrl);
+        }
+
         function removeLayer(id) {
+            disposeLayer(layers.find((layer) => layer.id === id));
             layers = layers.filter((layer) => layer.id !== id);
             if (!layers.some((layer) => layer.id === alignmentReferenceId && layer.landmarks)) {
                 alignmentReferenceId = layers.find((layer) => layer.landmarks)?.id || null;
@@ -486,18 +537,32 @@ import Delaunator from "https://cdn.jsdelivr.net/npm/delaunator@5/+esm";
             stageImageArea.style.height = `${area.bottom - area.top}px`;
         }
 
-        function createStageImage(layer, transform) {
-            const image = document.createElement("img");
-            image.className = "stageLayer";
-            image.src = layer.src;
-            image.alt = layer.name;
-            image.style.width = `${layer.width}px`;
-            image.style.height = `${layer.height}px`;
-            image.style.opacity = layer.opacity;
-            image.style.transformOrigin = "0 0";
-            image.style.transform = `matrix(${transform.a}, ${transform.b}, ${transform.c}, ${transform.d}, ${transform.e}, ${transform.f})`;
-            image.classList.toggle("is-monochrome", monochromeEnabled);
-            return image;
+        function createStageMedia(layer, transform) {
+            let media = layer.stageElement;
+            if (!media) {
+                media = layer.mediaType === "video" ? layer.image : document.createElement("img");
+                media.className = "stageLayer";
+                media.dataset.layerId = layer.id;
+                if (layer.mediaType === "video") {
+                    media.muted = true;
+                    media.loop = true;
+                    media.autoplay = true;
+                    media.playsInline = true;
+                } else {
+                    media.src = layer.src;
+                    media.alt = layer.name;
+                }
+                layer.stageElement = media;
+            }
+
+            media.style.width = `${layer.width}px`;
+            media.style.height = `${layer.height}px`;
+            media.style.opacity = layer.opacity;
+            media.style.transformOrigin = "0 0";
+            media.style.transform = `matrix(${transform.a}, ${transform.b}, ${transform.c}, ${transform.d}, ${transform.e}, ${transform.f})`;
+            media.classList.toggle("is-monochrome", monochromeEnabled);
+            if (layer.mediaType === "video") media.play().catch(() => {});
+            return media;
         }
 
         function getMorphLayers() {
@@ -1181,9 +1246,8 @@ import Delaunator from "https://cdn.jsdelivr.net/npm/delaunator@5/+esm";
         }
 
         function renderStage() {
-            stage.querySelectorAll(".stageLayer").forEach((image) => image.remove());
-
             if (mode === MODE_MORPH) {
+                stage.querySelectorAll(".stageLayer").forEach((media) => media.remove());
                 stageImageArea.hidden = true;
                 morphCanvas.hidden = false;
                 morphCanvas.classList.toggle("is-monochrome", monochromeEnabled);
@@ -1195,8 +1259,12 @@ import Delaunator from "https://cdn.jsdelivr.net/npm/delaunator@5/+esm";
             morphCanvas.classList.toggle("is-monochrome", monochromeEnabled);
             const transforms = getAlignedTransforms();
             updateStageImageArea(transforms);
+            const activeLayerIds = new Set(layers.map((layer) => layer.id));
+            stage.querySelectorAll(".stageLayer").forEach((media) => {
+                if (!activeLayerIds.has(media.dataset.layerId)) media.remove();
+            });
             layers.slice().reverse().forEach((layer) => {
-                stage.appendChild(createStageImage(layer, transforms.get(layer.id)));
+                stage.appendChild(createStageMedia(layer, transforms.get(layer.id)));
             });
         }
 
@@ -1283,11 +1351,20 @@ import Delaunator from "https://cdn.jsdelivr.net/npm/delaunator@5/+esm";
             const thumb = document.createElement("div");
             thumb.className = "layerThumb";
 
-            const image = document.createElement("img");
-            image.src = layer.src;
-            image.alt = layer.name;
-            image.draggable = false;
-            thumb.appendChild(image);
+            const media = document.createElement(layer.mediaType === "video" ? "video" : "img");
+            media.src = layer.src;
+            media.setAttribute("aria-label", layer.name);
+            media.draggable = false;
+            if (layer.mediaType === "video") {
+                media.muted = true;
+                media.loop = true;
+                media.autoplay = true;
+                media.playsInline = true;
+                media.play().catch(() => {});
+            } else {
+                media.alt = layer.name;
+            }
+            thumb.appendChild(media);
 
             return thumb;
         }
@@ -1506,6 +1583,7 @@ import Delaunator from "https://cdn.jsdelivr.net/npm/delaunator@5/+esm";
         });
 
         clearButton.addEventListener("click", () => {
+            layers.forEach(disposeLayer);
             layers = [];
             alignmentReferenceId = null;
             render();

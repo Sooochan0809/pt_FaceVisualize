@@ -217,7 +217,8 @@
             display: none;
         }
 
-        img {
+        img,
+        video {
             display: block;
         }
 
@@ -410,7 +411,8 @@
             background: #f8f9fa;
         }
 
-        .layerThumb img {
+        .layerThumb img,
+        .layerThumb video {
             width: 100%;
             height: 100%;
             object-fit: contain;
@@ -593,7 +595,7 @@
             </section>
         </main>
 
-        <aside class="sidePanel" aria-label="インポート画像">
+        <aside class="sidePanel" aria-label="インポート素材">
             <header class="sideHeader">
                 <div class="modeTabs" role="tablist" aria-label="機能選択">
                     <button class="modeTab is-active" id="overlayModeButton" type="button" role="tab"
@@ -605,9 +607,9 @@
             <div class="layerList" id="layerList">
                 <div class="layers" id="layers"></div>
                 <div class="addLayerSlot">
-                    <label class="fileButton" aria-label="画像を追加">
+                    <label class="fileButton" aria-label="画像・動画を追加">
                         <img src="icon-plus.png" alt="">
-                        <input id="fileInput" type="file" accept="image/*" multiple>
+                        <input id="fileInput" type="file" accept="image/*,video/*" multiple>
                     </label>
                 </div>
             </div>
@@ -626,7 +628,7 @@
             </div>
         </aside>
     </div>
-    <script type="module" src="app.js?v=20260714-7"></script>
+    <script type="module" src="app.js?v=20260714-8"></script>
 </body>
 
 </html>
