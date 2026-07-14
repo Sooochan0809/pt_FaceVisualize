@@ -253,6 +253,31 @@
             border-bottom: 1px solid var(--line);
         }
 
+        .randomOpacityTotalControl {
+            display: grid;
+            grid-template-columns: auto 72px auto;
+            gap: 6px;
+            align-items: center;
+            margin-top: 10px;
+            color: var(--muted);
+            font-size: 0.76rem;
+        }
+
+        .randomOpacityTotalControl input {
+            min-width: 0;
+            width: 72px;
+            height: 28px;
+            padding: 0 5px;
+            border: 1px solid var(--line);
+            border-radius: 6px;
+            background: var(--panel);
+            color: var(--ink);
+        }
+
+        .randomOpacityTotalControl[hidden] {
+            display: none;
+        }
+
         .modeTabs {
             display: grid;
             grid-template-columns: 1fr 1fr;
@@ -603,6 +628,12 @@
                     <button class="modeTab" id="morphModeButton" type="button" role="tab"
                         aria-selected="false">モーフィング</button>
                 </div>
+                <label class="randomOpacityTotalControl" id="randomOpacityTotalControl" hidden>
+                    <span>不透明度合算</span>
+                    <input id="randomOpacityTotalInput" type="number" min="0" max="700" step="0.1"
+                        inputmode="decimal" placeholder="自由" aria-label="ランダム不透明度の合算値">
+                    <span>％</span>
+                </label>
             </header>
             <div class="layerList" id="layerList">
                 <div class="layers" id="layers"></div>
@@ -628,7 +659,7 @@
             </div>
         </aside>
     </div>
-    <script type="module" src="app.js?v=20260714-8"></script>
+    <script type="module" src="app.js?v=20260715-3"></script>
 </body>
 
 </html>

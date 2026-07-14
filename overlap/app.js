@@ -43,6 +43,8 @@ import Delaunator from "https://cdn.jsdelivr.net/npm/delaunator@5/+esm";
         const addLayerSlot = document.querySelector(".addLayerSlot");
         const overlayModeButton = document.getElementById("overlayModeButton");
         const morphModeButton = document.getElementById("morphModeButton");
+        const randomOpacityTotalControl = document.getElementById("randomOpacityTotalControl");
+        const randomOpacityTotalInput = document.getElementById("randomOpacityTotalInput");
 
         let layers = [];
         let draggedId = null;
@@ -56,6 +58,7 @@ import Delaunator from "https://cdn.jsdelivr.net/npm/delaunator@5/+esm";
         let hierarchyShuffleEnabled = false;
         let hierarchyShuffleInterval = DEFAULT_HIERARCHY_SHUFFLE_INTERVAL;
         let nextHierarchyShuffleTime = 0;
+        let randomOpacityTotal = null;
         let cropEnabled = false;
         let cropDrag = null;
         let activeCropRect = null;
@@ -292,6 +295,7 @@ import Delaunator from "https://cdn.jsdelivr.net/npm/delaunator@5/+esm";
                 if (layer.id !== id) return layer;
                 return { ...layer, opacity: Number(value) / 100 };
             });
+            applyRandomOpacityTotal();
             renderStage();
             renderLayerOutputs();
         }
@@ -303,6 +307,91 @@ import Delaunator from "https://cdn.jsdelivr.net/npm/delaunator@5/+esm";
             });
             renderStage();
             renderLayerOutputs();
+        }
+
+        function getRandomOpacityLayers() {
+            if (mode !== MODE_OVERLAY) return [];
+            return layers.filter((layer) => layer.autoRandom);
+        }
+
+        function getRandomOpacityTotalRange(randomLayers = getRandomOpacityLayers()) {
+            return randomLayers.reduce((range, layer) => ({
+                min: range.min + layer.randomOpacityMin,
+                max: range.max + layer.randomOpacityMax
+            }), { min: 0, max: 0 });
+        }
+
+        function distributeOpacityTotal(randomLayers, total, randomize = false) {
+            const range = getRandomOpacityTotalRange(randomLayers);
+            const normalizedTotal = clamp(total, range.min, range.max);
+            const values = new Map(randomLayers.map((layer) => [
+                layer.id,
+                randomize
+                    ? getRandomValue(layer.randomOpacityMin, layer.randomOpacityMax)
+                    : clamp(layer.opacity, layer.randomOpacityMin, layer.randomOpacityMax)
+            ]));
+            const currentTotal = Array.from(values.values()).reduce((sum, value) => sum + value, 0);
+            const difference = normalizedTotal - currentTotal;
+
+            if (Math.abs(difference) > 1e-8) {
+                const increasing = difference > 0;
+                const capacities = randomLayers.map((layer) => {
+                    const value = values.get(layer.id);
+                    return increasing
+                        ? layer.randomOpacityMax - value
+                        : value - layer.randomOpacityMin;
+                });
+                const capacityTotal = capacities.reduce((sum, capacity) => sum + capacity, 0);
+                if (capacityTotal > 0) {
+                    randomLayers.forEach((layer, index) => {
+                        const share = Math.abs(difference) * capacities[index] / capacityTotal;
+                        values.set(layer.id, values.get(layer.id) + (increasing ? share : -share));
+                    });
+                }
+            }
+
+            return { total: normalizedTotal, values };
+        }
+
+        function applyRandomOpacityTotal() {
+            const randomLayers = getRandomOpacityLayers();
+            if (randomOpacityTotal === null || randomLayers.length === 0) return;
+
+            const current = distributeOpacityTotal(randomLayers, randomOpacityTotal);
+            const targets = distributeOpacityTotal(randomLayers, current.total, true);
+            randomOpacityTotal = current.total;
+            layers = layers.map((layer) => {
+                if (!current.values.has(layer.id)) return layer;
+                return {
+                    ...layer,
+                    opacity: current.values.get(layer.id),
+                    randomTargets: {
+                        ...layer.randomTargets,
+                        opacity: targets.values.get(layer.id)
+                    }
+                };
+            });
+        }
+
+        function setRandomOpacityTotal(value) {
+            if (String(value).trim() === "") {
+                randomOpacityTotal = null;
+                layers = layers.map((layer) => ({
+                    ...layer,
+                    randomTargets: {
+                        ...layer.randomTargets,
+                        opacity: layer.opacity
+                    }
+                }));
+                render();
+                return;
+            }
+
+            const percentage = Number(value);
+            if (!Number.isFinite(percentage)) return;
+            randomOpacityTotal = clamp(percentage, 0, MAX_IMAGES * 100) / 100;
+            applyRandomOpacityTotal();
+            render();
         }
 
         function setAutoRandom(id, selection) {
@@ -330,6 +419,7 @@ import Delaunator from "https://cdn.jsdelivr.net/npm/delaunator@5/+esm";
                     }
                 };
             });
+            applyRandomOpacityTotal();
             render();
         }
 
@@ -356,6 +446,7 @@ import Delaunator from "https://cdn.jsdelivr.net/npm/delaunator@5/+esm";
                     }
                 };
             });
+            applyRandomOpacityTotal();
             render();
         }
 
@@ -372,6 +463,7 @@ import Delaunator from "https://cdn.jsdelivr.net/npm/delaunator@5/+esm";
             if (!layers.some((layer) => layer.id === alignmentReferenceId && layer.landmarks)) {
                 alignmentReferenceId = layers.find((layer) => layer.landmarks)?.id || null;
             }
+            applyRandomOpacityTotal();
             render();
         }
 
@@ -627,6 +719,32 @@ import Delaunator from "https://cdn.jsdelivr.net/npm/delaunator@5/+esm";
             const deltaSeconds = Math.min((timestamp - lastAutoRandomTime) / 1000, 0.08);
             lastAutoRandomTime = timestamp;
 
+            const totalRandomLayers = randomOpacityTotal === null ? [] : getRandomOpacityLayers();
+            let coordinatedOpacityTargets = null;
+            if (totalRandomLayers.length > 0) {
+                const range = getRandomOpacityTotalRange(totalRandomLayers);
+                randomOpacityTotal = clamp(randomOpacityTotal, range.min, range.max);
+                const existingTargets = new Map(totalRandomLayers.map((layer) => [
+                    layer.id,
+                    layer.randomTargets?.opacity
+                ]));
+                const targetsValid = totalRandomLayers.every((layer) => {
+                    const target = existingTargets.get(layer.id);
+                    return typeof target === "number"
+                        && target >= layer.randomOpacityMin - 1e-8
+                        && target <= layer.randomOpacityMax + 1e-8;
+                }) && Math.abs(
+                    Array.from(existingTargets.values()).reduce((sum, value) => sum + value, 0)
+                    - randomOpacityTotal
+                ) < 1e-6;
+                const allReached = targetsValid && totalRandomLayers.every((layer) => (
+                    Math.abs(layer.opacity - existingTargets.get(layer.id)) <= 0.01
+                ));
+                coordinatedOpacityTargets = !targetsValid || allReached
+                    ? distributeOpacityTotal(totalRandomLayers, randomOpacityTotal, true).values
+                    : existingTargets;
+            }
+
             let changed = false;
             layers = layers.map((layer) => {
                 if (!layer.autoRandom) return layer;
@@ -635,8 +753,11 @@ import Delaunator from "https://cdn.jsdelivr.net/npm/delaunator@5/+esm";
                 if (!config) return layer;
 
                 const currentValue = layer[config.valueKey];
-                let targetValue = layer.randomTargets?.[config.targetKey];
-                if (typeof targetValue !== "number" || Math.abs(currentValue - targetValue) <= config.threshold) {
+                let targetValue = coordinatedOpacityTargets?.has(layer.id)
+                    ? coordinatedOpacityTargets.get(layer.id)
+                    : layer.randomTargets?.[config.targetKey];
+                if (!coordinatedOpacityTargets
+                    && (typeof targetValue !== "number" || Math.abs(currentValue - targetValue) <= config.threshold)) {
                     targetValue = getRandomValue(config.min, config.max);
                 }
 
@@ -1542,6 +1663,8 @@ import Delaunator from "https://cdn.jsdelivr.net/npm/delaunator@5/+esm";
         }
 
         function renderStatus() {
+            const randomOpacityLayers = getRandomOpacityLayers();
+            const randomOpacityRange = getRandomOpacityTotalRange(randomOpacityLayers);
             updateCropInputLimits();
             status.textContent = `${layers.length} / ${MAX_IMAGES}`;
             clearButton.disabled = layers.length === 0;
@@ -1556,6 +1679,12 @@ import Delaunator from "https://cdn.jsdelivr.net/npm/delaunator@5/+esm";
             hierarchyToggleButton.classList.toggle("is-off", !hierarchyShuffleEnabled);
             hierarchyToggleButton.setAttribute("aria-pressed", String(hierarchyShuffleEnabled));
             hierarchyIntervalControl.hidden = mode !== MODE_OVERLAY || !hierarchyShuffleEnabled;
+            randomOpacityTotalControl.hidden = mode !== MODE_OVERLAY || randomOpacityLayers.length === 0;
+            randomOpacityTotalInput.min = String(Math.round(randomOpacityRange.min * 1000) / 10);
+            randomOpacityTotalInput.max = String(Math.round(randomOpacityRange.max * 1000) / 10);
+            randomOpacityTotalInput.value = randomOpacityTotal === null
+                ? ""
+                : String(Math.round(randomOpacityTotal * 1000) / 10);
             overlayModeButton.classList.toggle("is-active", mode === MODE_OVERLAY);
             morphModeButton.classList.toggle("is-active", mode === MODE_MORPH);
             overlayModeButton.setAttribute("aria-selected", String(mode === MODE_OVERLAY));
@@ -1586,6 +1715,7 @@ import Delaunator from "https://cdn.jsdelivr.net/npm/delaunator@5/+esm";
             layers.forEach(disposeLayer);
             layers = [];
             alignmentReferenceId = null;
+            randomOpacityTotal = null;
             render();
         });
 
@@ -1616,6 +1746,10 @@ import Delaunator from "https://cdn.jsdelivr.net/npm/delaunator@5/+esm";
 
         hierarchyIntervalInput.addEventListener("change", () => {
             hierarchyIntervalInput.value = String(hierarchyShuffleInterval / 1000);
+        });
+
+        randomOpacityTotalInput.addEventListener("change", () => {
+            setRandomOpacityTotal(randomOpacityTotalInput.value);
         });
 
         cropToggleButton.addEventListener("click", () => {
