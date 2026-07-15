@@ -48,10 +48,6 @@
             font-size: 16px;
         }
 
-        code {
-            font-size: 12px;
-        }
-
         .grid {
             margin-top: 28px;
         }
@@ -182,7 +178,7 @@
 <body>
     <h1>Canvas Popup Display Manager</h1>
     <div class="grid">
-        <section class="panel wide">
+        <section class="panel">
             <h2>Canvas</h2>
             <div id="sourceList"></div>
             <div class="buttons">
@@ -224,15 +220,10 @@
             <div id="displayList"></div>
         </section>
 
-        <section class="panel wide">
+        <section class="panel">
             <h2>ログ</h2>
-            <div class="grid">
-                <div id="assignmentList"></div>
-                <div class="panel">
-
-                    <div id="log"></div>
-                </div>
-            </div>
+            <div id="assignmentList"></div>
+            <div id="log"></div>
         </section>
     </div>
 
@@ -242,12 +233,15 @@
 
             const SOURCE_COUNT = 6;
             const VIEWER_COUNT = 4;
+            const DEFAULT_CANVAS_ID = "canvas";
+            const viewerIndexes = Array.from({ length: VIEWER_COUNT }, (_, index) => index);
 
             const sources = Array.from({ length: SOURCE_COUNT }, (_, index) => ({
                 id: `source-${index + 1}`,
                 name: `source${index + 1}`,
-                canvasId: "canvas"
+                canvasId: DEFAULT_CANVAS_ID
             }));
+            const sourceById = new Map(sources.map(source => [source.id, source]));
 
             const registry = new Map();
             const viewers = Array(VIEWER_COUNT).fill(null);
@@ -261,15 +255,20 @@
             let timer = null;
             let detectedScreens = [];
 
-            const sourceList = document.querySelector("#sourceList");
-            const displayList = document.querySelector("#displayList");
-            const assignmentList = document.querySelector("#assignmentList");
-            const logElement = document.querySelector("#log");
+            const elements = {
+                sourceList: document.querySelector("#sourceList"),
+                displayList: document.querySelector("#displayList"),
+                assignmentList: document.querySelector("#assignmentList"),
+                log: document.querySelector("#log"),
+                intervalSeconds: document.querySelector("#intervalSeconds"),
+                fadeSeconds: document.querySelector("#fadeSeconds"),
+                streamFps: document.querySelector("#streamFps")
+            };
 
             function log(message) {
                 const time = new Date().toLocaleTimeString("ja-JP");
-                logElement.textContent += `[${time}] ${message}\n`;
-                logElement.scrollTop = logElement.scrollHeight;
+                elements.log.textContent += `[${time}] ${message}\n`;
+                elements.log.scrollTop = elements.log.scrollHeight;
             }
 
             function sleep(ms) {
@@ -287,11 +286,16 @@
                 return copy;
             }
 
-            function settings() {
+            function numberInRange(input, fallback, min, max = Infinity) {
+                const value = Number(input.value);
+                return Number.isFinite(value) ? Math.min(max, Math.max(min, value)) : fallback;
+            }
+
+            function getSettings() {
                 return {
-                    intervalMs: Math.max(2000, Number(document.querySelector("#intervalSeconds").value) * 1000),
-                    fadeMs: Math.max(100, Number(document.querySelector("#fadeSeconds").value) * 1000),
-                    fps: Math.max(1, Math.min(60, Number(document.querySelector("#streamFps").value)))
+                    intervalMs: numberInRange(elements.intervalSeconds, 20, 2) * 1000,
+                    fadeMs: numberInRange(elements.fadeSeconds, 3, 0.1) * 1000,
+                    fps: numberInRange(elements.streamFps, 30, 1, 60)
                 };
             }
 
@@ -309,10 +313,10 @@
             window.registerCanvasSource = function registerCanvasSource(
                 sourceId,
                 popupWindow,
-                canvasId = "resultCanvas",
+                canvasId = DEFAULT_CANVAS_ID,
                 name = sourceId
             ) {
-                const source = sources.find(item => item.id === sourceId);
+                const source = sourceById.get(sourceId);
 
                 if (!source) throw new Error(`不明なsourceIdです: ${sourceId}`);
                 if (!popupWindow || popupWindow.closed) throw new Error(`${sourceId}のポップアップがありません`);
@@ -336,45 +340,59 @@
                 renderSources();
             };
 
+            function createSourceInput(source, field, value, label) {
+                const input = document.createElement("input");
+                input.value = value;
+                input.dataset.sourceId = source.id;
+                input.dataset.field = field;
+                input.setAttribute("aria-label", `${source.id}の${label}`);
+                return input;
+            }
+
             function renderSources() {
-                sourceList.innerHTML = "";
+                const fragment = document.createDocumentFragment();
 
                 for (const source of sources) {
                     const ready = Boolean(canvasOf(source.id));
                     const row = document.createElement("div");
+                    const id = document.createElement("strong");
+                    const status = document.createElement("span");
 
                     row.className = "source-row";
-                    row.innerHTML = `
-            <strong>${source.id}</strong>
-            <input data-name="${source.id}" value="${source.name}">
-            <input data-canvas="${source.id}" value="${source.canvasId}">
-            <span data-source-status="${source.id}" class="status ${ready ? "ready" : ""}">${ready ? "接続済み" : "未登録"}</span>
-          `;
+                    id.textContent = source.id;
+                    status.dataset.sourceStatus = source.id;
+                    status.className = `status${ready ? " ready" : ""}`;
+                    status.textContent = ready ? "接続済み" : "未登録";
 
-                    sourceList.append(row);
+                    row.append(
+                        id,
+                        createSourceInput(source, "name", source.name, "表示名"),
+                        createSourceInput(source, "canvas", source.canvasId, "Canvas ID"),
+                        status
+                    );
+                    fragment.append(row);
                 }
 
-                document.querySelectorAll("[data-name]").forEach(input => {
-                    input.addEventListener("change", event => {
-                        const source = sources.find(item => item.id === event.target.dataset.name);
-                        if (source) source.name = event.target.value.trim() || source.id;
-                        renderAssignments();
-                    });
-                });
+                elements.sourceList.replaceChildren(fragment);
+            }
 
-                document.querySelectorAll("[data-canvas]").forEach(input => {
-                    input.addEventListener("change", event => {
-                        const source = sources.find(item => item.id === event.target.dataset.canvas);
-                        if (!source) return;
+            function handleSourceChange(event) {
+                const { sourceId, field } = event.target.dataset;
+                const source = sourceById.get(sourceId);
+                if (!source) return;
 
-                        source.canvasId = event.target.value.trim() || "resultCanvas";
+                if (field === "name") {
+                    source.name = event.target.value.trim() || source.id;
+                    renderAssignments();
+                    return;
+                }
 
-                        const entry = registry.get(source.id);
-                        if (entry) entry.canvasId = source.canvasId;
-
-                        renderSources();
-                    });
-                });
+                if (field === "canvas") {
+                    source.canvasId = event.target.value.trim() || DEFAULT_CANVAS_ID;
+                    const entry = registry.get(source.id);
+                    if (entry) entry.canvasId = source.canvasId;
+                    renderSources();
+                }
             }
 
             function refreshSourceStatuses() {
@@ -389,20 +407,22 @@
             }
 
             function renderAssignments() {
-                assignmentList.innerHTML = "";
+                const fragment = document.createDocumentFragment();
 
                 assignments.forEach((sourceId, index) => {
-                    const source = sources.find(item => item.id === sourceId);
+                    const source = sourceById.get(sourceId);
                     const row = document.createElement("div");
+                    const viewer = document.createElement("strong");
+                    const assignment = document.createElement("span");
 
                     row.className = "assignment-row";
-                    row.innerHTML = `
-            <strong>Viewer ${index + 1}</strong>
-            <span>${source ? source.name : "未割り当て"}</span>
-          `;
-
-                    assignmentList.append(row);
+                    viewer.textContent = `Viewer ${index + 1}`;
+                    assignment.textContent = source?.name ?? "未割り当て";
+                    row.append(viewer, assignment);
+                    fragment.append(row);
                 });
+
+                elements.assignmentList.replaceChildren(fragment);
             }
 
             function resizeViewerCanvas(viewerState, canvas) {
@@ -469,16 +489,7 @@
                 viewerState.window.requestAnimationFrame(draw);
             }
 
-            function viewerGeometry(index, screen = null) {
-                if (!screen) {
-                    return {
-                        left: 40 + index * 60,
-                        top: 40 + index * 50,
-                        width: 960,
-                        height: 540
-                    };
-                }
-
+            function viewerGeometry(screen) {
                 return {
                     left: screen.availLeft ?? screen.left,
                     top: screen.availTop ?? screen.top,
@@ -487,8 +498,8 @@
                 };
             }
 
-            function createViewer(index, targetScreen = null) {
-                const geometry = viewerGeometry(index, targetScreen);
+            function createViewer(index, targetScreen) {
+                const geometry = viewerGeometry(targetScreen);
                 const viewerWindow = window.open(
                     "",
                     `canvas-viewer-${index + 1}`,
@@ -497,27 +508,25 @@
 
                 if (!viewerWindow) throw new Error(`Viewer ${index + 1}を開けませんでした`);
 
-                if (targetScreen) {
-                    viewerWindow.moveTo(geometry.left, geometry.top);
-                    viewerWindow.resizeTo(geometry.width, geometry.height);
+                viewerWindow.moveTo(geometry.left, geometry.top);
+                viewerWindow.resizeTo(geometry.width, geometry.height);
 
-                    viewerWindow.setTimeout(() => {
-                        if (viewerWindow.closed) return;
+                viewerWindow.setTimeout(() => {
+                    if (viewerWindow.closed) return;
 
-                        const screenLeft = targetScreen.left ?? geometry.left;
-                        const screenTop = targetScreen.top ?? geometry.top;
-                        const screenRight = screenLeft + targetScreen.width;
-                        const screenBottom = screenTop + targetScreen.height;
-                        const isOnTarget = viewerWindow.screenX >= screenLeft
-                            && viewerWindow.screenX < screenRight
-                            && viewerWindow.screenY >= screenTop
-                            && viewerWindow.screenY < screenBottom;
+                    const screenLeft = targetScreen.left ?? geometry.left;
+                    const screenTop = targetScreen.top ?? geometry.top;
+                    const screenRight = screenLeft + targetScreen.width;
+                    const screenBottom = screenTop + targetScreen.height;
+                    const isOnTarget = viewerWindow.screenX >= screenLeft
+                        && viewerWindow.screenX < screenRight
+                        && viewerWindow.screenY >= screenTop
+                        && viewerWindow.screenY < screenBottom;
 
-                        if (!isOnTarget) {
-                            log(`Viewer ${index + 1}の移動がブラウザに拒否されました。画面管理権限を確認してください`);
-                        }
-                    }, 400);
-                }
+                    if (!isOnTarget) {
+                        log(`Viewer ${index + 1}の移動がブラウザに拒否されました。画面管理権限を確認してください`);
+                    }
+                }, 400);
 
                 viewerWindow.document.title = `Viewer ${index + 1}`;
                 viewerWindow.document.body.style.cssText = "margin:0;overflow:hidden;background:#000";
@@ -556,34 +565,30 @@
 
                 const assignedSource = assignments[index];
                 if (assignedSource && canvasOf(assignedSource)) {
-                    startMirror(viewerState, 0, assignedSource, settings().fps);
+                    startMirror(viewerState, 0, assignedSource, getSettings().fps);
                     layers[0].classList.add("visible");
                 }
 
-                log(targetScreen
-                    ? `Viewer ${index + 1}を${screenLabel(targetScreen, detectedScreens.indexOf(targetScreen))}へ開きました`
-                    : `Viewer ${index + 1}を開きました`
-                );
+                log(`Viewer ${index + 1}を${screenLabel(targetScreen, detectedScreens.indexOf(targetScreen))}へ開きました`);
             }
 
             function screenLabel(screen, index) {
                 const name = screen.label?.trim() || `Display ${index + 1}`;
-                const type = screen.isPrimary ? "メイン" : "拡張";
-                return `${name}（${type}・${screen.width}×${screen.height}）`;
+                return `${name}（${screen.width}×${screen.height}）`;
             }
 
             function renderDisplayChoices() {
-                displayList.innerHTML = "";
-
                 if (!detectedScreens.length) {
                     const message = document.createElement("p");
                     message.className = "status";
                     message.textContent = "利用できる拡張ディスプレイが見つかりませんでした。";
-                    displayList.append(message);
+                    elements.displayList.replaceChildren(message);
                     return;
                 }
 
-                screenSelections.forEach((selectedScreen, viewerIndex) => {
+                const fragment = document.createDocumentFragment();
+
+                screenSelections.forEach((selectedScreenIndex, viewerIndex) => {
                     const row = document.createElement("div");
                     const title = document.createElement("strong");
                     const select = document.createElement("select");
@@ -591,7 +596,7 @@
 
                     row.className = "display-row";
                     title.textContent = `Viewer ${viewerIndex + 1}`;
-                    select.dataset.displayViewer = String(viewerIndex);
+                    select.dataset.viewerIndex = String(viewerIndex);
                     select.setAttribute("aria-label", `Viewer ${viewerIndex + 1}の配置先`);
 
                     const emptyOption = document.createElement("option");
@@ -606,22 +611,33 @@
                         select.append(option);
                     });
 
-                    select.value = selectedScreen;
-                    select.addEventListener("change", event => {
-                        screenSelections[viewerIndex] = event.target.value;
-                    });
+                    select.value = selectedScreenIndex;
 
                     placeButton.type = "button";
                     placeButton.textContent = "配置";
-                    placeButton.addEventListener("click", () => {
-                        try { placeViewer(viewerIndex); } catch (error) {
-                            log(`Viewer ${viewerIndex + 1}の配置に失敗しました: ${error.message}`);
-                        }
-                    });
+                    placeButton.dataset.viewerIndex = String(viewerIndex);
 
                     row.append(title, select, placeButton);
-                    displayList.append(row);
+                    fragment.append(row);
                 });
+
+                elements.displayList.replaceChildren(fragment);
+            }
+
+            function handleDisplayChange(event) {
+                if (event.target.tagName !== "SELECT") return;
+                screenSelections[Number(event.target.dataset.viewerIndex)] = event.target.value;
+            }
+
+            function handleDisplayClick(event) {
+                if (event.target.tagName !== "BUTTON") return;
+
+                const viewerIndex = Number(event.target.dataset.viewerIndex);
+                try {
+                    placeViewer(viewerIndex);
+                } catch (error) {
+                    log(`Viewer ${viewerIndex + 1}の配置に失敗しました: ${error.message}`);
+                }
             }
 
             async function detectDisplays() {
@@ -672,8 +688,12 @@
                 createViewer(viewerIndex, screen);
             }
 
+            function availableSources() {
+                return sources.filter(source => canvasOf(source.id));
+            }
+
             function assertReady() {
-                if (sources.filter(source => canvasOf(source.id)).length < VIEWER_COUNT) {
+                if (availableSources().length < VIEWER_COUNT) {
                     throw new Error("利用可能なCanvasが4件未満です");
                 }
 
@@ -685,7 +705,7 @@
             }
 
             function initialAssignments() {
-                return shuffle(sources.filter(source => canvasOf(source.id)))
+                return shuffle(availableSources())
                     .sort((a, b) => usageCount[a.id] - usageCount[b.id])
                     .slice(0, VIEWER_COUNT)
                     .map(source => source.id);
@@ -699,7 +719,7 @@
 
                 if (inactive.length < 2) throw new Error("非表示中のCanvasが2件必要です");
 
-                const viewerIndexes = shuffle([0, 1, 2, 3])
+                const changingViewerIndexes = shuffle(viewerIndexes)
                     .sort((a, b) => lastChangedAt[a] - lastChangedAt[b])
                     .slice(0, 2);
 
@@ -707,7 +727,7 @@
                     .sort((a, b) => usageCount[a.id] - usageCount[b.id])
                     .slice(0, 2);
 
-                return viewerIndexes.map((viewerIndex, index) => ({
+                return changingViewerIndexes.map((viewerIndex, index) => ({
                     viewerIndex,
                     sourceId: incoming[index].id
                 }));
@@ -718,7 +738,7 @@
                 switching = true;
 
                 try {
-                    const { fadeMs, fps } = settings();
+                    const { fadeMs, fps } = getSettings();
 
                     const prepared = changes.map(change => {
                         const viewerState = viewers[change.viewerIndex];
@@ -793,7 +813,7 @@
                     } finally {
                         scheduleNext();
                     }
-                }, settings().intervalMs);
+                }, getSettings().intervalMs);
             }
 
             async function start() {
@@ -801,12 +821,17 @@
 
                 running = true;
 
-                if (assignments.some(sourceId => !sourceId)) {
-                    await initialize();
-                }
+                try {
+                    if (assignments.some(sourceId => !sourceId)) {
+                        await initialize();
+                    }
 
-                scheduleNext();
-                log("自動切り替えを開始しました");
+                    scheduleNext();
+                    log("自動切り替えを開始しました");
+                } catch (error) {
+                    running = false;
+                    throw error;
+                }
             }
 
             function stop() {
@@ -816,22 +841,23 @@
                 log("停止しました");
             }
 
+            async function runAction(action) {
+                try {
+                    await action();
+                } catch (error) {
+                    log(error.message);
+                }
+            }
+
+            elements.sourceList.addEventListener("change", handleSourceChange);
+            elements.displayList.addEventListener("change", handleDisplayChange);
+            elements.displayList.addEventListener("click", handleDisplayClick);
+
             document.querySelector("#refreshSources").addEventListener("click", refreshSourceStatuses);
-
             document.querySelector("#detectDisplays").addEventListener("click", detectDisplays);
-
-            document.querySelector("#initialize").addEventListener("click", async () => {
-                try { await initialize(); } catch (error) { log(error.message); }
-            });
-
-            document.querySelector("#start").addEventListener("click", async () => {
-                try { await start(); } catch (error) { running = false; log(error.message); }
-            });
-
-            document.querySelector("#next").addEventListener("click", async () => {
-                try { await next(); } catch (error) { log(error.message); }
-            });
-
+            document.querySelector("#initialize").addEventListener("click", () => runAction(initialize));
+            document.querySelector("#start").addEventListener("click", () => runAction(start));
+            document.querySelector("#next").addEventListener("click", () => runAction(next));
             document.querySelector("#stop").addEventListener("click", stop);
 
             setInterval(refreshSourceStatuses, 1500);
