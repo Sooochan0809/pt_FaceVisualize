@@ -2,12 +2,15 @@ import Delaunator from "https://cdn.jsdelivr.net/npm/delaunator@5/+esm";
 
         const MAX_IMAGES = 7;
         const DEFAULT_OPACITY = 0.1;
+        const DEFAULT_RANDOM_OPACITY_MIN = 0;
+        const DEFAULT_RANDOM_OPACITY_MAX = 0.5;
         const MODE_OVERLAY = "overlay";
         const MODE_MORPH = "morph";
         const RANDOM_OFF = "off";
         const RANDOM_OPACITY = "opacity";
         const RANDOM_MORPH = "morph";
         const DEFAULT_HIERARCHY_SHUFFLE_INTERVAL = 3000;
+        const HIERARCHY_CROSSFADE_DURATION = 10000;
         const MORPH_WIDTH = 600;
         const MORPH_HEIGHT = 800;
         const MORPH_RATIO = MORPH_WIDTH / MORPH_HEIGHT;
@@ -47,6 +50,7 @@ import Delaunator from "https://cdn.jsdelivr.net/npm/delaunator@5/+esm";
         const randomOpacityTotalInput = document.getElementById("randomOpacityTotalInput");
 
         let layers = [];
+        let layerOpacityBounds = [];
         let draggedId = null;
         let faceLandmarkerPromise = null;
         let alignmentEnabled = true;
@@ -256,13 +260,41 @@ import Delaunator from "https://cdn.jsdelivr.net/npm/delaunator@5/+esm";
                 opacity: DEFAULT_OPACITY,
                 autoRandom: false,
                 autoRandomType: RANDOM_OPACITY,
-                randomOpacityMin: 0,
-                randomOpacityMax: 0.5,
+                randomOpacityMin: DEFAULT_RANDOM_OPACITY_MIN,
+                randomOpacityMax: DEFAULT_RANDOM_OPACITY_MAX,
                 randomTargets: {
                     opacity: DEFAULT_OPACITY,
                     morphWeight: 100
                 }
             };
+        }
+
+        function getLayerOpacityBounds(index) {
+            if (!layerOpacityBounds[index]) {
+                layerOpacityBounds[index] = {
+                    min: DEFAULT_RANDOM_OPACITY_MIN,
+                    max: DEFAULT_RANDOM_OPACITY_MAX
+                };
+            }
+            return layerOpacityBounds[index];
+        }
+
+        function applyLayerOpacityBounds() {
+            layers = layers.map((layer, index) => {
+                const bounds = getLayerOpacityBounds(index);
+                const opacity = clamp(layer.opacity, bounds.min, bounds.max);
+                return {
+                    ...layer,
+                    opacity,
+                    randomOpacityMin: bounds.min,
+                    randomOpacityMax: bounds.max,
+                    randomTargets: {
+                        ...layer.randomTargets,
+                        opacity: clamp(layer.randomTargets?.opacity ?? opacity, bounds.min, bounds.max)
+                    }
+                };
+            });
+            layerOpacityBounds.length = layers.length;
         }
 
         async function addFiles(fileList) {
@@ -287,6 +319,7 @@ import Delaunator from "https://cdn.jsdelivr.net/npm/delaunator@5/+esm";
                 alignmentReferenceId = nextLayers.find((layer) => layer.landmarks)?.id || null;
             }
             layers = [...nextLayers, ...layers];
+            applyLayerOpacityBounds();
             render();
         }
 
@@ -432,6 +465,10 @@ import Delaunator from "https://cdn.jsdelivr.net/npm/delaunator@5/+esm";
             max = clamp(max, 0, 100) / 100;
             if (min > max) [min, max] = [max, min];
 
+            const layerIndex = layers.findIndex((layer) => layer.id === id);
+            if (layerIndex === -1) return;
+            layerOpacityBounds[layerIndex] = { min, max };
+
             layers = layers.map((layer) => {
                 if (layer.id !== id) return layer;
                 const opacity = clamp(layer.opacity, min, max);
@@ -460,6 +497,7 @@ import Delaunator from "https://cdn.jsdelivr.net/npm/delaunator@5/+esm";
         function removeLayer(id) {
             disposeLayer(layers.find((layer) => layer.id === id));
             layers = layers.filter((layer) => layer.id !== id);
+            applyLayerOpacityBounds();
             if (!layers.some((layer) => layer.id === alignmentReferenceId && layer.landmarks)) {
                 alignmentReferenceId = layers.find((layer) => layer.landmarks)?.id || null;
             }
@@ -477,8 +515,11 @@ import Delaunator from "https://cdn.jsdelivr.net/npm/delaunator@5/+esm";
             const next = [...layers];
             const [draggedLayer] = next.splice(draggedIndex, 1);
             next.splice(targetIndex, 0, draggedLayer);
+            const hierarchySnapshot = mode === MODE_OVERLAY ? createHierarchySnapshot() : null;
             layers = next;
+            applyLayerOpacityBounds();
             render();
+            crossfadeHierarchy(hierarchySnapshot);
         }
 
         function averagePoint(points) {
@@ -706,7 +747,61 @@ import Delaunator from "https://cdn.jsdelivr.net/npm/delaunator@5/+esm";
             if (secondIndex >= firstIndex) secondIndex += 1;
 
             [layers[firstIndex], layers[secondIndex]] = [layers[secondIndex], layers[firstIndex]];
+            applyLayerOpacityBounds();
             return true;
+        }
+
+        function createHierarchySnapshot() {
+            const { width, height } = getRoundedStageSize();
+            const canvas = document.createElement("canvas");
+            const ctx = prepareCanvas(canvas, width, height);
+            const transforms = getAlignedTransforms();
+            const area = mergeBounds(layers.map((layer) => (
+                getTransformedBounds(layer, transforms.get(layer.id))
+            )));
+
+            canvas.className = "hierarchyTransitionLayer";
+            canvas.setAttribute("aria-hidden", "true");
+            canvas.style.width = `${width}px`;
+            canvas.style.height = `${height}px`;
+
+            ctx.fillStyle = "#fff";
+            ctx.fillRect(area.left, area.top, area.right - area.left, area.bottom - area.top);
+            layers.slice().reverse().forEach((layer) => {
+                const transform = transforms.get(layer.id);
+                if (!transform || !layer.image) return;
+
+                ctx.save();
+                ctx.globalAlpha = layer.opacity;
+                ctx.filter = monochromeEnabled ? "grayscale(1)" : "none";
+                ctx.setTransform(transform.a, transform.b, transform.c, transform.d, transform.e, transform.f);
+                ctx.drawImage(layer.image, 0, 0, layer.width, layer.height);
+                ctx.restore();
+            });
+
+            return canvas;
+        }
+
+        function crossfadeHierarchy(snapshot) {
+            if (!snapshot) return;
+
+            stage.querySelectorAll(".hierarchyTransitionLayer").forEach((layer) => layer.remove());
+            stage.appendChild(snapshot);
+            const duration = Math.min(
+                HIERARCHY_CROSSFADE_DURATION,
+                Math.max(80, hierarchyShuffleInterval * 0.7)
+            );
+            const animation = snapshot.animate(
+                [{ opacity: 1 }, { opacity: 0 }],
+                {
+                    duration,
+                    easing: "cubic-bezier(0.45, 0, 0.55, 1)",
+                    fill: "forwards"
+                }
+            );
+            animation.finished
+                .catch(() => {})
+                .finally(() => snapshot.remove());
         }
 
         function hasActiveAutoRandomLayer() {
@@ -776,10 +871,12 @@ import Delaunator from "https://cdn.jsdelivr.net/npm/delaunator@5/+esm";
             });
 
             let hierarchyChanged = false;
+            let hierarchySnapshot = null;
             if (mode === MODE_OVERLAY && hierarchyShuffleEnabled && layers.length > 1) {
                 if (!nextHierarchyShuffleTime) {
                     nextHierarchyShuffleTime = timestamp + hierarchyShuffleInterval;
                 } else if (timestamp >= nextHierarchyShuffleTime) {
+                    hierarchySnapshot = createHierarchySnapshot();
                     hierarchyChanged = shuffleLayerHierarchy();
                     nextHierarchyShuffleTime = timestamp + hierarchyShuffleInterval;
                 }
@@ -788,7 +885,10 @@ import Delaunator from "https://cdn.jsdelivr.net/npm/delaunator@5/+esm";
 
             if (changed) {
                 renderStage();
-                if (hierarchyChanged) renderLayerList();
+                if (hierarchyChanged) {
+                    crossfadeHierarchy(hierarchySnapshot);
+                    renderLayerList();
+                }
                 renderLayerOutputs();
             }
 
@@ -1714,6 +1814,7 @@ import Delaunator from "https://cdn.jsdelivr.net/npm/delaunator@5/+esm";
         clearButton.addEventListener("click", () => {
             layers.forEach(disposeLayer);
             layers = [];
+            layerOpacityBounds = [];
             alignmentReferenceId = null;
             randomOpacityTotal = null;
             render();

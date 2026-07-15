@@ -229,6 +229,13 @@
             z-index: 1;
         }
 
+        .hierarchyTransitionLayer {
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+            z-index: 2;
+        }
+
         .stageLayer.is-monochrome,
         .morphCanvas.is-monochrome {
             filter: grayscale(1);
@@ -659,7 +666,7 @@
             </div>
         </aside>
     </div>
-    <script type="module" src="app.js?v=20260715-3"></script>
+    <script type="module" src="app.js?v=20260715-6"></script>
 </body>
 
 </html>
