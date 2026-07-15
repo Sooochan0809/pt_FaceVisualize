@@ -70,6 +70,8 @@ import Delaunator from "https://cdn.jsdelivr.net/npm/delaunator@5/+esm";
         let cropPopup = null;
         let cropPopupCanvas = null;
         let cropPopupFrameId = null;
+        let cropPopupWindowName = "trimmedPreview";
+        let cropPopupCanvasId = "cropCanvas";
         let devicePixelRatioQuery = null;
         let devicePixelRatioListener = null;
 
@@ -1259,11 +1261,56 @@ import Delaunator from "https://cdn.jsdelivr.net/npm/delaunator@5/+esm";
 </html>`;
         }
 
+        function requestCropPopupIdentifiers() {
+            const reservedWindowNames = new Set(["_self", "_parent", "_top", "_blank"]);
+            let normalizedWindowName;
+            while (!normalizedWindowName) {
+                const windowName = window.prompt(
+                    "ポップアップのウィンドウ名を入力してください。",
+                    cropPopupWindowName
+                );
+                if (windowName === null) return null;
+
+                normalizedWindowName = windowName.trim();
+                if (!normalizedWindowName) {
+                    alert("ウィンドウ名を入力してください。");
+                } else if (reservedWindowNames.has(normalizedWindowName.toLowerCase())) {
+                    alert("_self、_parent、_top、_blank はウィンドウ名に使用できません。");
+                    normalizedWindowName = "";
+                }
+            }
+
+            let normalizedCanvasId;
+            while (!normalizedCanvasId) {
+                const canvasId = window.prompt(
+                    "ポップアップ内のCanvas IDを入力してください。",
+                    cropPopupCanvasId
+                );
+                if (canvasId === null) return null;
+
+                normalizedCanvasId = canvasId.trim();
+                if (!normalizedCanvasId) {
+                    alert("Canvas IDを入力してください。");
+                }
+            }
+
+            cropPopupWindowName = normalizedWindowName;
+            cropPopupCanvasId = normalizedCanvasId;
+            return {
+                windowName: cropPopupWindowName,
+                canvasId: cropPopupCanvasId
+            };
+        }
+
         function showCropPopup(rect = activeCropRect || getDefaultCropRect()) {
+            const identifiers = requestCropPopupIdentifiers();
+            if (!identifiers) return;
+
             setActiveCropRect(rect, { showSelection: true });
             const width = Math.max(1, Math.round(activeCropRect.width));
             const height = Math.max(1, Math.round(activeCropRect.height));
-            const popup = window.open("", "trimmedPreview", `popup,width=${Math.min(1200, Math.max(120, width))},height=${Math.min(1000, Math.max(120, height))}`);
+            const previousPopup = cropPopup;
+            const popup = window.open("", identifiers.windowName, `popup,width=${Math.min(1200, Math.max(120, width))},height=${Math.min(1000, Math.max(120, height))}`);
             if (!popup) {
                 alert("ポップアップがブロックされました。ブラウザの設定でこのページのポップアップを許可してください。");
                 return;
@@ -1274,9 +1321,15 @@ import Delaunator from "https://cdn.jsdelivr.net/npm/delaunator@5/+esm";
             popup.document.write(getCropPopupHtml(width, height));
             popup.document.close();
             cropPopupCanvas = popup.document.getElementById("cropCanvas");
+            cropPopupCanvas.id = identifiers.canvasId;
+            if (previousPopup && previousPopup !== popup && !previousPopup.closed) {
+                previousPopup.close();
+            }
             popup.addEventListener("beforeunload", () => {
-                cropPopup = null;
-                cropPopupCanvas = null;
+                if (cropPopup === popup) {
+                    cropPopup = null;
+                    cropPopupCanvas = null;
+                }
             });
             ensureCropPopupLoop();
             popup.focus();
