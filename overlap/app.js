@@ -19,6 +19,12 @@ import Delaunator from "https://cdn.jsdelivr.net/npm/delaunator@5/+esm";
         const FACE_MODEL_URL = "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/latest/face_landmarker.task";
         const MEDIAPIPE_WASM_URL = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm";
         const REMOVE_ICON_SRC = "icon-clause.png";
+        const DISPLAY_PARAMS = new URLSearchParams(window.location.search);
+        const DISPLAY_SOURCE_ID = DISPLAY_PARAMS.get("sourceId");
+        const DISPLAY_CANVAS_ID = DISPLAY_PARAMS.get("canvasId")?.trim() || null;
+        const CROP_POPUP_WINDOW_NAME = DISPLAY_SOURCE_ID
+            ? `canvas-popup-${DISPLAY_SOURCE_ID}`
+            : "canvas-popup";
         const ALIGN_LANDMARKS = [
             33, 133, 362, 263, 1, 4, 61, 291, 199, 152
         ];
@@ -70,8 +76,7 @@ import Delaunator from "https://cdn.jsdelivr.net/npm/delaunator@5/+esm";
         let cropPopup = null;
         let cropPopupCanvas = null;
         let cropPopupFrameId = null;
-        let cropPopupWindowName = "trimmedPreview";
-        let cropPopupCanvasId = "cropCanvas";
+        let cropPopupCanvasId = DISPLAY_CANVAS_ID || "canvas";
         let devicePixelRatioQuery = null;
         let devicePixelRatioListener = null;
 
@@ -1262,25 +1267,7 @@ import Delaunator from "https://cdn.jsdelivr.net/npm/delaunator@5/+esm";
         }
 
         function requestCropPopupIdentifiers() {
-            const reservedWindowNames = new Set(["_self", "_parent", "_top", "_blank"]);
-            let normalizedWindowName;
-            while (!normalizedWindowName) {
-                const windowName = window.prompt(
-                    "ポップアップのウィンドウ名を入力してください。",
-                    cropPopupWindowName
-                );
-                if (windowName === null) return null;
-
-                normalizedWindowName = windowName.trim();
-                if (!normalizedWindowName) {
-                    alert("ウィンドウ名を入力してください。");
-                } else if (reservedWindowNames.has(normalizedWindowName.toLowerCase())) {
-                    alert("_self、_parent、_top、_blank はウィンドウ名に使用できません。");
-                    normalizedWindowName = "";
-                }
-            }
-
-            let normalizedCanvasId;
+            let normalizedCanvasId = DISPLAY_CANVAS_ID;
             while (!normalizedCanvasId) {
                 const canvasId = window.prompt(
                     "ポップアップ内のCanvas IDを入力してください。",
@@ -1294,10 +1281,9 @@ import Delaunator from "https://cdn.jsdelivr.net/npm/delaunator@5/+esm";
                 }
             }
 
-            cropPopupWindowName = normalizedWindowName;
             cropPopupCanvasId = normalizedCanvasId;
             return {
-                windowName: cropPopupWindowName,
+                windowName: CROP_POPUP_WINDOW_NAME,
                 canvasId: cropPopupCanvasId
             };
         }
@@ -1325,14 +1311,49 @@ import Delaunator from "https://cdn.jsdelivr.net/npm/delaunator@5/+esm";
             if (previousPopup && previousPopup !== popup && !previousPopup.closed) {
                 previousPopup.close();
             }
+
+            const managerWindow = registerCropPopupWithManager(popup, identifiers);
             popup.addEventListener("beforeunload", () => {
                 if (cropPopup === popup) {
+                    try {
+                        managerWindow?.unregisterCanvasSource(DISPLAY_SOURCE_ID, popup);
+                    } catch (error) {
+                        console.warn("Display Managerの登録解除に失敗しました", error);
+                    }
+
                     cropPopup = null;
                     cropPopupCanvas = null;
                 }
             });
             ensureCropPopupLoop();
             popup.focus();
+        }
+
+        function registerCropPopupWithManager(popup, identifiers) {
+            if (!DISPLAY_SOURCE_ID) return null;
+
+            const managerWindow = window.opener;
+
+            try {
+                if (
+                    !managerWindow
+                    || managerWindow.closed
+                    || typeof managerWindow.registerCanvasSource !== "function"
+                ) {
+                    console.warn("Display Managerからoverlapを開いてください");
+                    return null;
+                }
+
+                managerWindow.registerCanvasSource(
+                    DISPLAY_SOURCE_ID,
+                    popup,
+                    identifiers.canvasId
+                );
+                return managerWindow;
+            } catch (error) {
+                console.warn("Display ManagerへのCanvas登録に失敗しました", error);
+                return null;
+            }
         }
 
         function setCropEnabled(enabled) {

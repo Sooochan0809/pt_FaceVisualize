@@ -68,7 +68,7 @@
         }
 
         .source-row {
-            grid-template-columns: 90px 1fr 1fr 110px;
+            grid-template-columns: 90px 1fr 1fr 90px 70px;
         }
 
         .display-row {
@@ -192,7 +192,7 @@
             <div class="settings">
                 <label>
                     切り替え間隔（秒）
-                    <input id="intervalSeconds" type="number" min="2" value="20">
+                    <input id="intervalSeconds" type="number" min="2" value="5">
                 </label>
 
                 <label>
@@ -314,7 +314,7 @@
                 sourceId,
                 popupWindow,
                 canvasId = DEFAULT_CANVAS_ID,
-                name = sourceId
+                name = null
             ) {
                 const source = sourceById.get(sourceId);
 
@@ -327,7 +327,7 @@
                     throw new Error(`${sourceId}は同一オリジンではありません`);
                 }
 
-                source.name = name;
+                if (name) source.name = name;
                 source.canvasId = canvasId;
                 registry.set(sourceId, { popupWindow, canvasId });
 
@@ -335,7 +335,10 @@
                 log(`${sourceId}を登録しました`);
             };
 
-            window.unregisterCanvasSource = function unregisterCanvasSource(sourceId) {
+            window.unregisterCanvasSource = function unregisterCanvasSource(sourceId, popupWindow = null) {
+                const entry = registry.get(sourceId);
+                if (popupWindow && entry?.popupWindow !== popupWindow) return;
+
                 registry.delete(sourceId);
                 renderSources();
             };
@@ -357,18 +360,23 @@
                     const row = document.createElement("div");
                     const id = document.createElement("strong");
                     const status = document.createElement("span");
+                    const openButton = document.createElement("button");
 
                     row.className = "source-row";
                     id.textContent = source.id;
                     status.dataset.sourceStatus = source.id;
                     status.className = `status${ready ? " ready" : ""}`;
                     status.textContent = ready ? "接続済み" : "未登録";
+                    openButton.type = "button";
+                    openButton.textContent = "開く";
+                    openButton.dataset.sourceId = source.id;
 
                     row.append(
                         id,
                         createSourceInput(source, "name", source.name, "表示名"),
                         createSourceInput(source, "canvas", source.canvasId, "Canvas ID"),
-                        status
+                        status,
+                        openButton
                     );
                     fragment.append(row);
                 }
@@ -393,6 +401,27 @@
                     if (entry) entry.canvasId = source.canvasId;
                     renderSources();
                 }
+            }
+
+            function handleSourceClick(event) {
+                if (event.target.tagName !== "BUTTON") return;
+
+                const sourceId = event.target.dataset.sourceId;
+                const source = sourceById.get(sourceId);
+                if (!source) return;
+
+                const sourceUrl = new URL("../overlap/index.html", window.location.href);
+                sourceUrl.searchParams.set("sourceId", sourceId);
+                sourceUrl.searchParams.set("canvasId", source.canvasId);
+
+                const sourceWindow = window.open(sourceUrl, `overlap-${sourceId}`);
+                if (!sourceWindow) {
+                    log(`${sourceId}を開けませんでした。ポップアップを許可してください`);
+                    return;
+                }
+
+                sourceWindow.focus();
+                log(`${sourceId}のoverlapを開きました`);
             }
 
             function refreshSourceStatuses() {
@@ -850,6 +879,7 @@
             }
 
             elements.sourceList.addEventListener("change", handleSourceChange);
+            elements.sourceList.addEventListener("click", handleSourceClick);
             elements.displayList.addEventListener("change", handleDisplayChange);
             elements.displayList.addEventListener("click", handleDisplayClick);
 
