@@ -286,6 +286,7 @@
             color: var(--muted);
             font-size: clamp(0.95rem, 2vw, 1.08rem);
             line-height: 1.7;
+            white-space: pre-line;
         }
 
         .skipButton {
@@ -635,13 +636,6 @@
             transform: translate(-50%, 0);
         }
 
-        .coachFaceStatus {
-            display: block;
-            margin-top: 8px;
-            color: var(--accent);
-            font-weight: 600;
-        }
-
         .coachTip--status {
             top: 118px;
             left: 12px;
@@ -869,7 +863,8 @@
             <div class="introContent">
                 <img class="introThumbnail" src="thumbnail.png" alt="サムネイル画像">
                 <h1 class="introTitle">ようこそ、表情クリニックへ</h1>
-                <p class="introText">表情クリニックとは、適切な表情表現を身につけるための教育プログラムです。全7段階のトレーニングを通して、正しい表情の作り方を学び、コミュニケーション能力に優れた、模範的な人間を目指しましょう。</p>
+                <p class="introText">
+                    表情クリニックとは、適切な表情表現を身につけるための教育プログラムです。全7段階のトレーニングを通して、正しい表情の作り方を学び、コミュニケーション能力に優れた、模範的な人間を目指しましょう。</p>
                 <button id="startButton" class="startButton" type="button">さあ始めましょう →</button>
             </div>
         </section>
@@ -882,7 +877,8 @@
                     <span class="consentNote">※同意していただける場合は、「はい」を押す前に同意書にサインをしてください。</span>
                 </p>
                 <div class="consentActions">
-                    <button id="consentAcceptButton" class="consentButton consentButton--accept" type="button">はい</button>
+                    <button id="consentAcceptButton" class="consentButton consentButton--accept"
+                        type="button">はい</button>
                     <button id="consentDeclineButton" class="consentButton" type="button">いいえ</button>
                 </div>
             </div>
@@ -924,15 +920,15 @@
                             <span id="scoreNumber" class="scoreBubbleNumber">0</span>
                             <span class="scoreBubbleUnit">/100</span>
                         </div>
-                        <div id="challengeTimer" class="challengeTimer" aria-label="残り時間" hidden>1:30</div>
+                        <div id="challengeTimer" class="challengeTimer" aria-label="残り時間" hidden>1:00</div>
                         <div id="countdownOverlay" class="countdownOverlay" hidden>3</div>
                         <div id="coachTips" class="coachTips" hidden aria-hidden="true">
                             <div class="coachTip coachTip--status">上の表示は判定コメントです。達成率バーが塗られるほど、目標の表情に近づいています。</div>
-                            <div class="coachTip coachTip--timer">1回の挑戦時間は1分30秒です。時間内にクリアできなかった場合は、もう一度お手本を見て再挑戦します。3回挑戦してもクリアできなかった場合でも、次のレベルへ進みます。</div>
+                            <div class="coachTip coachTip--timer">
+                                1回の挑戦時間は1分です。時間内にクリアできなかった場合は、もう一度お手本を見て再挑戦します。3回挑戦してもクリアできなかった場合でも、次のレベルへ進みます。</div>
                             <div class="coachTip coachTip--score">右下の円は現在の点数です。高得点を目指しましょう。</div>
                             <div class="coachTip coachTip--face">
-                                顔が枠内に収まるように顔の位置を調整してください。調整ができたら進みます。
-                                <span id="coachFaceStatus" class="coachFaceStatus">顔を検出しています…</span>
+                                顔の位置を枠に収まるように調整してください。
                             </div>
                             <div id="cameraAssist" class="coachTip coachTip--camera cameraAssist">
                                 <span class="cameraAssistArrow" aria-hidden="true">⇧</span>
@@ -960,7 +956,9 @@
             <div class="introContent">
                 <img class="introThumbnail" src="thumbnail.png" alt="サムネイル画像">
                 <h1 class="introTitle">おめでとうございます🎉</h1>
-                <p class="introText">すべての表情トレーニングが完了しました。<br>このトレーニングにより、あなたの表情は、他者にとって理解しやすい形へと調整されました。これからも、周囲に誤解を与えない模範的な表情表現を継続してください。</p>
+                <p class="introText">
+                    すべての表情トレーニングが完了しました。<br>このトレーニングにより、あなたの表情は、他者にとって理解しやすい形へと調整されました。これからも、周囲に誤解を与えない模範的な表情表現を継続してください。
+                </p>
             </div>
         </section>
     </div>
@@ -979,10 +977,10 @@
             const LEVEL_UP_MS = 4000;
             const COACH_TIP_MS = 5000;
             const COACH_TIMER_TIP_MS = 9000;
-            const FACE_FRAME_HOLD_MS = 3000;
+            const COACH_FACE_TIP_MS = 15 * 1000;
             const FINAL_RELOAD_MS = 30 * 1000;
             const PARTICIPANT_ABSENCE_MS = 60 * 1000;
-            const CHALLENGE_ATTEMPT_MS = 90 * 1000;
+            const CHALLENGE_ATTEMPT_MS = 60 * 1000;
             const MAX_CHALLENGE_ATTEMPTS = 3;
             const PAUSE_TITLE = "休憩中...";
             const PAUSE_TEXT = "少し休んで、表情筋の強張りをほぐしましょう";
@@ -995,11 +993,11 @@
                 low: "好ましい表情ではありません"
             };
             const LEVEL_CLEAR_MESSAGES = {
-                neutral: "3秒キープでクリアになります。その調子で頑張りましょう。",
+                neutral: "3秒キープでクリアになります。\nその調子で頑張りましょう。",
                 happy: "素敵な笑顔ですね。とても好印象です。",
-                surprised: "素晴らしい驚きの表現です。しっかりと目を見開くことがポイントです。",
-                angry: "素晴らしい怒りの表現です。怒りは、大袈裟に表現するくらいがちょうどいいのかもしれません",
-                sad: "悲しみがよく伝わる表情です。慰めたくなるような素晴らしい表現力です。",
+                surprised: "素晴らしい驚きの表現です。\nしっかりと目や口を開くことがポイントです。",
+                angry: "素晴らしい怒りの表現です。\n怒りは、大袈裟に表現するくらいがちょうどいいのかもしれません",
+                sad: "悲しみがよく伝わる表情です。\n思わず慰めたくなるような素晴らしい表現力です。",
                 fearful: "緊張感が伝わる素晴らしい恐れの表現ができています。",
                 disgusted: "素晴らしいです。相手にしっかり伝わる嫌悪感の表現ができています。"
             };
@@ -1076,7 +1074,6 @@
             const scoreNumber = $("scoreNumber");
             const scoreTitle = $("scoreTitle");
             const challengeTimer = $("challengeTimer");
-            const coachFaceStatus = $("coachFaceStatus");
             const countdownOverlay = $("countdownOverlay");
             const coachTips = $("coachTips");
             const guideAudio = new Audio("guide.mp3");
@@ -1115,9 +1112,6 @@
             let challengeAttemptCount = 0;
             let coachTipsShown = false;
             let coaching = false;
-            let activeCoachTipIndex = -1;
-            let faceFrameHoldStartedAt = 0;
-            let faceFrameLastValidAt = 0;
             let levelUpTimer = 0;
             let recordingEnabled = false;
             let archiveSessionName = "";
@@ -1201,7 +1195,7 @@
             const playAudio = (audio) => {
                 audio.pause();
                 audio.currentTime = 0;
-                audio.play().catch(() => {});
+                audio.play().catch(() => { });
             };
 
             const timestampName = () => {
@@ -1420,7 +1414,7 @@
                 paused = false;
                 challengeTimerRemainingMs = CHALLENGE_ATTEMPT_MS;
                 challengeTimerStartedAt = 0;
-                challengeTimer.textContent = "1:30";
+                challengeTimer.textContent = "1:00";
                 challengeTimer.classList.remove("is-ending");
                 challengeTimer.hidden = true;
                 smoothedScore = 0;
@@ -1463,7 +1457,7 @@
                 syncAssistVideoSource();
                 assistVideo.hidden = false;
                 assistVideo.currentTime = 0;
-                assistVideo.play().catch(() => {});
+                assistVideo.play().catch(() => { });
             };
 
             const toggleAssistOverlay = () => {
@@ -1478,9 +1472,6 @@
             const hideCoachTips = () => {
                 window.clearTimeout(coachTipsTimer);
                 coaching = false;
-                activeCoachTipIndex = -1;
-                faceFrameHoldStartedAt = 0;
-                faceFrameLastValidAt = 0;
                 holdStartedAt = 0;
                 countdownOverlay.hidden = true;
                 hideAssistOverlay();
@@ -1526,7 +1517,7 @@
                 demoIntroStartedAt = 0;
                 resetDemoIntro();
                 pauseDemoVideo(true);
-                demoVideo.play().catch(() => {});
+                demoVideo.play().catch(() => { });
                 demoTimer = window.requestAnimationFrame(updateDemoProgress);
             };
 
@@ -1555,72 +1546,14 @@
             const resumeDemoScene = () => {
                 if (demoIntroActive) {
                     resetDemoIntro(true);
-                    guideAudio.play().catch(() => {});
+                    guideAudio.play().catch(() => { });
                     startDemoIntroTimer();
                     return;
                 }
 
                 resetDemoIntro();
-                demoVideo.play().catch(() => {});
+                demoVideo.play().catch(() => { });
                 demoTimer = window.requestAnimationFrame(updateDemoProgress);
-            };
-
-            const faceFitsGuide = (detection) => {
-                const box = detection?.box;
-                const sourceWidth = webcamVideo.videoWidth;
-                const sourceHeight = webcamVideo.videoHeight;
-                const viewerWidth = viewer.clientWidth;
-                const viewerHeight = viewer.clientHeight;
-                if (!box || !sourceWidth || !sourceHeight || !viewerWidth || !viewerHeight) return false;
-
-                const scale = Math.max(viewerWidth / sourceWidth, viewerHeight / sourceHeight);
-                const offsetX = (viewerWidth - sourceWidth * scale) / 2;
-                const offsetY = (viewerHeight - sourceHeight * scale) / 2;
-                const faceCenterX = offsetX + (box.x + box.width / 2) * scale;
-                const faceCenterY = offsetY + (box.y + box.height / 2) * scale;
-                const faceWidth = box.width * scale;
-                const faceHeight = box.height * scale;
-                const guideLeft = ellipseGuide.offsetLeft - ellipseGuide.offsetWidth / 2;
-                const guideTop = ellipseGuide.offsetTop - ellipseGuide.offsetHeight / 2;
-                const guideCenterX = guideLeft + ellipseGuide.offsetWidth / 2;
-                const guideCenterY = guideTop + ellipseGuide.offsetHeight / 2;
-                const normalizedX = (faceCenterX - guideCenterX) / (ellipseGuide.offsetWidth * 0.42);
-                const normalizedY = (faceCenterY - guideCenterY) / (ellipseGuide.offsetHeight * 0.42);
-                const centered = normalizedX * normalizedX + normalizedY * normalizedY <= 1;
-                const suitableSize = faceWidth <= ellipseGuide.offsetWidth * 0.92
-                    && faceHeight <= ellipseGuide.offsetHeight * 0.92
-                    && faceHeight >= ellipseGuide.offsetHeight * 0.08;
-                return centered && suitableSize;
-            };
-
-            const updateCoachFacePosition = (detection) => {
-                const faceTip = document.querySelector(".coachTip--face");
-                if (!coaching || coachTipItems[activeCoachTipIndex] !== faceTip) return;
-
-                const now = performance.now();
-                if (!faceFitsGuide(detection)) {
-                    if (faceFrameHoldStartedAt && now - faceFrameLastValidAt < 750) return;
-                    faceFrameHoldStartedAt = 0;
-                    faceFrameLastValidAt = 0;
-                    coachFaceStatus.textContent = detection
-                        ? "顔の位置を枠の中央に調整してください"
-                        : "顔を検出しています…";
-                    return;
-                }
-
-                faceFrameLastValidAt = now;
-                if (!faceFrameHoldStartedAt) faceFrameHoldStartedAt = now;
-                const elapsed = now - faceFrameHoldStartedAt;
-                const remaining = Math.max(0, Math.ceil((FACE_FRAME_HOLD_MS - elapsed) / 1000));
-                coachFaceStatus.textContent = remaining > 0
-                    ? `その位置であと${remaining}秒キープしてください`
-                    : "調整できました";
-
-                if (elapsed >= FACE_FRAME_HOLD_MS) {
-                    faceFrameHoldStartedAt = 0;
-                    faceFrameLastValidAt = 0;
-                    showCoachTipStep(activeCoachTipIndex + 1);
-                }
             };
 
             const showCoachTipStep = (index = 0) => {
@@ -1632,10 +1565,6 @@
 
                 const activeTip = coachTipItems[index];
                 const isFaceTip = activeTip?.classList.contains("coachTip--face");
-                activeCoachTipIndex = index;
-                faceFrameHoldStartedAt = 0;
-                faceFrameLastValidAt = 0;
-                if (isFaceTip) coachFaceStatus.textContent = "顔を検出しています…";
                 countdownOverlay.hidden = true;
 
                 coachTipItems.forEach((tip, tipIndex) => {
@@ -1647,10 +1576,10 @@
                 });
                 const displayMs = activeTip?.classList.contains("coachTip--timer")
                     ? COACH_TIMER_TIP_MS
-                    : COACH_TIP_MS;
-                if (!isFaceTip) {
-                    coachTipsTimer = window.setTimeout(() => showCoachTipStep(index + 1), displayMs);
-                }
+                    : isFaceTip
+                        ? COACH_FACE_TIP_MS
+                        : COACH_TIP_MS;
+                coachTipsTimer = window.setTimeout(() => showCoachTipStep(index + 1), displayMs);
             };
 
             const showCoachTips = () => {
@@ -1872,9 +1801,7 @@
 
             const detectLoop = async () => {
                 if (!running) return;
-                const faceTipActive = coaching
-                    && coachTipItems[activeCoachTipIndex]?.classList.contains("coachTip--face");
-                if (paused || (coaching && !faceTipActive)) {
+                if (paused || coaching) {
                     window.setTimeout(detectLoop, 90);
                     return;
                 }
@@ -1885,11 +1812,6 @@
                         .withFaceExpressions();
 
                     if (result?.detection) markParticipantActivity();
-
-                    if (faceTipActive) {
-                        updateCoachFacePosition(result?.detection || null);
-                        return;
-                    }
 
                     if (result?.expressions) {
                         const expressions = expressionVector(result.expressions);
@@ -2050,7 +1972,7 @@
                 }
 
                 demoVideo.currentTime = 0;
-                demoVideo.play().catch(() => {});
+                demoVideo.play().catch(() => { });
             };
 
             demoVideo.addEventListener("ended", handleDemoEnded);
