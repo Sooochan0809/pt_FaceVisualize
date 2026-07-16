@@ -2,14 +2,14 @@ import Delaunator from "https://cdn.jsdelivr.net/npm/delaunator@5/+esm";
 
         const MAX_IMAGES = 7;
         const DEFAULT_OPACITY = 0.1;
-        const DEFAULT_RANDOM_OPACITY_MIN = 0;
-        const DEFAULT_RANDOM_OPACITY_MAX = 0.5;
+        const DEFAULT_RANDOM_OPACITY_MAX = 0.3;
+        const RANDOM_OPACITY_TOTAL_MAX = 1.05;
         const MODE_OVERLAY = "overlay";
         const MODE_MORPH = "morph";
         const RANDOM_OFF = "off";
         const RANDOM_OPACITY = "opacity";
         const RANDOM_MORPH = "morph";
-        const DEFAULT_HIERARCHY_SHUFFLE_INTERVAL = 3000;
+        const DEFAULT_HIERARCHY_SHUFFLE_INTERVAL = 5000;
         const HIERARCHY_CROSSFADE_DURATION = 10000;
         const MORPH_WIDTH = 600;
         const MORPH_HEIGHT = 800;
@@ -61,7 +61,7 @@ import Delaunator from "https://cdn.jsdelivr.net/npm/delaunator@5/+esm";
         let faceLandmarkerPromise = null;
         let alignmentEnabled = true;
         let alignmentReferenceId = null;
-        let monochromeEnabled = false;
+        let monochromeEnabled = true;
         let mode = MODE_OVERLAY;
         let autoRandomFrameId = null;
         let lastAutoRandomTime = 0;
@@ -265,9 +265,9 @@ import Delaunator from "https://cdn.jsdelivr.net/npm/delaunator@5/+esm";
                 morph,
                 morphWeight: 100,
                 opacity: DEFAULT_OPACITY,
-                autoRandom: false,
+                autoRandom: true,
                 autoRandomType: RANDOM_OPACITY,
-                randomOpacityMin: DEFAULT_RANDOM_OPACITY_MIN,
+                randomOpacityMin: getDefaultRandomOpacityMin(0),
                 randomOpacityMax: DEFAULT_RANDOM_OPACITY_MAX,
                 randomTargets: {
                     opacity: DEFAULT_OPACITY,
@@ -276,10 +276,16 @@ import Delaunator from "https://cdn.jsdelivr.net/npm/delaunator@5/+esm";
             };
         }
 
+        function getDefaultRandomOpacityMin(index) {
+            if (index < 3) return 0.05;
+            if (index === 3) return 0.07;
+            return 0.1;
+        }
+
         function getLayerOpacityBounds(index) {
             if (!layerOpacityBounds[index]) {
                 layerOpacityBounds[index] = {
-                    min: DEFAULT_RANDOM_OPACITY_MIN,
+                    min: getDefaultRandomOpacityMin(index),
                     max: DEFAULT_RANDOM_OPACITY_MAX
                 };
             }
@@ -355,10 +361,14 @@ import Delaunator from "https://cdn.jsdelivr.net/npm/delaunator@5/+esm";
         }
 
         function getRandomOpacityTotalRange(randomLayers = getRandomOpacityLayers()) {
-            return randomLayers.reduce((range, layer) => ({
+            const range = randomLayers.reduce((range, layer) => ({
                 min: range.min + layer.randomOpacityMin,
                 max: range.max + layer.randomOpacityMax
             }), { min: 0, max: 0 });
+            return {
+                min: Math.min(range.min, RANDOM_OPACITY_TOTAL_MAX),
+                max: Math.min(range.max, RANDOM_OPACITY_TOTAL_MAX)
+            };
         }
 
         function distributeOpacityTotal(randomLayers, total, randomize = false) {
@@ -429,7 +439,7 @@ import Delaunator from "https://cdn.jsdelivr.net/npm/delaunator@5/+esm";
 
             const percentage = Number(value);
             if (!Number.isFinite(percentage)) return;
-            randomOpacityTotal = clamp(percentage, 0, MAX_IMAGES * 100) / 100;
+            randomOpacityTotal = clamp(percentage / 100, 0, RANDOM_OPACITY_TOTAL_MAX);
             applyRandomOpacityTotal();
             render();
         }
@@ -1144,11 +1154,13 @@ import Delaunator from "https://cdn.jsdelivr.net/npm/delaunator@5/+esm";
 
         function getDefaultCropRect() {
             const { width: stageWidth, height: stageHeight } = getRoundedStageSize();
+            const width = Math.min(270, stageWidth);
+            const height = Math.min(480, stageHeight);
             return {
-                left: Math.round(stageWidth * 0.25),
-                top: Math.round(stageHeight * 0.25),
-                width: Math.round(stageWidth * 0.5),
-                height: Math.round(stageHeight * 0.5)
+                left: Math.round((stageWidth - width) / 2),
+                top: Math.round((stageHeight - height) / 2),
+                width,
+                height
             };
         }
 

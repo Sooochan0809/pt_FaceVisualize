@@ -610,15 +610,15 @@
                     <div class="stageControls">
                         <button class="stageToggleButton cropToggleButton is-off" id="cropToggleButton" type="button"
                             aria-pressed="false">トリミング</button>
-                        <button class="stageToggleButton monoToggleButton is-off" id="monoToggleButton" type="button"
-                            aria-pressed="false">モノクロ</button>
+                        <button class="stageToggleButton monoToggleButton" id="monoToggleButton" type="button"
+                            aria-pressed="true">モノクロ</button>
                         <button class="stageToggleButton alignToggleButton" id="alignToggleButton" type="button"
                             aria-pressed="true">顔位置</button>
                         <button class="stageToggleButton hierarchyToggleButton is-off" id="hierarchyToggleButton"
                             type="button" aria-pressed="false">階層移動</button>
                         <label class="hierarchyIntervalControl" id="hierarchyIntervalControl" hidden>
                             <span>間隔</span>
-                            <input id="hierarchyIntervalInput" type="number" min="0.1" step="0.1" value="3"
+                            <input id="hierarchyIntervalInput" type="number" min="0.1" step="0.1" value="5"
                                 inputmode="decimal" aria-label="階層移動の間隔（秒）">
                             <span>秒</span>
                         </label>
@@ -637,7 +637,7 @@
                 </div>
                 <label class="randomOpacityTotalControl" id="randomOpacityTotalControl" hidden>
                     <span>不透明度合算</span>
-                    <input id="randomOpacityTotalInput" type="number" min="0" max="700" step="0.1"
+                    <input id="randomOpacityTotalInput" type="number" min="0" max="105" step="0.1"
                         inputmode="decimal" placeholder="自由" aria-label="ランダム不透明度の合算値">
                     <span>％</span>
                 </label>
@@ -666,7 +666,7 @@
             </div>
         </aside>
     </div>
-    <script type="module" src="app.js?v=20260715-7"></script>
+    <script type="module" src="app.js?v=20260716-2"></script>
 </body>
 
 </html>
