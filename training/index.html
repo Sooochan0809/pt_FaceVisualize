@@ -981,6 +981,7 @@
             const COACH_TIMER_TIP_MS = 9000;
             const FACE_FRAME_HOLD_MS = 3000;
             const FINAL_RELOAD_MS = 30 * 1000;
+            const PARTICIPANT_ABSENCE_MS = 60 * 1000;
             const CHALLENGE_ATTEMPT_MS = 90 * 1000;
             const MAX_CHALLENGE_ATTEMPTS = 3;
             const PAUSE_TITLE = "休憩中...";
@@ -1103,6 +1104,8 @@
             let finalReloadTimer = 0;
             let demoPlayCount = 0;
             let running = false;
+            let participantMonitoring = false;
+            let lastParticipantActivityAt = 0;
             let paused = false;
             let modelsLoading = false;
             let modelsLoaded = false;
@@ -1140,6 +1143,17 @@
             const targetFor = (key = activeTarget) => TARGETS[key];
             const activeTargetLabel = () => targetFor().label;
             const challengeCopy = () => `次はあなたの番です。${activeTargetLabel()}に挑戦してみましょう！`;
+
+            const markParticipantActivity = () => {
+                if (participantMonitoring) lastParticipantActivityAt = performance.now();
+            };
+
+            const checkParticipantPresence = () => {
+                if (!participantMonitoring || finalScene.hidden === false) return;
+                if (performance.now() - lastParticipantActivityAt >= PARTICIPANT_ABSENCE_MS) {
+                    window.location.reload();
+                }
+            };
 
             const setProgress = (fill, progress) => {
                 fill.style.width = `${Math.round(clamp(progress) * 100)}%`;
@@ -1683,6 +1697,7 @@
             const stopChallengeSession = () => {
                 stopChallengeRecording();
                 running = false;
+                participantMonitoring = false;
                 paused = false;
                 holdStartedAt = 0;
                 window.clearTimeout(challengeTimeoutTimer);
@@ -1869,6 +1884,8 @@
                         .detectSingleFace(webcamVideo, detectOptions)
                         .withFaceExpressions();
 
+                    if (result?.detection) markParticipantActivity();
+
                     if (faceTipActive) {
                         updateCoachFacePosition(result?.detection || null);
                         return;
@@ -1909,6 +1926,8 @@
                     cameraPlaceholder.hidden = true;
                     resetChallengeState();
                     running = true;
+                    participantMonitoring = true;
+                    markParticipantActivity();
                     startChallengeRecording();
                     detectLoop();
                 } catch {
@@ -2070,7 +2089,9 @@
                 startDemo();
             });
             skipDemoButton.addEventListener("click", startChallenge);
+            window.addEventListener("pointerdown", markParticipantActivity, { passive: true });
             window.addEventListener("keydown", (event) => {
+                markParticipantActivity();
                 const tagName = event.target?.tagName;
                 if (tagName === "INPUT" || tagName === "TEXTAREA" || tagName === "SELECT") return;
                 if (consentDialog.open) return;
@@ -2097,6 +2118,7 @@
                     debugPreviousScene();
                 }
             });
+            window.setInterval(checkParticipantPresence, 5000);
 
             syncLevelCopy();
             setScore(0);
