@@ -636,6 +636,17 @@
             transform: translate(-50%, 0);
         }
 
+        .coachFaceCountdown {
+            display: block;
+            margin-top: 0;
+            color: var(--accent);
+            font-size: 1.15em;
+            font-variant-numeric: tabular-nums;
+            font-weight: 700;
+            text-align: right;
+            line-height: 1.0;
+        }
+
         .coachTip--status {
             top: 118px;
             left: 12px;
@@ -929,6 +940,7 @@
                             <div class="coachTip coachTip--score">右下の円は現在の点数です。高得点を目指しましょう。</div>
                             <div class="coachTip coachTip--face">
                                 顔の位置を枠に収まるように調整してください。
+                                <span id="coachFaceCountdown" class="coachFaceCountdown">残り15秒</span>
                             </div>
                             <div id="cameraAssist" class="coachTip coachTip--camera cameraAssist">
                                 <span class="cameraAssistArrow" aria-hidden="true">⇧</span>
@@ -1074,6 +1086,7 @@
             const scoreNumber = $("scoreNumber");
             const scoreTitle = $("scoreTitle");
             const challengeTimer = $("challengeTimer");
+            const coachFaceCountdown = $("coachFaceCountdown");
             const countdownOverlay = $("countdownOverlay");
             const coachTips = $("coachTips");
             const guideAudio = new Audio("guide.mp3");
@@ -1112,6 +1125,7 @@
             let challengeAttemptCount = 0;
             let coachTipsShown = false;
             let coaching = false;
+            let coachFaceCountdownTimer = 0;
             let levelUpTimer = 0;
             let recordingEnabled = false;
             let archiveSessionName = "";
@@ -1432,6 +1446,8 @@
             const clearChallengeTimers = () => {
                 window.clearTimeout(challengeIntroTimer);
                 window.clearTimeout(coachTipsTimer);
+                window.clearInterval(coachFaceCountdownTimer);
+                coachFaceCountdownTimer = 0;
                 window.clearTimeout(challengeTimeoutTimer);
                 window.clearInterval(challengeClockTimer);
                 challengeClockTimer = 0;
@@ -1471,6 +1487,8 @@
 
             const hideCoachTips = () => {
                 window.clearTimeout(coachTipsTimer);
+                window.clearInterval(coachFaceCountdownTimer);
+                coachFaceCountdownTimer = 0;
                 coaching = false;
                 holdStartedAt = 0;
                 countdownOverlay.hidden = true;
@@ -1479,6 +1497,18 @@
                 coachTips.hidden = true;
                 coachTipItems.forEach((tip) => tip.classList.remove("is-active"));
                 coachFocusTargets.forEach((target) => target.classList.remove("coachFocus"));
+            };
+
+            const startCoachFaceCountdown = () => {
+                const startedAt = performance.now();
+                const update = () => {
+                    const remainingMs = Math.max(0, COACH_FACE_TIP_MS - (performance.now() - startedAt));
+                    const remainingSeconds = Math.max(1, Math.ceil(remainingMs / 1000));
+                    coachFaceCountdown.textContent = `残り${remainingSeconds}秒`;
+                };
+
+                update();
+                coachFaceCountdownTimer = window.setInterval(update, 250);
             };
 
             const startChallengeTimer = () => {
@@ -1565,6 +1595,9 @@
 
                 const activeTip = coachTipItems[index];
                 const isFaceTip = activeTip?.classList.contains("coachTip--face");
+                window.clearInterval(coachFaceCountdownTimer);
+                coachFaceCountdownTimer = 0;
+                if (isFaceTip) startCoachFaceCountdown();
                 countdownOverlay.hidden = true;
 
                 coachTipItems.forEach((tip, tipIndex) => {
