@@ -479,6 +479,84 @@
             line-height: 1;
         }
 
+        .challengeTimer {
+            position: absolute;
+            top: 104px;
+            right: 12px;
+            z-index: 4;
+            min-width: 92px;
+            border: 1px solid rgba(217, 222, 229, 0.82);
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.86);
+            padding: 8px 14px;
+            color: var(--ink);
+            font-size: 1.1rem;
+            font-variant-numeric: tabular-nums;
+            font-weight: 600;
+            line-height: 1;
+            text-align: center;
+            pointer-events: none;
+        }
+
+        .challengeTimer[hidden] {
+            display: none;
+        }
+
+        .challengeTimer.is-ending {
+            border-color: #dd4d5d;
+            color: #c93647;
+        }
+
+        .cameraAssist {
+            position: absolute;
+            top: 10px;
+            left: 50%;
+            z-index: 10;
+            width: min(360px, calc(100% - 32px));
+            border-radius: 999px;
+            background: rgba(23, 32, 42, 0.88);
+            padding: 8px 16px 10px;
+            color: #fff;
+            font-size: 0.95rem;
+            font-weight: 600;
+            line-height: 1.4;
+            text-align: center;
+            transform: translate(-50%, -8px);
+            pointer-events: none;
+        }
+
+        .cameraAssist.is-active {
+            transform: translate(-50%, 0);
+        }
+
+        .cameraAssistArrow {
+            display: block;
+            color: var(--accent);
+            font-size: 1.8em;
+            line-height: 0.8;
+            animation: cameraArrowBounce 700ms ease-in-out infinite alternate;
+        }
+
+        .cameraAssistCountdown {
+            display: block;
+            min-height: 1.4em;
+            margin-top: 8px;
+            color: var(--accent);
+            font-size: 1.2em;
+            font-variant-numeric: tabular-nums;
+            font-weight: 700;
+        }
+
+        @keyframes cameraArrowBounce {
+            from {
+                transform: translateY(5px) scale(1);
+            }
+
+            to {
+                transform: translateY(-5px) scale(1.12);
+            }
+        }
+
         .scoreBar {
             width: 100%;
             display: grid;
@@ -549,9 +627,29 @@
             transform: translateY(0);
         }
 
+        .coachTip.cameraAssist {
+            transform: translate(-50%, -8px);
+        }
+
+        .coachTip.cameraAssist.is-active {
+            transform: translate(-50%, 0);
+        }
+
+        .coachFaceStatus {
+            display: block;
+            margin-top: 8px;
+            color: var(--accent);
+            font-weight: 600;
+        }
+
         .coachTip--status {
             top: 118px;
             left: 12px;
+        }
+
+        .coachTip--timer {
+            top: 154px;
+            right: 12px;
         }
 
         .coachTip--score {
@@ -561,22 +659,12 @@
 
         .coachTip--face {
             left: 50%;
-            top: 50%;
-            transform: translate(-50%, calc(-50% - 180px));
+            top: 34%;
+            transform: translate(-50%, -50%);
         }
 
         .coachTip--face.is-active {
-            transform: translate(-50%, calc(-50% - 186px));
-        }
-
-        .coachTip--clear {
-            left: 50%;
-            top: 60%;
-            transform: translate(-50%, 6px);
-        }
-
-        .coachTip--clear.is-active {
-            transform: translate(-50%, 0);
+            transform: translate(-50%, calc(-50% - 6px));
         }
 
         .coachFocus {
@@ -728,6 +816,21 @@
                 font-size: 1.15rem;
             }
 
+            .challengeTimer {
+                top: 152px;
+                right: 24px;
+                min-width: 132px;
+                padding: 12px 20px;
+                font-size: 1.75rem;
+            }
+
+            .cameraAssist {
+                top: 14px;
+                width: min(560px, calc(100% - 48px));
+                padding: 12px 24px 14px;
+                font-size: 1.45rem;
+            }
+
             .coachTip {
                 max-width: min(640px, calc(100% - 48px));
                 border-left-width: 6px;
@@ -738,13 +841,23 @@
             }
 
             .coachTip--status {
-                top: 160px;
+                top: 224px;
                 left: 24px;
+                max-width: min(640px, calc(100% - 220px));
+            }
+
+            .coachTip--timer {
+                top: 224px;
+                right: 24px;
             }
 
             .coachTip--score {
                 right: 24px;
                 bottom: 228px;
+            }
+
+            .coachTip--face {
+                top: 30%;
             }
         }
     </style>
@@ -810,12 +923,21 @@
                             <span id="scoreNumber" class="scoreBubbleNumber">0</span>
                             <span class="scoreBubbleUnit">/100</span>
                         </div>
+                        <div id="challengeTimer" class="challengeTimer" aria-label="残り時間" hidden>1:30</div>
                         <div id="countdownOverlay" class="countdownOverlay" hidden>3</div>
                         <div id="coachTips" class="coachTips" hidden aria-hidden="true">
                             <div class="coachTip coachTip--status">上の表示は判定コメントです。達成率バーが塗られるほど、目標の表情に近づいています。</div>
-                            <div class="coachTip coachTip--face">顔を楕円の中に入れて、正面を向いてください。</div>
+                            <div class="coachTip coachTip--timer">1回の挑戦時間は1分30秒です。時間内にクリアできなかった場合は、もう一度お手本を見て再挑戦します。3回挑戦してもクリアできなかった場合でも、次のレベルへ進みます。</div>
                             <div class="coachTip coachTip--score">右下の円は現在の点数です。高得点を目指しましょう。</div>
-                            <div class="coachTip coachTip--clear">高得点の状態を3秒キープすると、このレベルをクリアできます。</div>
+                            <div class="coachTip coachTip--face">
+                                顔が枠内に収まるように顔の位置を調整してください。調整ができたら進みます。
+                                <span id="coachFaceStatus" class="coachFaceStatus">顔を検出しています…</span>
+                            </div>
+                            <div id="cameraAssist" class="coachTip coachTip--camera cameraAssist">
+                                <span class="cameraAssistArrow" aria-hidden="true">⇧</span>
+                                ここにカメラがあります。カメラ目線を意識しましょう。
+                                <span class="cameraAssistCountdown">そのままキープ</span>
+                            </div>
                         </div>
                         <div id="cameraPlaceholder" class="placeholder">Webcamを起動中...</div>
                         <div class="ellipseGuide" aria-hidden="true"></div>
@@ -855,6 +977,8 @@
             const CLEAR_HOLD_MS = 3000;
             const LEVEL_UP_MS = 4000;
             const COACH_TIP_MS = 5000;
+            const COACH_TIMER_TIP_MS = 9000;
+            const FACE_FRAME_HOLD_MS = 3000;
             const CHALLENGE_ATTEMPT_MS = 90 * 1000;
             const MAX_CHALLENGE_ATTEMPTS = 3;
             const PAUSE_TITLE = "休憩中...";
@@ -866,6 +990,15 @@
                 clear: "かなり好ましい表情です！そのままキープしてください。",
                 improving: "だんだん好ましい表情に近づいています！",
                 low: "好ましい表情ではありません"
+            };
+            const LEVEL_CLEAR_MESSAGES = {
+                neutral: "3秒キープでクリアになります。その調子で頑張りましょう。",
+                happy: "素敵な笑顔ですね。とても好印象です。",
+                surprised: "素晴らしい驚きの表現です。しっかりと目を見開くことがポイントです。",
+                angry: "素晴らしい怒りの表現です。怒りは、大袈裟に表現するくらいがちょうどいいのかもしれません",
+                sad: "悲しみがよく伝わる表情です。慰めたくなるような素晴らしい表現力です。",
+                fearful: "緊張感が伝わる素晴らしい恐れの表現ができています。",
+                disgusted: "素晴らしいです。相手にしっかり伝わる嫌悪感の表現ができています。"
             };
             const EXPRESSION_KEYS = ["happy", "surprised", "angry", "sad", "fearful", "disgusted", "neutral"];
             const CONFUSION_CREDIT = {
@@ -939,6 +1072,8 @@
             const scoreBubble = $("scoreBubble");
             const scoreNumber = $("scoreNumber");
             const scoreTitle = $("scoreTitle");
+            const challengeTimer = $("challengeTimer");
+            const coachFaceStatus = $("coachFaceStatus");
             const countdownOverlay = $("countdownOverlay");
             const coachTips = $("coachTips");
             const guideAudio = new Audio("guide.mp3");
@@ -959,6 +1094,7 @@
             let challengeIntroTimer = 0;
             let coachTipsTimer = 0;
             let challengeTimeoutTimer = 0;
+            let challengeClockTimer = 0;
             let challengeTimerStartedAt = 0;
             let challengeTimerRemainingMs = CHALLENGE_ATTEMPT_MS;
             let levelUpProgressTimer = 0;
@@ -973,7 +1109,9 @@
             let challengeAttemptCount = 0;
             let coachTipsShown = false;
             let coaching = false;
-            let coachCountdownTimer = 0;
+            let activeCoachTipIndex = -1;
+            let faceFrameHoldStartedAt = 0;
+            let faceFrameLastValidAt = 0;
             let levelUpTimer = 0;
             let recordingEnabled = false;
             let archiveSessionName = "";
@@ -988,9 +1126,9 @@
             const coachTipItems = [...coachTips.querySelectorAll(".coachTip")];
             const coachFocusByTip = new Map([
                 [document.querySelector(".coachTip--status"), scoreHero],
+                [document.querySelector(".coachTip--timer"), challengeTimer],
                 [document.querySelector(".coachTip--face"), ellipseGuide],
-                [document.querySelector(".coachTip--score"), scoreBubble],
-                [document.querySelector(".coachTip--clear"), scoreHero]
+                [document.querySelector(".coachTip--score"), scoreBubble]
             ]);
             const coachFocusTargets = [...new Set([...coachFocusByTip.values()].filter(Boolean))];
 
@@ -1265,6 +1403,9 @@
                 paused = false;
                 challengeTimerRemainingMs = CHALLENGE_ATTEMPT_MS;
                 challengeTimerStartedAt = 0;
+                challengeTimer.textContent = "1:30";
+                challengeTimer.classList.remove("is-ending");
+                challengeTimer.hidden = true;
                 smoothedScore = 0;
                 setScore(0);
                 countdownOverlay.hidden = true;
@@ -1281,8 +1422,9 @@
                 window.clearTimeout(challengeIntroTimer);
                 window.clearTimeout(coachTipsTimer);
                 window.clearTimeout(challengeTimeoutTimer);
+                window.clearInterval(challengeClockTimer);
+                challengeClockTimer = 0;
                 challengeTimerStartedAt = 0;
-                window.clearTimeout(coachCountdownTimer);
                 window.clearTimeout(levelUpTimer);
                 window.cancelAnimationFrame(levelUpProgressTimer);
             };
@@ -1318,8 +1460,10 @@
 
             const hideCoachTips = () => {
                 window.clearTimeout(coachTipsTimer);
-                window.clearTimeout(coachCountdownTimer);
                 coaching = false;
+                activeCoachTipIndex = -1;
+                faceFrameHoldStartedAt = 0;
+                faceFrameLastValidAt = 0;
                 holdStartedAt = 0;
                 countdownOverlay.hidden = true;
                 hideAssistOverlay();
@@ -1329,31 +1473,24 @@
                 coachFocusTargets.forEach((target) => target.classList.remove("coachFocus"));
             };
 
-            const hideCoachCountdownPreview = () => {
-                window.clearTimeout(coachCountdownTimer);
-                countdownOverlay.hidden = true;
-            };
-
-            const showCoachCountdownPreview = (count = 3) => {
-                countdownOverlay.hidden = false;
-                countdownOverlay.textContent = String(count);
-                if (count > 1) {
-                    coachCountdownTimer = window.setTimeout(() => showCoachCountdownPreview(count - 1), 1000);
-                }
-            };
-
-            const setCoachCountdownPreview = (visible) => {
-                if (visible) {
-                    showCoachCountdownPreview();
-                } else {
-                    hideCoachCountdownPreview();
-                }
-            };
-
             const startChallengeTimer = () => {
                 window.clearTimeout(challengeTimeoutTimer);
+                window.clearInterval(challengeClockTimer);
                 challengeTimerStartedAt = performance.now();
+                challengeTimer.hidden = false;
+                updateChallengeTimer();
+                challengeClockTimer = window.setInterval(updateChallengeTimer, 250);
                 challengeTimeoutTimer = window.setTimeout(handleChallengeTimeout, challengeTimerRemainingMs);
+            };
+
+            const updateChallengeTimer = () => {
+                const elapsed = challengeTimerStartedAt ? performance.now() - challengeTimerStartedAt : 0;
+                const remainingMs = Math.max(0, challengeTimerRemainingMs - elapsed);
+                const remainingSeconds = Math.ceil(remainingMs / 1000);
+                const minutes = Math.floor(remainingSeconds / 60);
+                const seconds = String(remainingSeconds % 60).padStart(2, "0");
+                challengeTimer.textContent = `${minutes}:${seconds}`;
+                challengeTimer.classList.toggle("is-ending", remainingSeconds <= 10);
             };
 
             const pauseChallengeTimer = () => {
@@ -1362,6 +1499,7 @@
                     challengeTimerRemainingMs = Math.max(0, challengeTimerRemainingMs - (performance.now() - challengeTimerStartedAt));
                     challengeTimerStartedAt = 0;
                 }
+                updateChallengeTimer();
             };
 
             const finishDemoIntro = () => {
@@ -1410,6 +1548,64 @@
                 demoTimer = window.requestAnimationFrame(updateDemoProgress);
             };
 
+            const faceFitsGuide = (detection) => {
+                const box = detection?.box;
+                const sourceWidth = webcamVideo.videoWidth;
+                const sourceHeight = webcamVideo.videoHeight;
+                const viewerWidth = viewer.clientWidth;
+                const viewerHeight = viewer.clientHeight;
+                if (!box || !sourceWidth || !sourceHeight || !viewerWidth || !viewerHeight) return false;
+
+                const scale = Math.max(viewerWidth / sourceWidth, viewerHeight / sourceHeight);
+                const offsetX = (viewerWidth - sourceWidth * scale) / 2;
+                const offsetY = (viewerHeight - sourceHeight * scale) / 2;
+                const faceCenterX = offsetX + (box.x + box.width / 2) * scale;
+                const faceCenterY = offsetY + (box.y + box.height / 2) * scale;
+                const faceWidth = box.width * scale;
+                const faceHeight = box.height * scale;
+                const guideLeft = ellipseGuide.offsetLeft - ellipseGuide.offsetWidth / 2;
+                const guideTop = ellipseGuide.offsetTop - ellipseGuide.offsetHeight / 2;
+                const guideCenterX = guideLeft + ellipseGuide.offsetWidth / 2;
+                const guideCenterY = guideTop + ellipseGuide.offsetHeight / 2;
+                const normalizedX = (faceCenterX - guideCenterX) / (ellipseGuide.offsetWidth * 0.42);
+                const normalizedY = (faceCenterY - guideCenterY) / (ellipseGuide.offsetHeight * 0.42);
+                const centered = normalizedX * normalizedX + normalizedY * normalizedY <= 1;
+                const suitableSize = faceWidth <= ellipseGuide.offsetWidth * 0.92
+                    && faceHeight <= ellipseGuide.offsetHeight * 0.92
+                    && faceHeight >= ellipseGuide.offsetHeight * 0.08;
+                return centered && suitableSize;
+            };
+
+            const updateCoachFacePosition = (detection) => {
+                const faceTip = document.querySelector(".coachTip--face");
+                if (!coaching || coachTipItems[activeCoachTipIndex] !== faceTip) return;
+
+                const now = performance.now();
+                if (!faceFitsGuide(detection)) {
+                    if (faceFrameHoldStartedAt && now - faceFrameLastValidAt < 750) return;
+                    faceFrameHoldStartedAt = 0;
+                    faceFrameLastValidAt = 0;
+                    coachFaceStatus.textContent = detection
+                        ? "顔の位置を枠の中央に調整してください"
+                        : "顔を検出しています…";
+                    return;
+                }
+
+                faceFrameLastValidAt = now;
+                if (!faceFrameHoldStartedAt) faceFrameHoldStartedAt = now;
+                const elapsed = now - faceFrameHoldStartedAt;
+                const remaining = Math.max(0, Math.ceil((FACE_FRAME_HOLD_MS - elapsed) / 1000));
+                coachFaceStatus.textContent = remaining > 0
+                    ? `その位置であと${remaining}秒キープしてください`
+                    : "調整できました";
+
+                if (elapsed >= FACE_FRAME_HOLD_MS) {
+                    faceFrameHoldStartedAt = 0;
+                    faceFrameLastValidAt = 0;
+                    showCoachTipStep(activeCoachTipIndex + 1);
+                }
+            };
+
             const showCoachTipStep = (index = 0) => {
                 if (index >= coachTipItems.length) {
                     hideCoachTips();
@@ -1418,7 +1614,12 @@
                 }
 
                 const activeTip = coachTipItems[index];
-                setCoachCountdownPreview(activeTip?.classList.contains("coachTip--clear"));
+                const isFaceTip = activeTip?.classList.contains("coachTip--face");
+                activeCoachTipIndex = index;
+                faceFrameHoldStartedAt = 0;
+                faceFrameLastValidAt = 0;
+                if (isFaceTip) coachFaceStatus.textContent = "顔を検出しています…";
+                countdownOverlay.hidden = true;
 
                 coachTipItems.forEach((tip, tipIndex) => {
                     tip.classList.toggle("is-active", tipIndex === index);
@@ -1427,7 +1628,12 @@
                 coachFocusTargets.forEach((target) => {
                     target.classList.toggle("coachFocus", target === activeFocusTarget);
                 });
-                coachTipsTimer = window.setTimeout(() => showCoachTipStep(index + 1), COACH_TIP_MS);
+                const displayMs = activeTip?.classList.contains("coachTip--timer")
+                    ? COACH_TIMER_TIP_MS
+                    : COACH_TIP_MS;
+                if (!isFaceTip) {
+                    coachTipsTimer = window.setTimeout(() => showCoachTipStep(index + 1), displayMs);
+                }
             };
 
             const showCoachTips = () => {
@@ -1436,6 +1642,7 @@
                 coaching = true;
                 holdStartedAt = 0;
                 countdownOverlay.hidden = true;
+                challengeTimer.hidden = false;
                 viewer.classList.add("is-coaching");
                 coachTips.hidden = false;
                 window.clearTimeout(coachTipsTimer);
@@ -1476,7 +1683,10 @@
                 paused = false;
                 holdStartedAt = 0;
                 window.clearTimeout(challengeTimeoutTimer);
+                window.clearInterval(challengeClockTimer);
+                challengeClockTimer = 0;
                 challengeTimerStartedAt = 0;
+                challengeTimer.hidden = true;
                 countdownOverlay.hidden = true;
                 challengeIntroOverlay.hidden = true;
                 hideAssistOverlay();
@@ -1549,7 +1759,9 @@
                 const hasNextLevel = advanceLevel();
                 startResultTransition({
                     title: hasNextLevel ? "ナイスファイト！" : "全レベル終了",
-                    text: "お疲れ様でした。少し休んで、次の表情に挑戦してみましょう！",
+                    text: hasNextLevel
+                        ? "ここまでよく取り組みました。次の表情にも挑戦してみましょう。"
+                        : "すべての表情トレーニングが終了しました。",
                     hasNextLevel,
                     audio: clearAudio
                 });
@@ -1560,12 +1772,13 @@
                 challengeCleared = true;
                 stopChallengeSession();
 
+                const clearedKey = currentLevel().key;
                 const hasNextLevel = advanceLevel();
                 startResultTransition({
                     title: hasNextLevel ? "レベルアップ！" : "全レベルクリア！",
                     text: hasNextLevel
-                        ? "次のレベルに進みます。"
-                        : "すべての表情トレーニングをクリアしました。",
+                        ? LEVEL_CLEAR_MESSAGES[clearedKey]
+                        : `${LEVEL_CLEAR_MESSAGES[clearedKey]} すべての表情トレーニングをクリアしました。`,
                     hasNextLevel,
                     audio: clearAudio
                 });
@@ -1641,7 +1854,9 @@
 
             const detectLoop = async () => {
                 if (!running) return;
-                if (paused || coaching) {
+                const faceTipActive = coaching
+                    && coachTipItems[activeCoachTipIndex]?.classList.contains("coachTip--face");
+                if (paused || (coaching && !faceTipActive)) {
                     window.setTimeout(detectLoop, 90);
                     return;
                 }
@@ -1650,6 +1865,11 @@
                     const result = await faceapi
                         .detectSingleFace(webcamVideo, detectOptions)
                         .withFaceExpressions();
+
+                    if (faceTipActive) {
+                        updateCoachFacePosition(result?.detection || null);
+                        return;
+                    }
 
                     if (result?.expressions) {
                         const expressions = expressionVector(result.expressions);
