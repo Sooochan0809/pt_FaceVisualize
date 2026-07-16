@@ -98,6 +98,114 @@
             background: var(--accent);
         }
 
+        .consentDialog {
+            width: min(560px, calc(100% - 40px));
+            border: 0;
+            border-radius: 12px;
+            background: var(--panel);
+            padding: 0;
+            color: var(--ink);
+            box-shadow: 0 24px 72px rgba(23, 32, 42, 0.24);
+        }
+
+        .consentDialog::backdrop {
+            background: rgba(17, 24, 33, 0.48);
+            backdrop-filter: blur(3px);
+        }
+
+        .consentContent {
+            display: grid;
+            gap: 24px;
+            padding: 32px;
+            text-align: center;
+        }
+
+        .consentText {
+            margin: 0;
+            font-size: 1.15rem;
+            font-weight: 600;
+            line-height: 1.7;
+        }
+
+        .consentNote {
+            display: block;
+            margin-top: 8px;
+            color: var(--muted);
+            font-size: 0.88em;
+            font-weight: 400;
+        }
+
+        .consentActions {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 12px;
+        }
+
+        .consentButton {
+            min-height: 48px;
+            border: 1px solid var(--line);
+            border-radius: 6px;
+            background: #fff;
+            color: var(--ink);
+            font: inherit;
+            font-size: 1rem;
+            cursor: pointer;
+        }
+
+        .consentButton--accept {
+            border-color: var(--ink);
+            background: var(--ink);
+            color: #fff;
+        }
+
+        @media (min-width: 768px) and (min-height: 1200px) and (orientation: portrait) {
+            .introScene {
+                padding: 48px;
+            }
+
+            .introContent {
+                width: min(720px, 100%);
+                gap: clamp(28px, 2.2dvh, 40px);
+            }
+
+            .introThumbnail {
+                width: min(420px, 48vw);
+            }
+
+            .introTitle {
+                font-size: clamp(2.4rem, 4.2vw, 3rem);
+            }
+
+            .introText {
+                font-size: clamp(1.25rem, 2.25vw, 1.5rem);
+                line-height: 1.85;
+            }
+
+            .startButton {
+                min-height: 64px;
+                padding: 0 32px;
+                font-size: 1.25rem;
+            }
+
+            .consentDialog {
+                width: min(720px, calc(100% - 96px));
+            }
+
+            .consentContent {
+                gap: 32px;
+                padding: 32px;
+            }
+
+            .consentText {
+                font-size: 1.5rem;
+            }
+
+            .consentButton {
+                min-height: 64px;
+                font-size: 1.25rem;
+            }
+        }
+
         .demoScene {
             position: relative;
             display: grid;
@@ -565,6 +673,19 @@
             </div>
         </section>
 
+        <dialog id="consentDialog" class="consentDialog" aria-labelledby="consentText">
+            <div class="consentContent">
+                <p id="consentText" class="consentText">
+                    表情の撮影、表情画像の使用について同意して始めますか？
+                    <span class="consentNote">※同意しなくても体験は可能です</span>
+                </p>
+                <div class="consentActions">
+                    <button id="consentAcceptButton" class="consentButton consentButton--accept" type="button">はい</button>
+                    <button id="consentDeclineButton" class="consentButton" type="button">いいえ</button>
+                </div>
+            </div>
+        </dialog>
+
         <section id="demoScene" class="scene demoScene" hidden>
             <article id="demoPanel" class="demoPanel">
                 <div class="demoVideoWrap">
@@ -716,6 +837,9 @@
             const trainingScene = $("trainingScene");
             const finalScene = $("finalScene");
             const startButton = $("startButton");
+            const consentDialog = $("consentDialog");
+            const consentAcceptButton = $("consentAcceptButton");
+            const consentDeclineButton = $("consentDeclineButton");
             const skipDemoButton = $("skipDemoButton");
             const demoProgressFill = $("demoProgressFill");
             const levelUpProgress = $("levelUpProgress");
@@ -853,10 +977,14 @@
 
             const safeName = (value) => String(value).replace(/[^\w\u3040-\u30ff\u3400-\u9fff-]+/g, "_");
 
-            const toggleRecordingEnabled = () => {
-                recordingEnabled = !recordingEnabled;
+            const setRecordingEnabled = (enabled) => {
+                recordingEnabled = Boolean(enabled);
                 archiveSessionName = recordingEnabled ? timestampName() : "";
                 startButton.classList.toggle("is-recording", recordingEnabled);
+            };
+
+            const toggleRecordingEnabled = () => {
+                setRecordingEnabled(!recordingEnabled);
             };
 
             const recordingMimeType = () => {
@@ -1607,12 +1735,26 @@
             };
 
             startButton.addEventListener("click", () => {
+                consentDialog.showModal();
+            });
+            consentDialog.addEventListener("cancel", (event) => {
+                event.preventDefault();
+            });
+            consentAcceptButton.addEventListener("click", () => {
+                setRecordingEnabled(true);
+                consentDialog.close();
+                startDemo();
+            });
+            consentDeclineButton.addEventListener("click", () => {
+                setRecordingEnabled(false);
+                consentDialog.close();
                 startDemo();
             });
             skipDemoButton.addEventListener("click", startChallenge);
             window.addEventListener("keydown", (event) => {
                 const tagName = event.target?.tagName;
                 if (tagName === "INPUT" || tagName === "TEXTAREA" || tagName === "SELECT") return;
+                if (consentDialog.open) return;
                 if (event.code === "Space" && !introScene.hidden) {
                     event.preventDefault();
                     toggleRecordingEnabled();
