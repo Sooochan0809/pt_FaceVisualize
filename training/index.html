@@ -659,6 +659,94 @@
                 transform: translate(-50%, -50%);
             }
         }
+
+        @media (min-width: 768px) and (min-height: 1200px) and (orientation: portrait) {
+            .sceneOverlay {
+                padding: 48px;
+            }
+
+            .demoIntroCard {
+                width: min(840px, 100%);
+                gap: 22px;
+                padding: 40px 48px;
+            }
+
+            .demoIntroTitle {
+                font-size: clamp(2.75rem, 5vw, 3.5rem);
+            }
+
+            .demoIntroText {
+                font-size: clamp(1.55rem, 2.6vw, 1.75rem);
+                line-height: 1.8;
+            }
+
+            .skipButton {
+                right: 28px;
+                bottom: 28px;
+                min-height: 64px;
+                padding: 0 28px;
+                font-size: 1.3rem;
+            }
+
+            .placeholder {
+                font-size: 1.5rem;
+            }
+
+            .scoreHero {
+                top: 32px;
+                left: 16px;
+                right: 16px;
+                gap: 12px;
+                padding: 14px 16px;
+            }
+
+            .scoreText strong {
+                font-size: 2.25rem;
+            }
+
+            .scoreSegment {
+                height: 14px;
+            }
+
+            .scoreBubble {
+                right: 20px;
+                bottom: 20px;
+                width: 180px;
+                padding: 20px 18px 18px;
+            }
+
+            .scoreBubbleLabel {
+                font-size: 1.25rem;
+            }
+
+            .scoreBubbleNumber {
+                font-size: 5.4rem;
+            }
+
+            .scoreBubbleUnit {
+                margin-right: 20px;
+                font-size: 1.15rem;
+            }
+
+            .coachTip {
+                max-width: min(640px, calc(100% - 48px));
+                border-left-width: 6px;
+                padding: 22px 26px;
+                font-size: 1.6rem;
+                line-height: 1.7;
+                box-shadow: 0 12px 32px rgba(23, 32, 42, 0.2);
+            }
+
+            .coachTip--status {
+                top: 160px;
+                left: 24px;
+            }
+
+            .coachTip--score {
+                right: 24px;
+                bottom: 228px;
+            }
+        }
     </style>
 </head>
 
@@ -910,7 +998,7 @@
             const currentLevel = () => LEVELS[currentLevelIndex];
             const targetFor = (key = activeTarget) => TARGETS[key];
             const activeTargetLabel = () => targetFor().label;
-            const challengeCopy = () => `次はあなたの番です。${activeTargetLabel()}表情に挑戦してみましょう！`;
+            const challengeCopy = () => `次はあなたの番です。${activeTargetLabel()}に挑戦してみましょう！`;
 
             const setProgress = (fill, progress) => {
                 fill.style.width = `${Math.round(clamp(progress) * 100)}%`;
