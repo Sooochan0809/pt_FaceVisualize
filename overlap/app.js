@@ -11,6 +11,8 @@ import Delaunator from "https://cdn.jsdelivr.net/npm/delaunator@5/+esm";
         const RANDOM_MORPH = "morph";
         const DEFAULT_HIERARCHY_SHUFFLE_INTERVAL = 5000;
         const HIERARCHY_CROSSFADE_DURATION = 10000;
+        const AUTO_RANDOM_FPS = 60;
+        const DEFAULT_OUTPUT_FPS = 60;
         const MORPH_WIDTH = 600;
         const MORPH_HEIGHT = 800;
         const MORPH_RATIO = MORPH_WIDTH / MORPH_HEIGHT;
@@ -22,6 +24,12 @@ import Delaunator from "https://cdn.jsdelivr.net/npm/delaunator@5/+esm";
         const DISPLAY_PARAMS = new URLSearchParams(window.location.search);
         const DISPLAY_SOURCE_ID = DISPLAY_PARAMS.get("sourceId");
         const DISPLAY_CANVAS_ID = DISPLAY_PARAMS.get("canvasId")?.trim() || null;
+        const IS_EMBEDDED = DISPLAY_PARAMS.get("embedded") === "1";
+        const requestedOutputFps = Number(DISPLAY_PARAMS.get("outputFps"));
+        const OUTPUT_FPS = Number.isFinite(requestedOutputFps)
+            ? Math.min(60, Math.max(1, requestedOutputFps))
+            : DEFAULT_OUTPUT_FPS;
+        const OUTPUT_FRAME_INTERVAL = 1000 / OUTPUT_FPS;
         const CROP_POPUP_WINDOW_NAME = DISPLAY_SOURCE_ID
             ? `canvas-popup-${DISPLAY_SOURCE_ID}`
             : "canvas-popup";
@@ -34,6 +42,7 @@ import Delaunator from "https://cdn.jsdelivr.net/npm/delaunator@5/+esm";
         const stage = document.getElementById("stage");
         const stageImageArea = document.getElementById("stageImageArea");
         const morphCanvas = document.getElementById("morphCanvas");
+        const embeddedOutputCanvas = document.getElementById("embeddedOutputCanvas");
         const cropSelection = document.getElementById("cropSelection");
         const cropToggleButton = document.getElementById("cropToggleButton");
         const cropControls = document.getElementById("cropControls");
@@ -56,18 +65,20 @@ import Delaunator from "https://cdn.jsdelivr.net/npm/delaunator@5/+esm";
         const randomOpacityTotalInput = document.getElementById("randomOpacityTotalInput");
 
         let layers = [];
-        let layerOpacityBounds = [];
+        let layerOpacitySettings = [];
         let draggedId = null;
         let faceLandmarkerPromise = null;
         let alignmentEnabled = true;
         let alignmentReferenceId = null;
         let monochromeEnabled = true;
         let mode = MODE_OVERLAY;
+        let runtimeActive = true;
         let autoRandomFrameId = null;
         let lastAutoRandomTime = 0;
         let hierarchyShuffleEnabled = false;
         let hierarchyShuffleInterval = DEFAULT_HIERARCHY_SHUFFLE_INTERVAL;
         let nextHierarchyShuffleTime = 0;
+        let activeHierarchyTransition = null;
         let randomOpacityTotal = null;
         let cropEnabled = false;
         let cropDrag = null;
@@ -77,6 +88,12 @@ import Delaunator from "https://cdn.jsdelivr.net/npm/delaunator@5/+esm";
         let cropPopupCanvas = null;
         let cropPopupFrameId = null;
         let cropPopupCanvasId = DISPLAY_CANVAS_ID || "canvas";
+        const outputFpsStats = {
+            sampleStartedAt: performance.now(),
+            frameCount: 0,
+            measuredFps: 0,
+            lastFrameAt: 0
+        };
         let devicePixelRatioQuery = null;
         let devicePixelRatioListener = null;
 
@@ -84,6 +101,24 @@ import Delaunator from "https://cdn.jsdelivr.net/npm/delaunator@5/+esm";
             if (crypto.randomUUID) return crypto.randomUUID();
             return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
         };
+
+        function resetOutputFpsStats() {
+            outputFpsStats.sampleStartedAt = performance.now();
+            outputFpsStats.frameCount = 0;
+            outputFpsStats.measuredFps = 0;
+            outputFpsStats.lastFrameAt = 0;
+        }
+
+        function recordOutputFrame(timestamp) {
+            outputFpsStats.frameCount += 1;
+            outputFpsStats.lastFrameAt = timestamp;
+            const sampleDuration = timestamp - outputFpsStats.sampleStartedAt;
+            if (sampleDuration < 1000) return;
+
+            outputFpsStats.measuredFps = outputFpsStats.frameCount * 1000 / sampleDuration;
+            outputFpsStats.frameCount = 0;
+            outputFpsStats.sampleStartedAt = timestamp;
+        }
 
         function loadImage(src) {
             return new Promise((resolve, reject) => {
@@ -282,32 +317,50 @@ import Delaunator from "https://cdn.jsdelivr.net/npm/delaunator@5/+esm";
             return 0.1;
         }
 
-        function getLayerOpacityBounds(index) {
-            if (!layerOpacityBounds[index]) {
-                layerOpacityBounds[index] = {
+        function getLayerOpacitySetting(index) {
+            if (!layerOpacitySettings[index]) {
+                layerOpacitySettings[index] = {
+                    opacity: DEFAULT_OPACITY,
                     min: getDefaultRandomOpacityMin(index),
-                    max: DEFAULT_RANDOM_OPACITY_MAX
+                    max: DEFAULT_RANDOM_OPACITY_MAX,
+                    targetOpacity: DEFAULT_OPACITY
                 };
             }
-            return layerOpacityBounds[index];
+            return layerOpacitySettings[index];
         }
 
-        function applyLayerOpacityBounds() {
+        function syncLayerOpacitySettings() {
+            layers.forEach((layer, index) => {
+                const setting = getLayerOpacitySetting(index);
+                setting.opacity = layer.opacity;
+                setting.targetOpacity = layer.randomTargets?.opacity ?? layer.opacity;
+            });
+            layerOpacitySettings.length = layers.length;
+        }
+
+        function applyLayerOpacitySettings() {
             layers = layers.map((layer, index) => {
-                const bounds = getLayerOpacityBounds(index);
-                const opacity = clamp(layer.opacity, bounds.min, bounds.max);
+                const setting = getLayerOpacitySetting(index);
+                const opacity = clamp(setting.opacity, 0, 1);
+                const targetOpacity = clamp(
+                    setting.targetOpacity ?? opacity,
+                    setting.min,
+                    setting.max
+                );
+                setting.opacity = opacity;
+                setting.targetOpacity = targetOpacity;
                 return {
                     ...layer,
                     opacity,
-                    randomOpacityMin: bounds.min,
-                    randomOpacityMax: bounds.max,
+                    randomOpacityMin: setting.min,
+                    randomOpacityMax: setting.max,
                     randomTargets: {
                         ...layer.randomTargets,
-                        opacity: clamp(layer.randomTargets?.opacity ?? opacity, bounds.min, bounds.max)
+                        opacity: targetOpacity
                     }
                 };
             });
-            layerOpacityBounds.length = layers.length;
+            layerOpacitySettings.length = layers.length;
         }
 
         async function addFiles(fileList) {
@@ -332,15 +385,19 @@ import Delaunator from "https://cdn.jsdelivr.net/npm/delaunator@5/+esm";
                 alignmentReferenceId = nextLayers.find((layer) => layer.landmarks)?.id || null;
             }
             layers = [...nextLayers, ...layers];
-            applyLayerOpacityBounds();
+            applyLayerOpacitySettings();
             render();
         }
 
         function setOpacity(id, value) {
+            const layerIndex = layers.findIndex((layer) => layer.id === id);
+            if (layerIndex === -1) return;
+            getLayerOpacitySetting(layerIndex).opacity = Number(value) / 100;
             layers = layers.map((layer) => {
                 if (layer.id !== id) return layer;
                 return { ...layer, opacity: Number(value) / 100 };
             });
+            syncLayerOpacitySettings();
             applyRandomOpacityTotal();
             renderStage();
             renderLayerOutputs();
@@ -421,6 +478,7 @@ import Delaunator from "https://cdn.jsdelivr.net/npm/delaunator@5/+esm";
                     }
                 };
             });
+            syncLayerOpacitySettings();
         }
 
         function setRandomOpacityTotal(value) {
@@ -433,6 +491,7 @@ import Delaunator from "https://cdn.jsdelivr.net/npm/delaunator@5/+esm";
                         opacity: layer.opacity
                     }
                 }));
+                syncLayerOpacitySettings();
                 render();
                 return;
             }
@@ -469,6 +528,7 @@ import Delaunator from "https://cdn.jsdelivr.net/npm/delaunator@5/+esm";
                     }
                 };
             });
+            syncLayerOpacitySettings();
             applyRandomOpacityTotal();
             render();
         }
@@ -484,7 +544,9 @@ import Delaunator from "https://cdn.jsdelivr.net/npm/delaunator@5/+esm";
 
             const layerIndex = layers.findIndex((layer) => layer.id === id);
             if (layerIndex === -1) return;
-            layerOpacityBounds[layerIndex] = { min, max };
+            const setting = getLayerOpacitySetting(layerIndex);
+            setting.min = min;
+            setting.max = max;
 
             layers = layers.map((layer) => {
                 if (layer.id !== id) return layer;
@@ -500,6 +562,7 @@ import Delaunator from "https://cdn.jsdelivr.net/npm/delaunator@5/+esm";
                     }
                 };
             });
+            syncLayerOpacitySettings();
             applyRandomOpacityTotal();
             render();
         }
@@ -514,7 +577,7 @@ import Delaunator from "https://cdn.jsdelivr.net/npm/delaunator@5/+esm";
         function removeLayer(id) {
             disposeLayer(layers.find((layer) => layer.id === id));
             layers = layers.filter((layer) => layer.id !== id);
-            applyLayerOpacityBounds();
+            applyLayerOpacitySettings();
             if (!layers.some((layer) => layer.id === alignmentReferenceId && layer.landmarks)) {
                 alignmentReferenceId = layers.find((layer) => layer.landmarks)?.id || null;
             }
@@ -534,7 +597,7 @@ import Delaunator from "https://cdn.jsdelivr.net/npm/delaunator@5/+esm";
             next.splice(targetIndex, 0, draggedLayer);
             const hierarchySnapshot = mode === MODE_OVERLAY ? createHierarchySnapshot() : null;
             layers = next;
-            applyLayerOpacityBounds();
+            applyLayerOpacitySettings();
             render();
             crossfadeHierarchy(hierarchySnapshot);
         }
@@ -764,7 +827,7 @@ import Delaunator from "https://cdn.jsdelivr.net/npm/delaunator@5/+esm";
             if (secondIndex >= firstIndex) secondIndex += 1;
 
             [layers[firstIndex], layers[secondIndex]] = [layers[secondIndex], layers[firstIndex]];
-            applyLayerOpacityBounds();
+            applyLayerOpacitySettings();
             return true;
         }
 
@@ -784,6 +847,12 @@ import Delaunator from "https://cdn.jsdelivr.net/npm/delaunator@5/+esm";
 
             ctx.fillStyle = "#fff";
             ctx.fillRect(area.left, area.top, area.right - area.left, area.bottom - area.top);
+            drawOverlayLayers(ctx, transforms);
+
+            return canvas;
+        }
+
+        function drawOverlayLayers(ctx, transforms, offset = { x: 0, y: 0 }) {
             layers.slice().reverse().forEach((layer) => {
                 const transform = transforms.get(layer.id);
                 if (!transform || !layer.image) return;
@@ -791,12 +860,17 @@ import Delaunator from "https://cdn.jsdelivr.net/npm/delaunator@5/+esm";
                 ctx.save();
                 ctx.globalAlpha = layer.opacity;
                 ctx.filter = monochromeEnabled ? "grayscale(1)" : "none";
-                ctx.setTransform(transform.a, transform.b, transform.c, transform.d, transform.e, transform.f);
+                ctx.setTransform(
+                    transform.a,
+                    transform.b,
+                    transform.c,
+                    transform.d,
+                    transform.e - offset.x,
+                    transform.f - offset.y
+                );
                 ctx.drawImage(layer.image, 0, 0, layer.width, layer.height);
                 ctx.restore();
             });
-
-            return canvas;
         }
 
         function crossfadeHierarchy(snapshot) {
@@ -808,6 +882,12 @@ import Delaunator from "https://cdn.jsdelivr.net/npm/delaunator@5/+esm";
                 HIERARCHY_CROSSFADE_DURATION,
                 Math.max(80, hierarchyShuffleInterval * 0.7)
             );
+            const transition = {
+                snapshot,
+                startTime: performance.now(),
+                duration
+            };
+            activeHierarchyTransition = transition;
             const animation = snapshot.animate(
                 [{ opacity: 1 }, { opacity: 0 }],
                 {
@@ -818,15 +898,69 @@ import Delaunator from "https://cdn.jsdelivr.net/npm/delaunator@5/+esm";
             );
             animation.finished
                 .catch(() => {})
-                .finally(() => snapshot.remove());
+                .finally(() => {
+                    snapshot.remove();
+                    if (activeHierarchyTransition === transition) {
+                        activeHierarchyTransition = null;
+                    }
+                });
+        }
+
+        function cubicBezierValueForProgress(progress, x1, y1, x2, y2) {
+            const coordinate = (t, p1, p2) => {
+                const inverse = 1 - t;
+                return 3 * inverse * inverse * t * p1
+                    + 3 * inverse * t * t * p2
+                    + t * t * t;
+            };
+            let low = 0;
+            let high = 1;
+            let t = progress;
+
+            for (let index = 0; index < 12; index += 1) {
+                t = (low + high) / 2;
+                if (coordinate(t, x1, x2) < progress) {
+                    low = t;
+                } else {
+                    high = t;
+                }
+            }
+
+            return coordinate(t, y1, y2);
+        }
+
+        function getHierarchyTransitionOpacity(timestamp = performance.now()) {
+            if (!activeHierarchyTransition) return 0;
+            const progress = clamp(
+                (timestamp - activeHierarchyTransition.startTime) / activeHierarchyTransition.duration,
+                0,
+                1
+            );
+            if (progress >= 1) {
+                activeHierarchyTransition = null;
+                return 0;
+            }
+            const easedProgress = cubicBezierValueForProgress(progress, 0.45, 0, 0.55, 1);
+            return 1 - easedProgress;
         }
 
         function hasActiveAutoRandomLayer() {
-            return layers.some((layer) => layer.autoRandom && getAutoRandomConfig(layer))
-                || (mode === MODE_OVERLAY && hierarchyShuffleEnabled && layers.length > 1);
+            return runtimeActive && (
+                layers.some((layer) => layer.autoRandom && getAutoRandomConfig(layer))
+                || (mode === MODE_OVERLAY && hierarchyShuffleEnabled && layers.length > 1)
+            );
         }
 
         function tickAutoRandom(timestamp) {
+            if (!runtimeActive) {
+                autoRandomFrameId = null;
+                lastAutoRandomTime = 0;
+                return;
+            }
+            if (lastAutoRandomTime && timestamp - lastAutoRandomTime < 1000 / AUTO_RANDOM_FPS) {
+                autoRandomFrameId = requestAnimationFrame(tickAutoRandom);
+                return;
+            }
             if (!lastAutoRandomTime) lastAutoRandomTime = timestamp;
             const deltaSeconds = Math.min((timestamp - lastAutoRandomTime) / 1000, 0.08);
             lastAutoRandomTime = timestamp;
@@ -886,6 +1020,7 @@ import Delaunator from "https://cdn.jsdelivr.net/npm/delaunator@5/+esm";
                     }
                 };
             });
+            syncLayerOpacitySettings();
 
             let hierarchyChanged = false;
             let hierarchySnapshot = null;
@@ -1005,6 +1140,16 @@ import Delaunator from "https://cdn.jsdelivr.net/npm/delaunator@5/+esm";
 
         function clamp(value, min, max) {
             return Math.max(min, Math.min(max, value));
+        }
+
+        function syncToggleButton(button, enabled) {
+            button.classList.toggle("is-off", !enabled);
+            button.setAttribute("aria-pressed", String(enabled));
+        }
+
+        function syncModeTab(button, selected) {
+            button.classList.toggle("is-active", selected);
+            button.setAttribute("aria-selected", String(selected));
         }
 
         function getStagePoint(event) {
@@ -1176,39 +1321,6 @@ import Delaunator from "https://cdn.jsdelivr.net/npm/delaunator@5/+esm";
             };
         }
 
-        function renderStageToCanvas() {
-            const { width, height } = getRoundedStageSize();
-            const canvas = document.createElement("canvas");
-            const ctx = prepareCanvas(canvas, width, height);
-
-            ctx.fillStyle = "#fff";
-            ctx.fillRect(0, 0, width, height);
-
-            if (mode === MODE_MORPH) {
-                renderMorphStage();
-                const fit = getObjectFitContainRect(width, height, MORPH_WIDTH, MORPH_HEIGHT);
-                ctx.filter = monochromeEnabled ? "grayscale(1)" : "none";
-                ctx.drawImage(morphCanvas, fit.left, fit.top, fit.width, fit.height);
-                ctx.filter = "none";
-                return canvas;
-            }
-
-            const transforms = getAlignedTransforms();
-            layers.slice().reverse().forEach((layer) => {
-                const transform = transforms.get(layer.id);
-                if (!transform || !layer.image) return;
-
-                ctx.save();
-                ctx.globalAlpha = layer.opacity;
-                ctx.filter = monochromeEnabled ? "grayscale(1)" : "none";
-                ctx.setTransform(transform.a, transform.b, transform.c, transform.d, transform.e, transform.f);
-                ctx.drawImage(layer.image, 0, 0, layer.width, layer.height);
-                ctx.restore();
-            });
-
-            return canvas;
-        }
-
         function drawStageCrop(targetCanvas, rect) {
             const width = Math.max(1, Math.round(rect.width));
             const height = Math.max(1, Math.round(rect.height));
@@ -1216,37 +1328,126 @@ import Delaunator from "https://cdn.jsdelivr.net/npm/delaunator@5/+esm";
 
             const ctx = targetCanvas.getContext("2d");
             ctx.imageSmoothingEnabled = true;
-            ctx.imageSmoothingQuality = "high";
+            ctx.imageSmoothingQuality = "medium";
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
+            ctx.globalAlpha = 1;
+            ctx.filter = "none";
             ctx.clearRect(0, 0, width, height);
-            ctx.drawImage(
-                renderStageToCanvas(),
-                Math.round(rect.left),
-                Math.round(rect.top),
-                width,
-                height,
-                0,
-                0,
-                width,
-                height
-            );
+            ctx.fillStyle = "#fff";
+            ctx.fillRect(0, 0, width, height);
+
+            if (mode === MODE_MORPH) {
+                const stageSize = getRoundedStageSize();
+                const fit = getObjectFitContainRect(stageSize.width, stageSize.height, MORPH_WIDTH, MORPH_HEIGHT);
+                ctx.filter = monochromeEnabled ? "grayscale(1)" : "none";
+                ctx.drawImage(
+                    morphCanvas,
+                    fit.left - rect.left,
+                    fit.top - rect.top,
+                    fit.width,
+                    fit.height
+                );
+                ctx.filter = "none";
+                return { width, height };
+            }
+
+            const transforms = getAlignedTransforms();
+            drawOverlayLayers(ctx, transforms, { x: rect.left, y: rect.top });
+
+            const transitionOpacity = getHierarchyTransitionOpacity();
+            const transitionSnapshot = activeHierarchyTransition?.snapshot;
+            if (transitionSnapshot && transitionOpacity > 0) {
+                ctx.save();
+                ctx.globalAlpha = transitionOpacity;
+                ctx.filter = "none";
+                ctx.setTransform(1, 0, 0, 1, 0, 0);
+                ctx.drawImage(
+                    transitionSnapshot,
+                    Math.round(rect.left),
+                    Math.round(rect.top),
+                    width,
+                    height,
+                    0,
+                    0,
+                    width,
+                    height
+                );
+                ctx.restore();
+            }
 
             return { width, height };
         }
 
         function drawCropPopupFrame() {
-            if (!cropPopup || cropPopup.closed || !cropPopupCanvas || !activeCropRect) {
+            const frameStartTime = performance.now();
+            if (!runtimeActive || !cropPopup || cropPopup.closed || !cropPopupCanvas || !activeCropRect) {
                 cropPopupFrameId = null;
                 return;
             }
 
             const { width, height } = drawStageCrop(cropPopupCanvas, activeCropRect);
-            cropPopup.document.title = `トリミング範囲 ${width}x${height}`;
-            cropPopupFrameId = requestAnimationFrame(drawCropPopupFrame);
+            const frameCompletedAt = performance.now();
+            recordOutputFrame(frameCompletedAt);
+            if (cropPopup !== window) {
+                cropPopup.document.title = `トリミング範囲 ${width}x${height}`;
+            }
+            const elapsed = frameCompletedAt - frameStartTime;
+            cropPopupFrameId = window.setTimeout(
+                drawCropPopupFrame,
+                Math.max(0, OUTPUT_FRAME_INTERVAL - elapsed)
+            );
         }
+
+        function getOutputStats() {
+            const now = performance.now();
+            return {
+                fps: outputFpsStats.lastFrameAt && now - outputFpsStats.lastFrameAt < 2000
+                    ? outputFpsStats.measuredFps
+                    : 0,
+                targetFps: OUTPUT_FPS,
+                width: cropPopupCanvas?.width || 0,
+                height: cropPopupCanvas?.height || 0,
+                active: runtimeActive
+            };
+        }
+
+        function exposeOutputApi(targetWindow) {
+            targetWindow.getOverlapOutputStats = getOutputStats;
+            targetWindow.setOverlapRuntimeActive = setRuntimeActive;
+        }
+
+        function stopRuntimeLoops() {
+            if (autoRandomFrameId) cancelAnimationFrame(autoRandomFrameId);
+            if (cropPopupFrameId) clearTimeout(cropPopupFrameId);
+            autoRandomFrameId = null;
+            cropPopupFrameId = null;
+            lastAutoRandomTime = 0;
+            resetOutputFpsStats();
+        }
+
+        function setRuntimeActive(active) {
+            const nextActive = Boolean(active);
+            if (runtimeActive === nextActive) return;
+            runtimeActive = nextActive;
+
+            if (!runtimeActive) {
+                stopRuntimeLoops();
+                return;
+            }
+
+            resetOutputFpsStats();
+            renderStage();
+            ensureAutoRandomLoop();
+            if (cropPopup && !cropPopup.closed && cropPopupCanvas && activeCropRect) {
+                ensureCropPopupLoop();
+            }
+        }
+
+        exposeOutputApi(window);
 
         function ensureCropPopupLoop() {
             if (cropPopupFrameId) return;
-            cropPopupFrameId = requestAnimationFrame(drawCropPopupFrame);
+            cropPopupFrameId = window.setTimeout(drawCropPopupFrame, 0);
         }
 
         function getCropPopupHtml(width, height) {
@@ -1305,6 +1506,15 @@ import Delaunator from "https://cdn.jsdelivr.net/npm/delaunator@5/+esm";
             if (!identifiers) return;
 
             setActiveCropRect(rect, { showSelection: true });
+            if (IS_EMBEDDED) {
+                cropPopup = window;
+                cropPopupCanvas = embeddedOutputCanvas;
+                cropPopupCanvas.id = identifiers.canvasId;
+                registerCropPopupWithManager(window, identifiers);
+                ensureCropPopupLoop();
+                return;
+            }
+
             const width = Math.max(1, Math.round(activeCropRect.width));
             const height = Math.max(1, Math.round(activeCropRect.height));
             const previousPopup = cropPopup;
@@ -1320,6 +1530,7 @@ import Delaunator from "https://cdn.jsdelivr.net/npm/delaunator@5/+esm";
             popup.document.close();
             cropPopupCanvas = popup.document.getElementById("cropCanvas");
             cropPopupCanvas.id = identifiers.canvasId;
+            exposeOutputApi(popup);
             if (previousPopup && previousPopup !== popup && !previousPopup.closed) {
                 previousPopup.close();
             }
@@ -1344,7 +1555,14 @@ import Delaunator from "https://cdn.jsdelivr.net/npm/delaunator@5/+esm";
         function registerCropPopupWithManager(popup, identifiers) {
             if (!DISPLAY_SOURCE_ID) return null;
 
-            const managerWindow = window.opener;
+            const openerIsManager = window.opener
+                && !window.opener.closed
+                && typeof window.opener.registerCanvasSource === "function";
+            const managerWindow = openerIsManager
+                ? window.opener
+                : window.parent !== window
+                    ? window.parent
+                    : null;
 
             try {
                 if (
@@ -1368,6 +1586,18 @@ import Delaunator from "https://cdn.jsdelivr.net/npm/delaunator@5/+esm";
             }
         }
 
+        function initializeEmbeddedOutput() {
+            if (!IS_EMBEDDED || !DISPLAY_SOURCE_ID || !embeddedOutputCanvas) return;
+            showCropPopup(getDefaultCropRect());
+            window.addEventListener("beforeunload", () => {
+                try {
+                    window.parent?.unregisterCanvasSource(DISPLAY_SOURCE_ID, window);
+                } catch (error) {
+                    console.warn("Display Managerへの登録解除に失敗しました", error);
+                }
+            });
+        }
+
         function setCropEnabled(enabled) {
             cropEnabled = enabled;
             cropDrag = null;
@@ -1377,8 +1607,7 @@ import Delaunator from "https://cdn.jsdelivr.net/npm/delaunator@5/+esm";
                 setActiveCropRect(activeCropRect || getDefaultCropRect(), { showSelection: true });
             }
             stage.classList.toggle("is-cropping", cropEnabled);
-            cropToggleButton.classList.toggle("is-off", !cropEnabled);
-            cropToggleButton.setAttribute("aria-pressed", String(cropEnabled));
+            syncToggleButton(cropToggleButton, cropEnabled);
             cropControls.hidden = !cropEnabled;
         }
 
@@ -1605,6 +1834,12 @@ import Delaunator from "https://cdn.jsdelivr.net/npm/delaunator@5/+esm";
             item.draggable = false;
         }
 
+        function bindControlDragPrevention(control, item) {
+            ["pointerdown", "mousedown", "touchstart"].forEach((eventName) => {
+                control.addEventListener(eventName, (event) => preventLayerDrag(event, item));
+            });
+        }
+
         function bindLayerDrag(item, layer) {
             item.addEventListener("pointerdown", (event) => {
                 item.draggable = !isControlTarget(event.target);
@@ -1692,9 +1927,7 @@ import Delaunator from "https://cdn.jsdelivr.net/npm/delaunator@5/+esm";
         function createRangeControl(layer, item, options) {
             const control = document.createElement("label");
             control.className = "opacityControl";
-            ["pointerdown", "mousedown", "touchstart"].forEach((eventName) => {
-                control.addEventListener(eventName, (event) => preventLayerDrag(event, item));
-            });
+            bindControlDragPrevention(control, item);
 
             const slider = document.createElement("input");
             slider.type = "range";
@@ -1745,9 +1978,7 @@ import Delaunator from "https://cdn.jsdelivr.net/npm/delaunator@5/+esm";
             group.className = "autoControlGroup";
             const control = document.createElement("label");
             control.className = "autoControl";
-            ["pointerdown", "mousedown", "touchstart"].forEach((eventName) => {
-                group.addEventListener(eventName, (event) => preventLayerDrag(event, item));
-            });
+            bindControlDragPrevention(group, item);
 
             const labelText = document.createElement("span");
             labelText.textContent = "ランダム";
@@ -1856,14 +2087,11 @@ import Delaunator from "https://cdn.jsdelivr.net/npm/delaunator@5/+esm";
             clearButton.disabled = layers.length === 0;
             fileInput.disabled = layers.length >= MAX_IMAGES;
             addLayerSlot.hidden = layers.length >= MAX_IMAGES;
-            monoToggleButton.classList.toggle("is-off", !monochromeEnabled);
-            monoToggleButton.setAttribute("aria-pressed", String(monochromeEnabled));
+            syncToggleButton(monoToggleButton, monochromeEnabled);
             alignToggleButton.hidden = mode !== MODE_OVERLAY;
-            alignToggleButton.classList.toggle("is-off", !alignmentEnabled);
-            alignToggleButton.setAttribute("aria-pressed", String(alignmentEnabled));
+            syncToggleButton(alignToggleButton, alignmentEnabled);
             hierarchyToggleButton.hidden = mode !== MODE_OVERLAY;
-            hierarchyToggleButton.classList.toggle("is-off", !hierarchyShuffleEnabled);
-            hierarchyToggleButton.setAttribute("aria-pressed", String(hierarchyShuffleEnabled));
+            syncToggleButton(hierarchyToggleButton, hierarchyShuffleEnabled);
             hierarchyIntervalControl.hidden = mode !== MODE_OVERLAY || !hierarchyShuffleEnabled;
             randomOpacityTotalControl.hidden = mode !== MODE_OVERLAY || randomOpacityLayers.length === 0;
             randomOpacityTotalInput.min = String(Math.round(randomOpacityRange.min * 1000) / 10);
@@ -1871,10 +2099,8 @@ import Delaunator from "https://cdn.jsdelivr.net/npm/delaunator@5/+esm";
             randomOpacityTotalInput.value = randomOpacityTotal === null
                 ? ""
                 : String(Math.round(randomOpacityTotal * 1000) / 10);
-            overlayModeButton.classList.toggle("is-active", mode === MODE_OVERLAY);
-            morphModeButton.classList.toggle("is-active", mode === MODE_MORPH);
-            overlayModeButton.setAttribute("aria-selected", String(mode === MODE_OVERLAY));
-            morphModeButton.setAttribute("aria-selected", String(mode === MODE_MORPH));
+            syncModeTab(overlayModeButton, mode === MODE_OVERLAY);
+            syncModeTab(morphModeButton, mode === MODE_MORPH);
         }
 
         function render() {
@@ -1900,7 +2126,7 @@ import Delaunator from "https://cdn.jsdelivr.net/npm/delaunator@5/+esm";
         clearButton.addEventListener("click", () => {
             layers.forEach(disposeLayer);
             layers = [];
-            layerOpacityBounds = [];
+            layerOpacitySettings = [];
             alignmentReferenceId = null;
             randomOpacityTotal = null;
             render();
@@ -1974,3 +2200,4 @@ import Delaunator from "https://cdn.jsdelivr.net/npm/delaunator@5/+esm";
         watchDevicePixelRatio();
 
         render();
+        requestAnimationFrame(initializeEmbeddedOutput);

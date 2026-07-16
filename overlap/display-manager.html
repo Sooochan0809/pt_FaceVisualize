@@ -4,7 +4,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Canvas Popup Display Manager</title>
+    <title>Overlap Display Manager</title>
 
     <style>
         :root {
@@ -28,7 +28,7 @@
         }
 
         body>* {
-            width: min(100%, 960px);
+            width: min(100%, 1280px);
             margin-inline: auto;
         }
 
@@ -77,6 +77,38 @@
 
         .assignment-row {
             grid-template-columns: 110px 1fr;
+        }
+
+        .fps-monitor {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 18px;
+        }
+
+        .fps-group h3 {
+            margin: 0 0 8px;
+            color: var(--muted);
+            font-size: 13px;
+            font-weight: 600;
+        }
+
+        .fps-row {
+            display: grid;
+            grid-template-columns: 90px minmax(0, 1fr) auto;
+            gap: 10px;
+            align-items: center;
+            padding: 7px 0;
+            border-bottom: 1px solid var(--line);
+            font-variant-numeric: tabular-nums;
+        }
+
+        .fps-value {
+            font-weight: 700;
+        }
+
+        .fps-detail {
+            color: var(--muted);
+            font-size: 12px;
         }
 
         .source-row:last-child,
@@ -128,6 +160,45 @@
             margin-top: 16px;
         }
 
+        .source-editor-tabs {
+            display: grid;
+            grid-template-columns: repeat(6, minmax(0, 1fr));
+            gap: 8px;
+            margin-bottom: 12px;
+        }
+
+        .source-editor-tab.is-active {
+            border-color: #ddd;
+            background: #ddd;
+            color: #111;
+        }
+
+        .source-editor-viewport {
+            position: relative;
+            height: min(78dvh, 860px);
+            min-height: 620px;
+            overflow: hidden;
+            border: 1px solid var(--line);
+            border-radius: 6px;
+            background: #f0f0f0;
+        }
+
+        .source-editor-frame {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            border: 0;
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .source-editor-frame.is-active {
+            z-index: 1;
+            opacity: 1;
+            pointer-events: auto;
+        }
+
         .settings {
             display: grid;
             grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -158,6 +229,15 @@
             font: 12px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace;
         }
 
+        #fpsLog {
+            height: 150px;
+            margin: 16px 0 0;
+            overflow: auto;
+            white-space: pre-wrap;
+            color: var(--muted);
+            font: 12px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace;
+        }
+
         @media (max-width: 850px) {
             body {
                 padding: 24px 16px;
@@ -171,12 +251,25 @@
             .display-row {
                 grid-template-columns: 1fr;
             }
+
+            .source-editor-tabs {
+                grid-template-columns: repeat(3, minmax(0, 1fr));
+            }
+
+            .fps-monitor {
+                grid-template-columns: 1fr;
+            }
         }
     </style>
 </head>
 
 <body>
-    <h1>Canvas Popup Display Manager</h1>
+    <h1>Overlap Display Manager</h1>
+    <section class="panel">
+        <h2>ソース編集（1タブ運用）</h2>
+        <div class="source-editor-tabs" id="sourceEditorTabs"></div>
+        <div class="source-editor-viewport" id="sourceEditorViewport"></div>
+    </section>
     <div class="grid">
         <section class="panel">
             <h2>Canvas</h2>
@@ -202,7 +295,7 @@
 
                 <label>
                     描画FPS
-                    <input id="streamFps" type="number" min="1" max="60" value="30">
+                    <input id="streamFps" type="number" min="1" max="60" value="60">
                 </label>
             </div>
 
@@ -211,6 +304,7 @@
                 <button id="start" class="primary">開始</button>
                 <button id="next">次へ</button>
                 <button id="stop" class="danger">停止</button>
+                <button id="closeAllPopups" class="danger">全ポップアップを閉じる</button>
             </div>
         </section>
 
@@ -218,6 +312,12 @@
             <h2>ディスプレイ設定</h2>
             <button id="detectDisplays">ディスプレイを検出</button>
             <div id="displayList"></div>
+        </section>
+
+        <section class="panel">
+            <h2>実測FPSモニター</h2>
+            <div class="fps-monitor" id="fpsMonitor"></div>
+            <pre id="fpsLog" aria-label="FPS履歴ログ"></pre>
         </section>
 
         <section class="panel">
@@ -234,6 +334,10 @@
             const SOURCE_COUNT = 6;
             const VIEWER_COUNT = 4;
             const DEFAULT_CANVAS_ID = "canvas";
+            const DEFAULT_SOURCE_FPS = 60;
+            const SOURCE_EDITOR_VERSION = "20260716-5";
+            const VIEWER_MAX_WIDTH = 1920;
+            const VIEWER_MAX_HEIGHT = 1080;
             const viewerIndexes = Array.from({ length: VIEWER_COUNT }, (_, index) => index);
 
             const sources = Array.from({ length: SOURCE_COUNT }, (_, index) => ({
@@ -249,11 +353,13 @@
             const lastChangedAt = Array(VIEWER_COUNT).fill(0);
             const usageCount = Object.fromEntries(sources.map(source => [source.id, 0]));
             const screenSelections = Array(VIEWER_COUNT).fill("");
+            const sourceEditorFrames = new Map();
 
             let running = false;
             let switching = false;
             let timer = null;
             let detectedScreens = [];
+            let selectedEditorSourceId = sources[0].id;
 
             const elements = {
                 sourceList: document.querySelector("#sourceList"),
@@ -262,8 +368,171 @@
                 log: document.querySelector("#log"),
                 intervalSeconds: document.querySelector("#intervalSeconds"),
                 fadeSeconds: document.querySelector("#fadeSeconds"),
-                streamFps: document.querySelector("#streamFps")
+                streamFps: document.querySelector("#streamFps"),
+                fpsMonitor: document.querySelector("#fpsMonitor"),
+                fpsLog: document.querySelector("#fpsLog")
             };
+
+            function formatFps(value) {
+                return Number.isFinite(value) ? value.toFixed(1) : "0.0";
+            }
+
+            function getSourceOutputStats(sourceId) {
+                const sourceWindow = getSourceWindow(sourceId);
+                try {
+                    return sourceWindow?.getOverlapOutputStats?.() || null;
+                } catch {
+                    return null;
+                }
+            }
+
+            function getStreamFps(stream) {
+                if (!stream || stream.stopped) return 0;
+                return performance.now() - stream.lastDrawAt < 2000 ? stream.measuredFps : 0;
+            }
+
+            function getViewerLayerFps(viewerState) {
+                return viewerState
+                    ? viewerState.streams.map(getStreamFps)
+                    : [0, 0];
+            }
+
+            function getViewerDisplayFps(viewerState) {
+                const activeValues = getViewerLayerFps(viewerState).filter((value) => value > 0);
+                return activeValues.length ? Math.max(...activeValues) : 0;
+            }
+
+            function createFpsRow(label, value, detail) {
+                const row = document.createElement("div");
+                const name = document.createElement("strong");
+                const fps = document.createElement("span");
+                const description = document.createElement("span");
+                row.className = "fps-row";
+                name.textContent = label;
+                fps.className = "fps-value";
+                fps.textContent = `${formatFps(value)} fps`;
+                description.className = "fps-detail";
+                description.textContent = detail;
+                row.append(name, fps, description);
+                return row;
+            }
+
+            function renderFpsMonitor() {
+                const sourceGroup = document.createElement("div");
+                const sourceTitle = document.createElement("h3");
+                sourceGroup.className = "fps-group";
+                sourceTitle.textContent = "ソースCanvas";
+                sourceGroup.appendChild(sourceTitle);
+
+                sources.forEach((source) => {
+                    const stats = getSourceOutputStats(source.id);
+                    const detail = stats
+                        ? stats.active
+                            ? `${stats.width}×${stats.height} / 目標 ${stats.targetFps} fps`
+                            : "停止中"
+                        : "未接続";
+                    sourceGroup.appendChild(createFpsRow(source.name, stats?.fps || 0, detail));
+                });
+
+                const viewerGroup = document.createElement("div");
+                const viewerTitle = document.createElement("h3");
+                viewerGroup.className = "fps-group";
+                viewerTitle.textContent = "Viewer Canvas";
+                viewerGroup.appendChild(viewerTitle);
+
+                viewers.forEach((viewerState, index) => {
+                    const layerValues = getViewerLayerFps(viewerState);
+                    const detail = viewerState
+                        ? `layer0 ${formatFps(layerValues[0])} / layer1 ${formatFps(layerValues[1])}`
+                        : "未起動";
+                    viewerGroup.appendChild(createFpsRow(
+                        `Viewer ${index + 1}`,
+                        getViewerDisplayFps(viewerState),
+                        detail
+                    ));
+                });
+
+                elements.fpsMonitor.replaceChildren(sourceGroup, viewerGroup);
+            }
+
+            function appendFpsLog() {
+                const time = new Date().toLocaleTimeString("ja-JP");
+                const sourceSummary = sources.map((source) => {
+                    const stats = getSourceOutputStats(source.id);
+                    return `${source.name}:${formatFps(stats?.fps || 0)}`;
+                }).join(" ");
+                const viewerSummary = viewers
+                    .map((viewerState, index) => (
+                        `V${index + 1}:${formatFps(getViewerDisplayFps(viewerState))}`
+                    ))
+                    .join(" ");
+                const lines = `${elements.fpsLog.textContent}[${time}] ${sourceSummary} | ${viewerSummary}\n`
+                    .split("\n")
+                    .filter(Boolean)
+                    .slice(-120);
+                elements.fpsLog.textContent = `${lines.join("\n")}\n`;
+                elements.fpsLog.scrollTop = elements.fpsLog.scrollHeight;
+            }
+
+            function selectSourceEditor(sourceId) {
+                selectedEditorSourceId = sourceId;
+                sourceEditorFrames.forEach((frame, id) => {
+                    frame.classList.toggle("is-active", id === sourceId);
+                });
+                document.querySelectorAll("[data-editor-source-id]").forEach((button) => {
+                    button.classList.toggle("is-active", button.dataset.editorSourceId === sourceId);
+                });
+                updateSourceActivity();
+            }
+
+            function setSourceRuntimeActive(sourceId, active) {
+                try {
+                    getSourceWindow(sourceId)?.setOverlapRuntimeActive?.(active);
+                } catch {
+                    // 読み込み途中のiframeは登録完了時に再設定する。
+                }
+            }
+
+            function updateSourceActivity(extraSourceIds = []) {
+                const activeSourceIds = new Set(assignments.filter(Boolean));
+                activeSourceIds.add(selectedEditorSourceId);
+                extraSourceIds.forEach((sourceId) => activeSourceIds.add(sourceId));
+                sources.forEach((source) => {
+                    setSourceRuntimeActive(source.id, activeSourceIds.has(source.id));
+                });
+            }
+
+            function createSourceEditors() {
+                const tabs = document.querySelector("#sourceEditorTabs");
+                const viewport = document.querySelector("#sourceEditorViewport");
+
+                sources.forEach((source, index) => {
+                    const button = document.createElement("button");
+                    button.type = "button";
+                    button.className = "source-editor-tab";
+                    button.dataset.editorSourceId = source.id;
+                    button.textContent = source.name;
+                    button.addEventListener("click", () => selectSourceEditor(source.id));
+
+                    const frame = document.createElement("iframe");
+                    const sourceUrl = new URL("./index.html", window.location.href);
+                    sourceUrl.searchParams.set("sourceId", source.id);
+                    sourceUrl.searchParams.set("canvasId", source.canvasId);
+                    sourceUrl.searchParams.set("embedded", "1");
+                    sourceUrl.searchParams.set("outputFps", String(DEFAULT_SOURCE_FPS));
+                    sourceUrl.searchParams.set("v", SOURCE_EDITOR_VERSION);
+                    frame.className = "source-editor-frame";
+                    frame.title = `${source.name} 編集`;
+                    frame.src = sourceUrl;
+                    frame.loading = "eager";
+                    frame.addEventListener("load", () => updateSourceActivity());
+                    sourceEditorFrames.set(source.id, frame);
+                    tabs.appendChild(button);
+                    viewport.appendChild(frame);
+
+                    if (index === 0) selectSourceEditor(source.id);
+                });
+            }
 
             function log(message) {
                 const time = new Date().toLocaleTimeString("ja-JP");
@@ -295,8 +564,14 @@
                 return {
                     intervalMs: numberInRange(elements.intervalSeconds, 20, 2) * 1000,
                     fadeMs: numberInRange(elements.fadeSeconds, 3, 0.1) * 1000,
-                    fps: numberInRange(elements.streamFps, 30, 1, 60)
+                    fps: numberInRange(elements.streamFps, 60, 1, 60)
                 };
+            }
+
+            function getSourceWindow(sourceId) {
+                const registeredWindow = registry.get(sourceId)?.popupWindow;
+                if (registeredWindow && !registeredWindow.closed) return registeredWindow;
+                return sourceEditorFrames.get(sourceId)?.contentWindow || null;
             }
 
             function canvasOf(sourceId) {
@@ -332,6 +607,7 @@
                 registry.set(sourceId, { popupWindow, canvasId });
 
                 renderSources();
+                updateSourceActivity();
                 log(`${sourceId}を登録しました`);
             };
 
@@ -368,7 +644,7 @@
                     status.className = `status${ready ? " ready" : ""}`;
                     status.textContent = ready ? "接続済み" : "未登録";
                     openButton.type = "button";
-                    openButton.textContent = "開く";
+                    openButton.textContent = "編集";
                     openButton.dataset.sourceId = source.id;
 
                     row.append(
@@ -409,19 +685,9 @@
                 const sourceId = event.target.dataset.sourceId;
                 const source = sourceById.get(sourceId);
                 if (!source) return;
-
-                const sourceUrl = new URL("../overlap/index.html", window.location.href);
-                sourceUrl.searchParams.set("sourceId", sourceId);
-                sourceUrl.searchParams.set("canvasId", source.canvasId);
-
-                const sourceWindow = window.open(sourceUrl, `overlap-${sourceId}`);
-                if (!sourceWindow) {
-                    log(`${sourceId}を開けませんでした。ポップアップを許可してください`);
-                    return;
-                }
-
-                sourceWindow.focus();
-                log(`${sourceId}のoverlapを開きました`);
+                selectSourceEditor(sourceId);
+                document.querySelector("#sourceEditorViewport")?.scrollIntoView({ behavior: "smooth", block: "center" });
+                log(`${sourceId}の編集画面を表示しました`);
             }
 
             function refreshSourceStatuses() {
@@ -455,9 +721,15 @@
             }
 
             function resizeViewerCanvas(viewerState, canvas) {
-                const dpr = Math.min(viewerState.window.devicePixelRatio || 1, 2);
-                const width = Math.max(1, Math.round(viewerState.window.innerWidth * dpr));
-                const height = Math.max(1, Math.round(viewerState.window.innerHeight * dpr));
+                const cssWidth = Math.max(1, viewerState.window.innerWidth);
+                const cssHeight = Math.max(1, viewerState.window.innerHeight);
+                const scale = Math.min(
+                    1,
+                    VIEWER_MAX_WIDTH / cssWidth,
+                    VIEWER_MAX_HEIGHT / cssHeight
+                );
+                const width = Math.max(1, Math.round(cssWidth * scale));
+                const height = Math.max(1, Math.round(cssHeight * scale));
 
                 if (canvas.width !== width || canvas.height !== height) {
                     canvas.width = width;
@@ -481,7 +753,14 @@
             function startMirror(viewerState, layerIndex, sourceId, fps) {
                 stopMirror(viewerState, layerIndex);
 
-                const stream = { stopped: false, lastFrameAt: 0 };
+                const stream = {
+                    stopped: false,
+                    lastFrameAt: 0,
+                    lastDrawAt: 0,
+                    sampleStartedAt: performance.now(),
+                    frameCount: 0,
+                    measuredFps: 0
+                };
                 const canvas = viewerState.layers[layerIndex];
                 const context = viewerState.contexts[layerIndex];
                 const frameInterval = 1000 / fps;
@@ -513,6 +792,14 @@
                     context.fillStyle = "#000";
                     context.fillRect(0, 0, canvas.width, canvas.height);
                     context.drawImage(sourceCanvas, x, y, width, height);
+                    stream.frameCount += 1;
+                    stream.lastDrawAt = performance.now();
+                    const sampleDuration = stream.lastDrawAt - stream.sampleStartedAt;
+                    if (sampleDuration >= 1000) {
+                        stream.measuredFps = stream.frameCount * 1000 / sampleDuration;
+                        stream.frameCount = 0;
+                        stream.sampleStartedAt = stream.lastDrawAt;
+                    }
                 }
 
                 viewerState.window.requestAnimationFrame(draw);
@@ -709,10 +996,7 @@
                 }
 
                 const viewerState = viewers[viewerIndex];
-                if (viewerState && !viewerState.window.closed) {
-                    viewerState.window.close();
-                }
-
+                stopViewer(viewerState);
                 viewers[viewerIndex] = null;
                 createViewer(viewerIndex, screen);
             }
@@ -768,6 +1052,7 @@
 
                 try {
                     const { fadeMs, fps } = getSettings();
+                    updateSourceActivity(changes.map((change) => change.sourceId));
 
                     const prepared = changes.map(change => {
                         const viewerState = viewers[change.viewerIndex];
@@ -805,6 +1090,7 @@
                         lastChangedAt[change.viewerIndex] = Date.now();
                     });
 
+                    updateSourceActivity();
                     renderAssignments();
                     log(prepared.map(change => `Viewer ${change.viewerIndex + 1} → ${change.sourceId}`).join(" / "));
                 } finally {
@@ -864,10 +1150,53 @@
             }
 
             function stop() {
+                stopAutomation();
+                log("停止しました");
+            }
+
+            function stopAutomation() {
                 running = false;
                 clearTimeout(timer);
                 timer = null;
-                log("停止しました");
+            }
+
+            function stopViewer(viewerState) {
+                if (!viewerState) return;
+                viewerState.streams.forEach((stream) => {
+                    if (stream) stream.stopped = true;
+                });
+                try {
+                    if (!viewerState.window.closed) viewerState.window.close();
+                } catch {
+                    // 既に閉じられたViewerはそのまま破棄する。
+                }
+            }
+
+            function closeAllPopups() {
+                stopAutomation();
+                switching = false;
+
+                viewers.forEach((viewerState, index) => {
+                    stopViewer(viewerState);
+                    viewers[index] = null;
+                    assignments[index] = null;
+                });
+
+                registry.forEach((entry, sourceId) => {
+                    const embeddedWindow = sourceEditorFrames.get(sourceId)?.contentWindow;
+                    if (!entry.popupWindow || entry.popupWindow === embeddedWindow) return;
+                    try {
+                        if (!entry.popupWindow.closed) entry.popupWindow.close();
+                    } catch {
+                        // ブラウザ側で既に閉じられたポップアップは無視する。
+                    }
+                    registry.delete(sourceId);
+                });
+
+                renderAssignments();
+                renderSources();
+                updateSourceActivity();
+                log("Viewerと外部Canvasポップアップをすべて閉じました");
             }
 
             async function runAction(action) {
@@ -883,17 +1212,28 @@
             elements.displayList.addEventListener("change", handleDisplayChange);
             elements.displayList.addEventListener("click", handleDisplayClick);
 
-            document.querySelector("#refreshSources").addEventListener("click", refreshSourceStatuses);
-            document.querySelector("#detectDisplays").addEventListener("click", detectDisplays);
-            document.querySelector("#initialize").addEventListener("click", () => runAction(initialize));
-            document.querySelector("#start").addEventListener("click", () => runAction(start));
-            document.querySelector("#next").addEventListener("click", () => runAction(next));
-            document.querySelector("#stop").addEventListener("click", stop);
+            const buttonActions = {
+                refreshSources,
+                detectDisplays,
+                initialize: () => runAction(initialize),
+                start: () => runAction(start),
+                next: () => runAction(next),
+                stop,
+                closeAllPopups
+            };
+            Object.entries(buttonActions).forEach(([id, action]) => {
+                document.getElementById(id).addEventListener("click", action);
+            });
 
             setInterval(refreshSourceStatuses, 1500);
+            setInterval(renderFpsMonitor, 1000);
+            setInterval(appendFpsLog, 5000);
 
             renderSources();
             renderAssignments();
+            renderFpsMonitor();
+            appendFpsLog();
+            createSourceEditors();
             log("管理画面を起動しました");
         })();
     </script>
