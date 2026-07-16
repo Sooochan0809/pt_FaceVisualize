@@ -3,7 +3,6 @@ import Delaunator from "https://cdn.jsdelivr.net/npm/delaunator@5/+esm";
         const MAX_IMAGES = 7;
         const DEFAULT_OPACITY = 0.1;
         const DEFAULT_RANDOM_OPACITY_MAX = 0.3;
-        const RANDOM_OPACITY_TOTAL_MAX = 1.05;
         const MODE_OVERLAY = "overlay";
         const MODE_MORPH = "morph";
         const RANDOM_OFF = "off";
@@ -418,14 +417,10 @@ import Delaunator from "https://cdn.jsdelivr.net/npm/delaunator@5/+esm";
         }
 
         function getRandomOpacityTotalRange(randomLayers = getRandomOpacityLayers()) {
-            const range = randomLayers.reduce((range, layer) => ({
+            return randomLayers.reduce((range, layer) => ({
                 min: range.min + layer.randomOpacityMin,
                 max: range.max + layer.randomOpacityMax
             }), { min: 0, max: 0 });
-            return {
-                min: Math.min(range.min, RANDOM_OPACITY_TOTAL_MAX),
-                max: Math.min(range.max, RANDOM_OPACITY_TOTAL_MAX)
-            };
         }
 
         function distributeOpacityTotal(randomLayers, total, randomize = false) {
@@ -498,7 +493,7 @@ import Delaunator from "https://cdn.jsdelivr.net/npm/delaunator@5/+esm";
 
             const percentage = Number(value);
             if (!Number.isFinite(percentage)) return;
-            randomOpacityTotal = clamp(percentage / 100, 0, RANDOM_OPACITY_TOTAL_MAX);
+            randomOpacityTotal = Math.max(0, percentage / 100);
             applyRandomOpacityTotal();
             render();
         }
@@ -2095,7 +2090,6 @@ import Delaunator from "https://cdn.jsdelivr.net/npm/delaunator@5/+esm";
             hierarchyIntervalControl.hidden = mode !== MODE_OVERLAY || !hierarchyShuffleEnabled;
             randomOpacityTotalControl.hidden = mode !== MODE_OVERLAY || randomOpacityLayers.length === 0;
             randomOpacityTotalInput.min = String(Math.round(randomOpacityRange.min * 1000) / 10);
-            randomOpacityTotalInput.max = String(Math.round(randomOpacityRange.max * 1000) / 10);
             randomOpacityTotalInput.value = randomOpacityTotal === null
                 ? ""
                 : String(Math.round(randomOpacityTotal * 1000) / 10);
