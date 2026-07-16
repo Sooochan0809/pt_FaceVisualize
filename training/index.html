@@ -879,6 +879,7 @@
                 <p id="consentText" class="consentText">
                     表情の撮影、表情画像の使用について同意して始めますか？
                     <span class="consentNote">※同意しなくても体験は可能です</span>
+                    <span class="consentNote">※同意していただける場合は、「はい」を押す前に同意書にサインをしてください。</span>
                 </p>
                 <div class="consentActions">
                     <button id="consentAcceptButton" class="consentButton consentButton--accept" type="button">はい</button>
@@ -979,6 +980,7 @@
             const COACH_TIP_MS = 5000;
             const COACH_TIMER_TIP_MS = 9000;
             const FACE_FRAME_HOLD_MS = 3000;
+            const FINAL_RELOAD_MS = 30 * 1000;
             const CHALLENGE_ATTEMPT_MS = 90 * 1000;
             const MAX_CHALLENGE_ATTEMPTS = 3;
             const PAUSE_TITLE = "休憩中...";
@@ -1098,6 +1100,7 @@
             let challengeTimerStartedAt = 0;
             let challengeTimerRemainingMs = CHALLENGE_ATTEMPT_MS;
             let levelUpProgressTimer = 0;
+            let finalReloadTimer = 0;
             let demoPlayCount = 0;
             let running = false;
             let paused = false;
@@ -1920,6 +1923,14 @@
                 demoScene.hidden = scene !== demoScene;
                 trainingScene.hidden = scene !== trainingScene;
                 finalScene.hidden = scene !== finalScene;
+
+                window.clearTimeout(finalReloadTimer);
+                finalReloadTimer = 0;
+                if (scene === finalScene) {
+                    finalReloadTimer = window.setTimeout(() => {
+                        window.location.reload();
+                    }, FINAL_RELOAD_MS);
+                }
             };
 
             const goToChallengeLevel = (index) => {
