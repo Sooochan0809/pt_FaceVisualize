@@ -441,51 +441,16 @@
             pointer-events: none;
         }
 
-        .scoreBubble {
-            position: absolute;
-            right: 12px;
-            bottom: 12px;
-            z-index: 4;
-            width: 124px;
-            aspect-ratio: 1;
-            display: grid;
-            grid-template-rows: auto 1fr auto;
-            align-items: center;
-            justify-items: center;
-            padding: 14px 12px 12px;
-            border-radius: 50%;
-            background: rgba(255, 255, 255, 0.82);
-            font-variant-numeric: tabular-nums;
-            text-align: center;
-            pointer-events: none;
-        }
-
-        .scoreBubbleLabel {
-            color: var(--score-accent, var(--accent));
-            font-size: 0.9rem;
-            line-height: 1;
-        }
-
-        .scoreBubbleNumber {
-            color: var(--score-accent, var(--accent));
-            font-size: 3.8rem;
-            line-height: 0.92;
-        }
-
-        .scoreBubbleUnit {
-            justify-self: end;
-            margin-right: 14px;
-            color: var(--muted);
-            font-size: 0.85rem;
-            line-height: 1;
-        }
-
         .challengeTimer {
             position: absolute;
             top: 104px;
             right: 12px;
             z-index: 4;
-            min-width: 92px;
+            min-width: 220px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
             border: 1px solid rgba(217, 222, 229, 0.82);
             border-radius: 999px;
             background: rgba(255, 255, 255, 0.86);
@@ -497,6 +462,53 @@
             line-height: 1;
             text-align: center;
             pointer-events: none;
+        }
+
+        .challengeChances {
+            display: inline-flex;
+            align-items: center;
+            gap: 7px;
+            white-space: nowrap;
+        }
+
+        .challengeChanceLabel {
+            color: var(--muted);
+            font-size: 0.78rem;
+            font-weight: 500;
+        }
+
+        .challengeChanceDots {
+            display: inline-flex;
+            gap: 5px;
+        }
+
+        .challengeChanceDot {
+            width: 10px;
+            aspect-ratio: 1;
+            border: 1px solid rgba(39, 194, 138, 0.72);
+            border-radius: 50%;
+            background: transparent;
+        }
+
+        .challengeChanceDot.is-remaining {
+            background: var(--accent);
+        }
+
+        .challengeTimer.is-last-chance .challengeChanceDot {
+            border-color: rgba(221, 138, 46, 0.72);
+        }
+
+        .challengeTimer.is-last-chance .challengeChanceDot.is-remaining {
+            background: #dd8a2e;
+        }
+
+        .challengeTimerDivider {
+            color: var(--line);
+            font-weight: 400;
+        }
+
+        .challengeTimerValue {
+            min-width: 2.8em;
         }
 
         .challengeTimer[hidden] {
@@ -559,6 +571,7 @@
         }
 
         .scoreBar {
+            grid-column: 1 / -1;
             width: 100%;
             display: grid;
             grid-template-columns: repeat(10, minmax(0, 1fr));
@@ -657,11 +670,6 @@
             right: 12px;
         }
 
-        .coachTip--score {
-            right: 12px;
-            bottom: 148px;
-        }
-
         .coachTip--face {
             left: 50%;
             top: 34%;
@@ -742,11 +750,6 @@
                 left: 10px;
             }
 
-            .coachTip--score {
-                right: 10px;
-                bottom: 136px;
-            }
-
             .coachTip--face {
                 top: 48%;
                 transform: translate(-50%, -50%);
@@ -801,32 +804,25 @@
                 height: 14px;
             }
 
-            .scoreBubble {
-                right: 20px;
-                bottom: 20px;
-                width: 180px;
-                padding: 20px 18px 18px;
-            }
-
-            .scoreBubbleLabel {
-                font-size: 1.25rem;
-            }
-
-            .scoreBubbleNumber {
-                font-size: 5.4rem;
-            }
-
-            .scoreBubbleUnit {
-                margin-right: 20px;
-                font-size: 1.15rem;
-            }
-
             .challengeTimer {
                 top: 152px;
                 right: 24px;
-                min-width: 132px;
+                min-width: 308px;
+                gap: 14px;
                 padding: 12px 20px;
                 font-size: 1.75rem;
+            }
+
+            .challengeChanceLabel {
+                font-size: 1.15rem;
+            }
+
+            .challengeChanceDots {
+                gap: 7px;
+            }
+
+            .challengeChanceDot {
+                width: 14px;
             }
 
             .cameraAssist {
@@ -854,11 +850,6 @@
             .coachTip--timer {
                 top: 224px;
                 right: 24px;
-            }
-
-            .coachTip--score {
-                right: 24px;
-                bottom: 228px;
             }
 
             .coachTip--face {
@@ -926,21 +917,24 @@
                             </div>
                             <div id="scoreBar" class="scoreBar" aria-hidden="true"></div>
                         </div>
-                        <div id="scoreBubble" class="scoreBubble" aria-label="score">
-                            <span class="scoreBubbleLabel">Score</span>
-                            <span id="scoreNumber" class="scoreBubbleNumber">0</span>
-                            <span class="scoreBubbleUnit">/100</span>
+                        <div id="challengeTimer" class="challengeTimer" hidden>
+                            <span class="challengeChances">
+                                <span class="challengeChanceLabel">チャンス</span>
+                                <span id="challengeChanceDots" class="challengeChanceDots" aria-label="残り3回"></span>
+                            </span>
+                            <span class="challengeTimerDivider" aria-hidden="true">|</span>
+                            <span id="challengeTimerValue" class="challengeTimerValue" aria-label="残り時間">1:00</span>
                         </div>
-                        <div id="challengeTimer" class="challengeTimer" aria-label="残り時間" hidden>1:00</div>
                         <div id="countdownOverlay" class="countdownOverlay" hidden>3</div>
                         <div id="coachTips" class="coachTips" hidden aria-hidden="true">
-                            <div class="coachTip coachTip--status">上の表示は判定コメントです。達成率バーが塗られるほど、目標の表情に近づいています。</div>
+                            <div class="coachTip coachTip--status">
+                                上の表示は判定コメントです。達成率バーが塗られるほど、目標の表情に近づいています。「かなり好ましい表情です！」と表示された状態を3秒間キープするとクリアです。
+                            </div>
                             <div class="coachTip coachTip--timer">
                                 1回の挑戦時間は1分です。時間内にクリアできなかった場合は、もう一度お手本を見て再挑戦します。3回挑戦してもクリアできなかった場合でも、次のレベルへ進みます。</div>
-                            <div class="coachTip coachTip--score">右下の円は現在の点数です。高得点を目指しましょう。</div>
                             <div class="coachTip coachTip--face">
                                 顔の位置を枠に収まるように調整してください。
-                                <span id="coachFaceCountdown" class="coachFaceCountdown">残り15秒</span>
+                                <span id="coachFaceCountdown" class="coachFaceCountdown">残り10秒</span>
                             </div>
                             <div id="cameraAssist" class="coachTip coachTip--camera cameraAssist">
                                 <span class="cameraAssistArrow" aria-hidden="true">⇧</span>
@@ -970,6 +964,7 @@
                 <h1 class="introTitle">おめでとうございます🎉</h1>
                 <p class="introText">
                     すべての表情トレーニングが完了しました。<br>このトレーニングにより、あなたの表情は、他者にとって理解しやすい形へと調整されました。これからも、周囲に誤解を与えない模範的な表情表現を継続してください。
+                    <span id="finalWarning" hidden></span>
                 </p>
             </div>
         </section>
@@ -988,8 +983,9 @@
             const CLEAR_HOLD_MS = 3000;
             const LEVEL_UP_MS = 4000;
             const COACH_TIP_MS = 5000;
+            const COACH_STATUS_TIP_MS = 8000;
             const COACH_TIMER_TIP_MS = 9000;
-            const COACH_FACE_TIP_MS = 15 * 1000;
+            const COACH_FACE_TIP_MS = 10 * 1000;
             const FINAL_RELOAD_MS = 30 * 1000;
             const PARTICIPANT_ABSENCE_MS = 60 * 1000;
             const CHALLENGE_ATTEMPT_MS = 60 * 1000;
@@ -1070,6 +1066,7 @@
             const demoScene = $("demoScene");
             const trainingScene = $("trainingScene");
             const finalScene = $("finalScene");
+            const finalWarning = $("finalWarning");
             const startButton = $("startButton");
             const consentDialog = $("consentDialog");
             const consentAcceptButton = $("consentAcceptButton");
@@ -1082,10 +1079,10 @@
             const challengeIntroTitle = $("challengeIntroTitle");
             const challengeIntroText = $("challengeIntroText");
             const scoreBar = $("scoreBar");
-            const scoreBubble = $("scoreBubble");
-            const scoreNumber = $("scoreNumber");
             const scoreTitle = $("scoreTitle");
             const challengeTimer = $("challengeTimer");
+            const challengeTimerValue = $("challengeTimerValue");
+            const challengeChanceDots = $("challengeChanceDots");
             const coachFaceCountdown = $("coachFaceCountdown");
             const countdownOverlay = $("countdownOverlay");
             const coachTips = $("coachTips");
@@ -1123,6 +1120,7 @@
             let holdStartedAt = 0;
             let challengeCleared = false;
             let challengeAttemptCount = 0;
+            const unclearedExpressions = new Set();
             let coachTipsShown = false;
             let coaching = false;
             let coachFaceCountdownTimer = 0;
@@ -1137,12 +1135,16 @@
             let recordingFrame = 0;
             scoreBar.innerHTML = Array.from({ length: SCORE_SEGMENT_COUNT }, () => '<span class="scoreSegment"></span>').join("");
             const scoreSegments = [...scoreBar.querySelectorAll(".scoreSegment")];
+            challengeChanceDots.innerHTML = Array.from(
+                { length: MAX_CHALLENGE_ATTEMPTS },
+                () => '<span class="challengeChanceDot" aria-hidden="true"></span>'
+            ).join("");
+            const challengeChanceDotItems = [...challengeChanceDots.querySelectorAll(".challengeChanceDot")];
             const coachTipItems = [...coachTips.querySelectorAll(".coachTip")];
             const coachFocusByTip = new Map([
                 [document.querySelector(".coachTip--status"), scoreHero],
                 [document.querySelector(".coachTip--timer"), challengeTimer],
-                [document.querySelector(".coachTip--face"), ellipseGuide],
-                [document.querySelector(".coachTip--score"), scoreBubble]
+                [document.querySelector(".coachTip--face"), ellipseGuide]
             ]);
             const coachFocusTargets = [...new Set([...coachFocusByTip.values()].filter(Boolean))];
 
@@ -1190,9 +1192,7 @@
                 const filledSegments = Math.ceil(normalized * scoreSegments.length);
                 const scoreAccent = rounded >= 72 ? "#27c28a" : rounded >= 44 ? "#ef8b39" : "#dd4d5d";
                 scoreBar.style.setProperty("--accent", scoreAccent);
-                scoreBubble.style.setProperty("--score-accent", scoreAccent);
                 countdownOverlay.style.setProperty("--score-accent", scoreAccent);
-                scoreNumber.textContent = String(rounded);
                 scoreSegments.forEach((segment, index) => {
                     segment.classList.toggle("is-filled", index < filledSegments);
                 });
@@ -1422,13 +1422,23 @@
                 demoIntroOverlay.hidden = false;
             };
 
+            const updateChallengeChances = () => {
+                const remaining = Math.max(1, MAX_CHALLENGE_ATTEMPTS - challengeAttemptCount);
+                challengeChanceDotItems.forEach((dot, index) => {
+                    dot.classList.toggle("is-remaining", index < remaining);
+                });
+                challengeChanceDots.setAttribute("aria-label", `残り${remaining}回`);
+                challengeTimer.classList.toggle("is-last-chance", remaining === 1);
+            };
+
             const resetChallengeState = () => {
                 holdStartedAt = 0;
                 challengeCleared = false;
                 paused = false;
                 challengeTimerRemainingMs = CHALLENGE_ATTEMPT_MS;
                 challengeTimerStartedAt = 0;
-                challengeTimer.textContent = "1:00";
+                challengeTimerValue.textContent = "1:00";
+                updateChallengeChances();
                 challengeTimer.classList.remove("is-ending");
                 challengeTimer.hidden = true;
                 smoothedScore = 0;
@@ -1527,7 +1537,7 @@
                 const remainingSeconds = Math.ceil(remainingMs / 1000);
                 const minutes = Math.floor(remainingSeconds / 60);
                 const seconds = String(remainingSeconds % 60).padStart(2, "0");
-                challengeTimer.textContent = `${minutes}:${seconds}`;
+                challengeTimerValue.textContent = `${minutes}:${seconds}`;
                 challengeTimer.classList.toggle("is-ending", remainingSeconds <= 10);
             };
 
@@ -1607,11 +1617,14 @@
                 coachFocusTargets.forEach((target) => {
                     target.classList.toggle("coachFocus", target === activeFocusTarget);
                 });
+                const isStatusTip = activeTip?.classList.contains("coachTip--status");
                 const displayMs = activeTip?.classList.contains("coachTip--timer")
                     ? COACH_TIMER_TIP_MS
-                    : isFaceTip
-                        ? COACH_FACE_TIP_MS
-                        : COACH_TIP_MS;
+                    : isStatusTip
+                        ? COACH_STATUS_TIP_MS
+                        : isFaceTip
+                            ? COACH_FACE_TIP_MS
+                            : COACH_TIP_MS;
                 coachTipsTimer = window.setTimeout(() => showCoachTipStep(index + 1), displayMs);
             };
 
@@ -1736,6 +1749,7 @@
                     return;
                 }
 
+                unclearedExpressions.add(currentLevel().key);
                 const hasNextLevel = advanceLevel();
                 startResultTransition({
                     title: hasNextLevel ? "ナイスファイト！" : "全レベル終了",
@@ -1901,6 +1915,16 @@
                 window.clearTimeout(finalReloadTimer);
                 finalReloadTimer = 0;
                 if (scene === finalScene) {
+                    const unclearedLabels = [...unclearedExpressions]
+                        .map((key) => TARGETS[key]?.label)
+                        .filter(Boolean);
+                    finalWarning.hidden = unclearedLabels.length === 0;
+                    finalWarning.textContent = unclearedLabels.length > 0
+                        ? `ただし、${unclearedLabels.join("・")}には誤解の恐れが残ります。普段からわかりやすい表現を心がけましょう。`
+                        : "";
+                    if (unclearedLabels.length > 0) {
+                        finalWarning.prepend(document.createElement("br"));
+                    }
                     finalReloadTimer = window.setTimeout(() => {
                         window.location.reload();
                     }, FINAL_RELOAD_MS);
