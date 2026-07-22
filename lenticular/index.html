@@ -14,7 +14,6 @@
       --muted: #666;
       --border: #d7d7d7;
       --accent: #222;
-      --danger: #a00000;
     }
 
     @media (prefers-color-scheme: dark) {
@@ -25,7 +24,6 @@
         --muted: #aaa;
         --border: #444;
         --accent: #fff;
-        --danger: #ff8f8f;
       }
     }
 
@@ -49,12 +47,6 @@
     header h1 {
       margin: 0;
       font-size: 24px;
-    }
-
-    header p {
-      margin: 0;
-      color: var(--muted);
-      font-size: 14px;
     }
 
     main {
@@ -148,6 +140,10 @@
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
       gap: 8px;
+    }
+
+    .button-row.spaced {
+      margin-top: 10px;
     }
 
     .images-list {
@@ -245,11 +241,6 @@
       background: white;
     }
 
-    .warning {
-      color: var(--danger);
-      font-weight: 700;
-    }
-
     .check-label {
       display: flex;
       align-items: center;
@@ -282,7 +273,7 @@
         <legend>1. 画像</legend>
         <input id="fileInput" type="file" accept="image/*" multiple />
         <div id="imagesList" class="images-list"></div>
-        <div class="button-row" style="margin-top:10px">
+        <div class="button-row spaced">
           <button id="reverseImages" type="button">順番を反転</button>
           <button id="clearImages" type="button">すべて削除</button>
         </div>
@@ -335,7 +326,7 @@
         <div class="grid">
           <label>
             LPI
-            <input id="lpi" type="number" min="1" max="200" step="0.001" value="40.000" />
+            <input id="lpi" type="number" min="1" max="200" step="0.001" value="50.000" />
           </label>
           <label>
             レンズ方向
@@ -397,12 +388,17 @@
       <div class="canvas-wrap">
         <canvas id="previewCanvas" width="800" height="600"></canvas>
       </div>
-      <p id="detail" class="note"></p>
+      <p id="detail"></p>
     </section>
   </main>
 
   <script>
     "use strict";
+
+    const MAX_IMAGES = 7;
+    const MAX_CANVAS_PIXELS = 150_000_000;
+    const MAX_PITCH_VALUES = 60;
+    const PREVIEW_DELAY_MS = 250;
 
     const state = {
       images: [],
@@ -443,10 +439,6 @@
       a3: [297, 420],
       postcard: [100, 148]
     };
-
-    function clamp(value, min, max) {
-      return Math.min(max, Math.max(min, value));
-    }
 
     function mod(value, divisor) {
       return ((value % divisor) + divisor) % divisor;
@@ -499,7 +491,6 @@
         image.src = url;
         await image.decode();
         return {
-          id: crypto.randomUUID(),
           name: file.name,
           image,
           width: image.naturalWidth,
@@ -512,8 +503,19 @@
       }
     }
 
+    function createIconButton(text, title, onClick, disabled = false) {
+      const button = document.createElement("button");
+      button.className = "icon-button";
+      button.type = "button";
+      button.textContent = text;
+      button.title = title;
+      button.disabled = disabled;
+      button.addEventListener("click", onClick);
+      return button;
+    }
+
     function renderImageList() {
-      els.imagesList.innerHTML = "";
+      els.imagesList.replaceChildren();
 
       state.images.forEach((item, index) => {
         const row = document.createElement("div");
@@ -526,39 +528,20 @@
 
         const meta = document.createElement("div");
         meta.className = "image-meta";
-        meta.innerHTML = `
-          <div class="image-name">${index + 1}. ${escapeHtml(item.name)}</div>
-          <div class="image-size">${item.width} × ${item.height}px</div>
-        `;
+        const name = document.createElement("div");
+        name.className = "image-name";
+        name.textContent = `${index + 1}. ${item.name}`;
+        const size = document.createElement("div");
+        size.className = "image-size";
+        size.textContent = `${item.width} × ${item.height}px`;
+        meta.append(name, size);
 
-        const up = document.createElement("button");
-        up.className = "icon-button";
-        up.type = "button";
-        up.textContent = "↑";
-        up.title = "上へ";
-        up.disabled = index === 0;
-        up.addEventListener("click", () => moveImage(index, index - 1));
-
-        const remove = document.createElement("button");
-        remove.className = "icon-button";
-        remove.type = "button";
-        remove.textContent = "×";
-        remove.title = "削除";
-        remove.addEventListener("click", () => removeImage(index));
+        const up = createIconButton("↑", "上へ", () => moveImage(index, index - 1), index === 0);
+        const remove = createIconButton("×", "削除", () => removeImage(index));
 
         row.append(thumb, meta, up, remove);
         els.imagesList.appendChild(row);
       });
-    }
-
-    function escapeHtml(text) {
-      return text.replace(/[&<>'"]/g, (char) => ({
-        "&": "&amp;",
-        "<": "&lt;",
-        ">": "&gt;",
-        "'": "&#39;",
-        '"': "&quot;"
-      })[char]);
     }
 
     function moveImage(from, to) {
@@ -645,11 +628,16 @@
       ctx.drawImage(image, dx, dy, drawWidth, drawHeight);
     }
 
-    function drawFittedImage(ctx, image, targetWidth, targetHeight, fitMode) {
-      ctx.clearRect(0, 0, targetWidth, targetHeight);
+    function prepareCanvas(canvas, width, height) {
+      if (width * height > MAX_CANVAS_PIXELS) {
+        throw new Error("出力サイズが大きすぎます。PPIまたは用紙サイズを下げてください。");
+      }
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext("2d");
       ctx.fillStyle = "white";
-      ctx.fillRect(0, 0, targetWidth, targetHeight);
-      drawFittedImageContent(ctx, image, targetWidth, targetHeight, fitMode);
+      ctx.fillRect(0, 0, width, height);
+      return ctx;
     }
 
     function createAxisImageMap(length, settings, effectivePpi, imageCount) {
@@ -688,24 +676,14 @@
       if (state.images.length < 2) {
         throw new Error("画像を2枚以上読み込んでください。");
       }
-      if (state.images.length > 7) {
-        throw new Error("画像は最大7枚です。");
+      if (state.images.length > MAX_IMAGES) {
+        throw new Error(`画像は最大${MAX_IMAGES}枚です。`);
       }
 
       const { width, height } = getOutputDimensions(settings, scale);
       const effectivePpi = settings.ppi * scale;
-      const canvasPixels = width * height;
-
-      if (canvasPixels > 150_000_000) {
-        throw new Error("出力サイズが大きすぎます。PPIまたは用紙サイズを下げてください。");
-      }
-
-      targetCanvas.width = width;
-      targetCanvas.height = height;
-      const ctx = targetCanvas.getContext("2d");
+      const ctx = prepareCanvas(targetCanvas, width, height);
       ctx.imageSmoothingEnabled = false;
-      ctx.fillStyle = "white";
-      ctx.fillRect(0, 0, width, height);
 
       const count = state.images.length;
       const vertical = settings.lensDirection === "vertical";
@@ -725,10 +703,10 @@
         ctx.restore();
       });
 
-      return { width, height, effectivePpi };
+      return { width, height };
     }
 
-    function renderPitchTestCanvas(targetCanvas, settings, scale = 1) {
+    function getPitchTestValues() {
       const center = Number(els.testCenter.value);
       const range = Number(els.testRange.value);
       const step = Number(els.testStep.value);
@@ -741,17 +719,36 @@
       for (let value = center - range; value <= center + range + step * 0.1; value += step) {
         values.push(Number(value.toFixed(6)));
       }
-      if (values.length > 60) {
+      if (values.length > MAX_PITCH_VALUES) {
         throw new Error("ピッチテストの候補数が多すぎます。範囲か刻みを調整してください。");
       }
+      return values;
+    }
+
+    function drawPitchStripes(ctx, lpi, effectivePpi, vertical, xStart, xEnd, yStart, yEnd) {
+      ctx.fillStyle = "black";
+      if (vertical) {
+        for (let x = xStart; x < xEnd; x++) {
+          if (mod((x - xStart) * lpi / effectivePpi, 1) < 0.5) {
+            ctx.fillRect(x, yStart, Math.min(1, xEnd - x), yEnd - yStart);
+          }
+        }
+        return;
+      }
+
+      for (let y = yStart; y < yEnd; y++) {
+        if (mod((y - yStart) * lpi / effectivePpi, 1) < 0.5) {
+          ctx.fillRect(xStart, y, xEnd - xStart, Math.min(1, yEnd - y));
+        }
+      }
+    }
+
+    function renderPitchTestCanvas(targetCanvas, settings, scale = 1) {
+      const values = getPitchTestValues();
 
       const { width, height } = getOutputDimensions(settings, scale);
       const effectivePpi = settings.ppi * scale;
-      targetCanvas.width = width;
-      targetCanvas.height = height;
-      const ctx = targetCanvas.getContext("2d");
-      ctx.fillStyle = "white";
-      ctx.fillRect(0, 0, width, height);
+      const ctx = prepareCanvas(targetCanvas, width, height);
 
       const desiredMargin = Math.max(8, Math.round(effectivePpi * 0.12));
       const margin = Math.min(desiredMargin, Math.floor(Math.min(width, height) / 20));
@@ -788,28 +785,19 @@
 
         ctx.fillStyle = "black";
         ctx.fillText(labels[index], margin, top + bandHeight / 2);
-
-        if (vertical) {
-          for (let x = xStart; x < xEnd; x++) {
-            const lensPosition = (x - xStart) * lpi / effectivePpi;
-            const black = mod(lensPosition, 1) < 0.5;
-            ctx.fillStyle = black ? "black" : "white";
-            ctx.fillRect(x, yStart, 1, yEnd - yStart);
-          }
-        } else {
-          for (let y = yStart; y < yEnd; y++) {
-            const lensPosition = (y - yStart) * lpi / effectivePpi;
-            const black = mod(lensPosition, 1) < 0.5;
-            ctx.fillStyle = black ? "black" : "white";
-            ctx.fillRect(xStart, y, xEnd - xStart, 1);
-          }
-        }
+        drawPitchStripes(ctx, lpi, effectivePpi, vertical, xStart, xEnd, yStart, yEnd);
 
         ctx.strokeStyle = "#888";
         ctx.strokeRect(xStart, yStart, xEnd - xStart, yEnd - yStart);
       });
 
       return { width, height, values };
+    }
+
+    function renderCanvas(targetCanvas, settings, mode, scale = 1) {
+      return mode === "pitch"
+        ? renderPitchTestCanvas(targetCanvas, settings, scale)
+        : renderInterlacedCanvas(targetCanvas, settings, scale);
     }
 
     async function generatePreview(mode = "interlace") {
@@ -819,18 +807,15 @@
       try {
         const settings = getSettings();
         const scale = settings.previewScale;
-        let result;
+        const result = renderCanvas(els.previewCanvas, settings, mode, scale);
+        state.lastRenderMode = mode;
 
         if (mode === "pitch") {
-          result = renderPitchTestCanvas(els.previewCanvas, settings, scale);
-          state.lastRenderMode = "pitch";
           updateStatus(
             `ピッチテスト ${result.width} × ${result.height}px`,
             `${result.values.length}候補。プレビュー倍率 ${Math.round(scale * 100)}%。`
           );
         } else {
-          result = renderInterlacedCanvas(els.previewCanvas, settings, scale);
-          state.lastRenderMode = "interlace";
           const full = getOutputDimensions(settings, 1);
           const pixelsPerLens = settings.ppi / settings.lpi;
           updateStatus(
@@ -846,6 +831,26 @@
       }
     }
 
+    function canvasToPngBlob(canvas) {
+      return new Promise((resolve, reject) => {
+        canvas.toBlob(
+          (blob) => blob ? resolve(blob) : reject(new Error("PNG変換に失敗しました。")),
+          "image/png"
+        );
+      });
+    }
+
+    function downloadBlob(blob, filename) {
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = filename;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
+
     async function exportPng() {
       setBusy(true, "実寸PNGを生成中…");
       await new Promise((resolve) => requestAnimationFrame(resolve));
@@ -853,29 +858,13 @@
       try {
         const settings = getSettings();
         const exportCanvas = document.createElement("canvas");
-        let result;
-        let filename;
-
-        if (state.lastRenderMode === "pitch") {
-          result = renderPitchTestCanvas(exportCanvas, settings, 1);
-          filename = `pitch-test_${Number(els.testCenter.value).toFixed(3)}LPI_${settings.ppi}PPI.png`;
-        } else {
-          result = renderInterlacedCanvas(exportCanvas, settings, 1);
-          filename = `lenticular_${settings.lpi.toFixed(3)}LPI_${settings.ppi}PPI_${result.width}x${result.height}.png`;
-        }
-
-        const blob = await new Promise((resolve, reject) => {
-          exportCanvas.toBlob((value) => value ? resolve(value) : reject(new Error("PNG変換に失敗しました。")), "image/png");
-        });
-
-        const url = URL.createObjectURL(blob);
-        const anchor = document.createElement("a");
-        anchor.href = url;
-        anchor.download = filename;
-        document.body.appendChild(anchor);
-        anchor.click();
-        anchor.remove();
-        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        const mode = state.lastRenderMode;
+        const result = renderCanvas(exportCanvas, settings, mode);
+        const filename = mode === "pitch"
+          ? `pitch-test_${Number(els.testCenter.value).toFixed(3)}LPI_${settings.ppi}PPI.png`
+          : `lenticular_${settings.lpi.toFixed(3)}LPI_${settings.ppi}PPI_${result.width}x${result.height}.png`;
+        const blob = await canvasToPngBlob(exportCanvas);
+        downloadBlob(blob, filename);
 
         updateStatus(`書き出し完了 ${result.width} × ${result.height}px`, filename);
       } catch (error) {
@@ -893,16 +882,16 @@
         if (state.images.length >= 2 && state.lastRenderMode === "interlace") {
           generatePreview("interlace");
         }
-      }, 250);
+      }, PREVIEW_DELAY_MS);
     }
 
     els.fileInput.addEventListener("change", async (event) => {
       const files = Array.from(event.target.files || []);
       if (!files.length) return;
 
-      const remaining = 7 - state.images.length;
+      const remaining = MAX_IMAGES - state.images.length;
       if (remaining <= 0) {
-        updateStatus("画像は最大7枚です。", "既存画像を削除してから追加してください。");
+        updateStatus(`画像は最大${MAX_IMAGES}枚です。`, "既存画像を削除してから追加してください。");
         event.target.value = "";
         return;
       }
