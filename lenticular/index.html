@@ -1,0 +1,928 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Lenticular Image Maker</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #f4f4f4;
+      --panel: #ffffff;
+      --text: #171717;
+      --muted: #666;
+      --border: #d7d7d7;
+      --accent: #222;
+      --danger: #a00000;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #171717;
+        --panel: #222;
+        --text: #f1f1f1;
+        --muted: #aaa;
+        --border: #444;
+        --accent: #fff;
+        --danger: #ff8f8f;
+      }
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    header {
+      padding: 20px 24px;
+      border-bottom: 1px solid var(--border);
+      background: var(--panel);
+    }
+
+    header h1 {
+      margin: 0;
+      font-size: 24px;
+    }
+
+    header p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    main {
+      display: grid;
+      grid-template-columns: minmax(320px, 430px) minmax(0, 1fr);
+      gap: 16px;
+      padding: 16px;
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 16px;
+    }
+
+    .controls {
+      display: grid;
+      gap: 18px;
+      align-content: start;
+    }
+
+    fieldset {
+      margin: 0;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px;
+    }
+
+    legend {
+      padding: 0 6px;
+      font-weight: 700;
+      font-size: 14px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .grid.three {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    label {
+      display: grid;
+      gap: 5px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    input, select, button {
+      width: 100%;
+      min-height: 38px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--panel);
+      color: var(--text);
+      font: inherit;
+      padding: 8px 10px;
+    }
+
+    input[type="checkbox"] {
+      width: auto;
+      min-height: auto;
+    }
+
+    button {
+      cursor: pointer;
+      font-weight: 700;
+    }
+
+    button.primary {
+      background: var(--accent);
+      color: var(--panel);
+    }
+
+    button:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+
+    .button-row {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .images-list {
+      display: grid;
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    .image-row {
+      display: grid;
+      grid-template-columns: 44px minmax(0, 1fr) 34px 34px;
+      gap: 8px;
+      align-items: center;
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      padding: 6px;
+    }
+
+    .thumb {
+      width: 44px;
+      height: 44px;
+      object-fit: cover;
+      border-radius: 4px;
+      background: #ccc;
+    }
+
+    .image-meta {
+      min-width: 0;
+    }
+
+    .image-name {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .image-size {
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .icon-button {
+      padding: 0;
+      min-height: 34px;
+      font-size: 16px;
+    }
+
+    .preview-panel {
+      min-width: 0;
+      display: grid;
+      grid-template-rows: auto minmax(300px, 1fr) auto;
+      gap: 12px;
+    }
+
+    .preview-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: start;
+      gap: 12px;
+    }
+
+    .preview-header h2 {
+      margin: 0;
+      font-size: 18px;
+    }
+
+    .status {
+      color: var(--muted);
+      font-size: 12px;
+      text-align: right;
+    }
+
+    .canvas-wrap {
+      min-height: 300px;
+      display: grid;
+      place-items: center;
+      overflow: auto;
+      border: 1px dashed var(--border);
+      border-radius: 8px;
+      background:
+        linear-gradient(45deg, #bbb 25%, transparent 25%),
+        linear-gradient(-45deg, #bbb 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, #bbb 75%),
+        linear-gradient(-45deg, transparent 75%, #bbb 75%);
+      background-size: 20px 20px;
+      background-position: 0 0, 0 10px, 10px -10px, -10px 0;
+    }
+
+    canvas {
+      max-width: 100%;
+      max-height: 75vh;
+      display: block;
+      background: white;
+    }
+
+    .warning {
+      color: var(--danger);
+      font-weight: 700;
+    }
+
+    .check-label {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--text);
+      font-size: 13px;
+      margin-top: 10px;
+    }
+
+    @media (max-width: 900px) {
+      main { grid-template-columns: 1fr; }
+      .preview-panel { min-height: 500px; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Lenticular Image Maker</h1>
+  </header>
+
+  <main>
+    <section class="panel controls">
+      <fieldset>
+        <legend>1. 画像</legend>
+        <input id="fileInput" type="file" accept="image/*" multiple />
+        <div id="imagesList" class="images-list"></div>
+        <div class="button-row" style="margin-top:10px">
+          <button id="reverseImages" type="button">順番を反転</button>
+          <button id="clearImages" type="button">すべて削除</button>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>2. 用紙・出力</legend>
+        <div class="grid">
+          <label>
+            用紙プリセット
+            <select id="paperPreset">
+              <option value="custom">カスタム</option>
+              <option value="a4" selected>A4</option>
+              <option value="a3">A3</option>
+              <option value="postcard">はがき</option>
+            </select>
+          </label>
+          <label>
+            向き
+            <select id="orientation">
+              <option value="portrait" selected>縦</option>
+              <option value="landscape">横</option>
+            </select>
+          </label>
+          <label>
+            幅（mm）
+            <input id="paperWidth" type="number" min="1" step="0.1" value="210" />
+          </label>
+          <label>
+            高さ（mm）
+            <input id="paperHeight" type="number" min="1" step="0.1" value="297" />
+          </label>
+          <label>
+            出力PPI
+            <input id="ppi" type="number" min="72" max="1200" step="1" value="600" />
+          </label>
+          <label>
+            画像の配置
+            <select id="fitMode">
+              <option value="cover" selected>余白なし（中央トリミング）</option>
+              <option value="contain">全体を表示</option>
+              <option value="stretch">引き伸ばす</option>
+            </select>
+          </label>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>3. レンチキュラー</legend>
+        <div class="grid">
+          <label>
+            LPI
+            <input id="lpi" type="number" min="1" max="200" step="0.001" value="40.000" />
+          </label>
+          <label>
+            レンズ方向
+            <select id="lensDirection">
+              <option value="vertical" selected>縦レンズ</option>
+              <option value="horizontal">横レンズ</option>
+            </select>
+          </label>
+          <label>
+            位相（0〜1）
+            <input id="phase" type="number" min="-10" max="10" step="0.001" value="0.000" />
+          </label>
+          <label>
+            プレビュー倍率
+            <select id="previewScale">
+              <option value="0.05">5%</option>
+              <option value="0.1" selected>10%</option>
+              <option value="0.2">20%</option>
+              <option value="0.3">30%</option>
+            </select>
+          </label>
+        </div>
+        <label class="check-label">
+          <input id="reverseOrder" type="checkbox" />
+          画像インターレース順を反転
+        </label>
+      </fieldset>
+
+      <fieldset>
+        <legend>4. ピッチテスト</legend>
+        <div class="grid three">
+          <label>
+            中心LPI
+            <input id="testCenter" type="number" step="0.001" value="40.000" />
+          </label>
+          <label>
+            ±範囲
+            <input id="testRange" type="number" min="0" step="0.001" value="0.200" />
+          </label>
+          <label>
+            刻み
+            <input id="testStep" type="number" min="0.001" step="0.001" value="0.025" />
+          </label>
+        </div>
+        <button id="generatePitchTest" type="button" style="margin-top:10px">ピッチテストを生成</button>
+      </fieldset>
+
+      <div class="button-row">
+        <button id="generatePreview" type="button">プレビュー更新</button>
+        <button id="exportPng" class="primary" type="button">実寸PNGを書き出す</button>
+      </div>
+    </section>
+
+    <section class="panel preview-panel">
+      <div class="preview-header">
+        <h2>プレビュー</h2>
+        <div id="status" class="status">画像を読み込んでください。</div>
+      </div>
+      <div class="canvas-wrap">
+        <canvas id="previewCanvas" width="800" height="600"></canvas>
+      </div>
+      <p id="detail" class="note"></p>
+    </section>
+  </main>
+
+  <script>
+    "use strict";
+
+    const state = {
+      images: [],
+      lastRenderMode: "interlace"
+    };
+
+    const $ = (id) => document.getElementById(id);
+
+    const els = {
+      fileInput: $("fileInput"),
+      imagesList: $("imagesList"),
+      reverseImages: $("reverseImages"),
+      clearImages: $("clearImages"),
+      paperPreset: $("paperPreset"),
+      orientation: $("orientation"),
+      paperWidth: $("paperWidth"),
+      paperHeight: $("paperHeight"),
+      ppi: $("ppi"),
+      fitMode: $("fitMode"),
+      lpi: $("lpi"),
+      lensDirection: $("lensDirection"),
+      phase: $("phase"),
+      previewScale: $("previewScale"),
+      reverseOrder: $("reverseOrder"),
+      testCenter: $("testCenter"),
+      testRange: $("testRange"),
+      testStep: $("testStep"),
+      generatePitchTest: $("generatePitchTest"),
+      generatePreview: $("generatePreview"),
+      exportPng: $("exportPng"),
+      previewCanvas: $("previewCanvas"),
+      status: $("status"),
+      detail: $("detail")
+    };
+
+    const PAPER_PRESETS = {
+      a4: [210, 297],
+      a3: [297, 420],
+      postcard: [100, 148]
+    };
+
+    function clamp(value, min, max) {
+      return Math.min(max, Math.max(min, value));
+    }
+
+    function mod(value, divisor) {
+      return ((value % divisor) + divisor) % divisor;
+    }
+
+    function mmToPixels(mm, ppi) {
+      return Math.max(1, Math.round((mm / 25.4) * ppi));
+    }
+
+    function getSettings() {
+      const widthMm = Number(els.paperWidth.value);
+      const heightMm = Number(els.paperHeight.value);
+      const ppi = Number(els.ppi.value);
+      const lpi = Number(els.lpi.value);
+      const phase = Number(els.phase.value);
+      const previewScale = Number(els.previewScale.value);
+
+      if (![widthMm, heightMm, ppi, lpi, phase, previewScale].every(Number.isFinite)) {
+        throw new Error("数値設定に不正な値があります。");
+      }
+      if (widthMm <= 0 || heightMm <= 0 || ppi <= 0 || lpi <= 0) {
+        throw new Error("幅・高さ・PPI・LPIは0より大きくしてください。");
+      }
+
+      return {
+        widthMm,
+        heightMm,
+        ppi,
+        lpi,
+        phase,
+        previewScale,
+        fitMode: els.fitMode.value,
+        lensDirection: els.lensDirection.value,
+        reverseOrder: els.reverseOrder.checked
+      };
+    }
+
+    function getOutputDimensions(settings, scale = 1) {
+      return {
+        width: Math.max(1, Math.round(mmToPixels(settings.widthMm, settings.ppi) * scale)),
+        height: Math.max(1, Math.round(mmToPixels(settings.heightMm, settings.ppi) * scale))
+      };
+    }
+
+    async function loadImageFile(file) {
+      const url = URL.createObjectURL(file);
+      try {
+        const image = new Image();
+        image.decoding = "async";
+        image.src = url;
+        await image.decode();
+        return {
+          id: crypto.randomUUID(),
+          name: file.name,
+          image,
+          width: image.naturalWidth,
+          height: image.naturalHeight,
+          thumbUrl: url
+        };
+      } catch (error) {
+        URL.revokeObjectURL(url);
+        throw error;
+      }
+    }
+
+    function renderImageList() {
+      els.imagesList.innerHTML = "";
+
+      state.images.forEach((item, index) => {
+        const row = document.createElement("div");
+        row.className = "image-row";
+
+        const thumb = document.createElement("img");
+        thumb.className = "thumb";
+        thumb.src = item.thumbUrl;
+        thumb.alt = "";
+
+        const meta = document.createElement("div");
+        meta.className = "image-meta";
+        meta.innerHTML = `
+          <div class="image-name">${index + 1}. ${escapeHtml(item.name)}</div>
+          <div class="image-size">${item.width} × ${item.height}px</div>
+        `;
+
+        const up = document.createElement("button");
+        up.className = "icon-button";
+        up.type = "button";
+        up.textContent = "↑";
+        up.title = "上へ";
+        up.disabled = index === 0;
+        up.addEventListener("click", () => moveImage(index, index - 1));
+
+        const remove = document.createElement("button");
+        remove.className = "icon-button";
+        remove.type = "button";
+        remove.textContent = "×";
+        remove.title = "削除";
+        remove.addEventListener("click", () => removeImage(index));
+
+        row.append(thumb, meta, up, remove);
+        els.imagesList.appendChild(row);
+      });
+    }
+
+    function escapeHtml(text) {
+      return text.replace(/[&<>'"]/g, (char) => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        "'": "&#39;",
+        '"': "&quot;"
+      })[char]);
+    }
+
+    function moveImage(from, to) {
+      if (to < 0 || to >= state.images.length) return;
+      const [item] = state.images.splice(from, 1);
+      state.images.splice(to, 0, item);
+      renderImageList();
+      schedulePreview();
+    }
+
+    function removeImage(index) {
+      const [item] = state.images.splice(index, 1);
+      if (item) URL.revokeObjectURL(item.thumbUrl);
+      renderImageList();
+      schedulePreview();
+    }
+
+    function clearImages() {
+      state.images.forEach((item) => URL.revokeObjectURL(item.thumbUrl));
+      state.images = [];
+      renderImageList();
+      clearCanvas();
+      updateStatus("画像を読み込んでください。", "");
+    }
+
+    function clearCanvas() {
+      const ctx = els.previewCanvas.getContext("2d");
+      ctx.clearRect(0, 0, els.previewCanvas.width, els.previewCanvas.height);
+    }
+
+    function updateStatus(status, detail = "") {
+      els.status.textContent = status;
+      els.detail.textContent = detail;
+    }
+
+    function setBusy(isBusy, message = "処理中…") {
+      els.generatePreview.disabled = isBusy;
+      els.generatePitchTest.disabled = isBusy;
+      els.exportPng.disabled = isBusy;
+      if (isBusy) els.status.textContent = message;
+    }
+
+    function applyPaperPreset() {
+      const preset = PAPER_PRESETS[els.paperPreset.value];
+      if (!preset) return;
+      let [width, height] = preset;
+      if (els.orientation.value === "landscape") [width, height] = [height, width];
+      els.paperWidth.value = width;
+      els.paperHeight.value = height;
+      schedulePreview();
+    }
+
+    function applyOrientation() {
+      const width = Number(els.paperWidth.value);
+      const height = Number(els.paperHeight.value);
+      const wantsLandscape = els.orientation.value === "landscape";
+      if (wantsLandscape && width < height) {
+        els.paperWidth.value = height;
+        els.paperHeight.value = width;
+      } else if (!wantsLandscape && width > height) {
+        els.paperWidth.value = height;
+        els.paperHeight.value = width;
+      }
+      schedulePreview();
+    }
+
+    function drawFittedImageContent(ctx, image, targetWidth, targetHeight, fitMode) {
+      const sourceWidth = image.naturalWidth;
+      const sourceHeight = image.naturalHeight;
+
+      if (fitMode === "stretch") {
+        ctx.drawImage(image, 0, 0, targetWidth, targetHeight);
+        return;
+      }
+
+      const scale = fitMode === "contain"
+        ? Math.min(targetWidth / sourceWidth, targetHeight / sourceHeight)
+        : Math.max(targetWidth / sourceWidth, targetHeight / sourceHeight);
+
+      const drawWidth = sourceWidth * scale;
+      const drawHeight = sourceHeight * scale;
+      const dx = (targetWidth - drawWidth) / 2;
+      const dy = (targetHeight - drawHeight) / 2;
+      ctx.drawImage(image, dx, dy, drawWidth, drawHeight);
+    }
+
+    function drawFittedImage(ctx, image, targetWidth, targetHeight, fitMode) {
+      ctx.clearRect(0, 0, targetWidth, targetHeight);
+      ctx.fillStyle = "white";
+      ctx.fillRect(0, 0, targetWidth, targetHeight);
+      drawFittedImageContent(ctx, image, targetWidth, targetHeight, fitMode);
+    }
+
+    function createAxisImageMap(length, settings, effectivePpi, imageCount) {
+      const map = new Uint8Array(length);
+      for (let axis = 0; axis < length; axis++) {
+        const lensPosition = axis * settings.lpi / effectivePpi;
+        const phase = mod(lensPosition + settings.phase, 1);
+        let imageIndex = Math.min(imageCount - 1, Math.floor(phase * imageCount));
+        if (settings.reverseOrder) imageIndex = imageCount - 1 - imageIndex;
+        map[axis] = imageIndex;
+      }
+      return map;
+    }
+
+    function addMappedRunsToPath(targetCtx, axisMap, imageIndex, vertical, width, height) {
+      let start = -1;
+
+      for (let axis = 0; axis <= axisMap.length; axis++) {
+        const matches = axis < axisMap.length && axisMap[axis] === imageIndex;
+
+        if (matches && start < 0) {
+          start = axis;
+        } else if (!matches && start >= 0) {
+          const runLength = axis - start;
+          if (vertical) {
+            targetCtx.rect(start, 0, runLength, height);
+          } else {
+            targetCtx.rect(0, start, width, runLength);
+          }
+          start = -1;
+        }
+      }
+    }
+
+    function renderInterlacedCanvas(targetCanvas, settings, scale = 1) {
+      if (state.images.length < 2) {
+        throw new Error("画像を2枚以上読み込んでください。");
+      }
+      if (state.images.length > 7) {
+        throw new Error("画像は最大7枚です。");
+      }
+
+      const { width, height } = getOutputDimensions(settings, scale);
+      const effectivePpi = settings.ppi * scale;
+      const canvasPixels = width * height;
+
+      if (canvasPixels > 150_000_000) {
+        throw new Error("出力サイズが大きすぎます。PPIまたは用紙サイズを下げてください。");
+      }
+
+      targetCanvas.width = width;
+      targetCanvas.height = height;
+      const ctx = targetCanvas.getContext("2d");
+      ctx.imageSmoothingEnabled = false;
+      ctx.fillStyle = "white";
+      ctx.fillRect(0, 0, width, height);
+
+      const count = state.images.length;
+      const vertical = settings.lensDirection === "vertical";
+      const axisLength = vertical ? width : height;
+      const axisMap = createAxisImageMap(axisLength, settings, effectivePpi, count);
+
+      // 画像ごとの縞領域をクリップし、元画像を1回だけ描画する。
+      // 出力Canvas以外の巨大なCanvasやImageDataを保持しない。
+      state.images.forEach((item, imageIndex) => {
+        ctx.save();
+        ctx.beginPath();
+        addMappedRunsToPath(ctx, axisMap, imageIndex, vertical, width, height);
+        ctx.clip();
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = "high";
+        drawFittedImageContent(ctx, item.image, width, height, settings.fitMode);
+        ctx.restore();
+      });
+
+      return { width, height, effectivePpi };
+    }
+
+    function renderPitchTestCanvas(targetCanvas, settings, scale = 1) {
+      const center = Number(els.testCenter.value);
+      const range = Number(els.testRange.value);
+      const step = Number(els.testStep.value);
+
+      if (![center, range, step].every(Number.isFinite) || center <= 0 || range < 0 || step <= 0) {
+        throw new Error("ピッチテスト設定を確認してください。");
+      }
+
+      const values = [];
+      for (let value = center - range; value <= center + range + step * 0.1; value += step) {
+        values.push(Number(value.toFixed(6)));
+      }
+      if (values.length > 60) {
+        throw new Error("ピッチテストの候補数が多すぎます。範囲か刻みを調整してください。");
+      }
+
+      const { width, height } = getOutputDimensions(settings, scale);
+      const effectivePpi = settings.ppi * scale;
+      targetCanvas.width = width;
+      targetCanvas.height = height;
+      const ctx = targetCanvas.getContext("2d");
+      ctx.fillStyle = "white";
+      ctx.fillRect(0, 0, width, height);
+
+      const margin = Math.max(8, Math.round(effectivePpi * 0.12));
+      const labelHeight = Math.max(18, Math.round(effectivePpi * 0.16));
+      const gap = Math.max(4, Math.round(effectivePpi * 0.04));
+      const bandHeight = Math.max(20, Math.floor((height - margin * 2 - gap * (values.length - 1)) / values.length));
+      const vertical = settings.lensDirection === "vertical";
+
+      ctx.font = `${Math.max(11, Math.round(effectivePpi * 0.08))}px sans-serif`;
+      ctx.textBaseline = "middle";
+
+      values.forEach((lpi, index) => {
+        const top = margin + index * (bandHeight + gap);
+        const stripeTop = top + labelHeight;
+        const stripeHeight = Math.max(1, bandHeight - labelHeight);
+
+        ctx.fillStyle = "black";
+        ctx.fillText(`${lpi.toFixed(3)} LPI`, margin, top + labelHeight / 2);
+
+        const xStart = vertical ? margin : margin;
+        const xEnd = width - margin;
+        const yStart = stripeTop;
+        const yEnd = Math.min(height - margin, stripeTop + stripeHeight);
+
+        if (vertical) {
+          for (let x = xStart; x < xEnd; x++) {
+            const lensPosition = (x - xStart) * lpi / effectivePpi;
+            const black = mod(lensPosition, 1) < 0.5;
+            ctx.fillStyle = black ? "black" : "white";
+            ctx.fillRect(x, yStart, 1, yEnd - yStart);
+          }
+        } else {
+          for (let y = yStart; y < yEnd; y++) {
+            const lensPosition = (y - yStart) * lpi / effectivePpi;
+            const black = mod(lensPosition, 1) < 0.5;
+            ctx.fillStyle = black ? "black" : "white";
+            ctx.fillRect(xStart, y, xEnd - xStart, 1);
+          }
+        }
+
+        ctx.strokeStyle = "#888";
+        ctx.strokeRect(xStart, yStart, xEnd - xStart, yEnd - yStart);
+      });
+
+      return { width, height, values };
+    }
+
+    async function generatePreview(mode = "interlace") {
+      setBusy(true, mode === "pitch" ? "ピッチテストを生成中…" : "プレビューを生成中…");
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+
+      try {
+        const settings = getSettings();
+        const scale = settings.previewScale;
+        let result;
+
+        if (mode === "pitch") {
+          result = renderPitchTestCanvas(els.previewCanvas, settings, scale);
+          state.lastRenderMode = "pitch";
+          updateStatus(
+            `ピッチテスト ${result.width} × ${result.height}px`,
+            `${result.values.length}候補。プレビュー倍率 ${Math.round(scale * 100)}%。`
+          );
+        } else {
+          result = renderInterlacedCanvas(els.previewCanvas, settings, scale);
+          state.lastRenderMode = "interlace";
+          const full = getOutputDimensions(settings, 1);
+          const pixelsPerLens = settings.ppi / settings.lpi;
+          updateStatus(
+            `プレビュー ${result.width} × ${result.height}px`,
+            `実寸 ${full.width} × ${full.height}px／${settings.lpi.toFixed(3)} LPI／1レンズ ${pixelsPerLens.toFixed(4)}px／画像 ${state.images.length}枚`
+          );
+        }
+      } catch (error) {
+        console.error(error);
+        updateStatus("生成できませんでした。", error.message);
+      } finally {
+        setBusy(false);
+      }
+    }
+
+    async function exportPng() {
+      setBusy(true, "実寸PNGを生成中…");
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+
+      try {
+        const settings = getSettings();
+        const exportCanvas = document.createElement("canvas");
+        let result;
+        let filename;
+
+        if (state.lastRenderMode === "pitch") {
+          result = renderPitchTestCanvas(exportCanvas, settings, 1);
+          filename = `pitch-test_${Number(els.testCenter.value).toFixed(3)}LPI_${settings.ppi}PPI.png`;
+        } else {
+          result = renderInterlacedCanvas(exportCanvas, settings, 1);
+          filename = `lenticular_${settings.lpi.toFixed(3)}LPI_${settings.ppi}PPI_${result.width}x${result.height}.png`;
+        }
+
+        const blob = await new Promise((resolve, reject) => {
+          exportCanvas.toBlob((value) => value ? resolve(value) : reject(new Error("PNG変換に失敗しました。")), "image/png");
+        });
+
+        const url = URL.createObjectURL(blob);
+        const anchor = document.createElement("a");
+        anchor.href = url;
+        anchor.download = filename;
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+
+        updateStatus(`書き出し完了 ${result.width} × ${result.height}px`, filename);
+      } catch (error) {
+        console.error(error);
+        updateStatus("書き出しできませんでした。", error.message);
+      } finally {
+        setBusy(false);
+      }
+    }
+
+    let previewTimer = null;
+    function schedulePreview() {
+      clearTimeout(previewTimer);
+      previewTimer = setTimeout(() => {
+        if (state.images.length >= 2 && state.lastRenderMode === "interlace") {
+          generatePreview("interlace");
+        }
+      }, 250);
+    }
+
+    els.fileInput.addEventListener("change", async (event) => {
+      const files = Array.from(event.target.files || []);
+      if (!files.length) return;
+
+      const remaining = 7 - state.images.length;
+      if (remaining <= 0) {
+        updateStatus("画像は最大7枚です。", "既存画像を削除してから追加してください。");
+        event.target.value = "";
+        return;
+      }
+
+      setBusy(true, "画像を読み込み中…");
+      try {
+        const selected = files.slice(0, remaining);
+        const loaded = [];
+        for (const file of selected) loaded.push(await loadImageFile(file));
+        state.images.push(...loaded);
+        renderImageList();
+        state.lastRenderMode = "interlace";
+        if (state.images.length >= 2) await generatePreview("interlace");
+        else updateStatus("もう1枚追加してください。", `現在 ${state.images.length}枚。`);
+      } catch (error) {
+        console.error(error);
+        updateStatus("画像を読み込めませんでした。", error.message);
+      } finally {
+        setBusy(false);
+        event.target.value = "";
+      }
+    });
+
+    els.reverseImages.addEventListener("click", () => {
+      state.images.reverse();
+      renderImageList();
+      schedulePreview();
+    });
+    els.clearImages.addEventListener("click", clearImages);
+    els.paperPreset.addEventListener("change", applyPaperPreset);
+    els.orientation.addEventListener("change", applyOrientation);
+    els.generatePreview.addEventListener("click", () => generatePreview("interlace"));
+    els.generatePitchTest.addEventListener("click", () => generatePreview("pitch"));
+    els.exportPng.addEventListener("click", exportPng);
+
+    [
+      els.paperWidth,
+      els.paperHeight,
+      els.ppi,
+      els.fitMode,
+      els.lpi,
+      els.lensDirection,
+      els.phase,
+      els.previewScale,
+      els.reverseOrder
+    ].forEach((element) => element.addEventListener("change", schedulePreview));
+
+    applyPaperPreset();
+    clearCanvas();
+  </script>
+</body>
+</html>
