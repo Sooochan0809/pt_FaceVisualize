@@ -1,5 +1,6 @@
 <!doctype html>
 <html lang="ja">
+
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -28,7 +29,9 @@
       }
     }
 
-    * { box-sizing: border-box; }
+    * {
+      box-sizing: border-box;
+    }
 
     body {
       margin: 0;
@@ -81,6 +84,10 @@
       padding: 12px;
     }
 
+    #generatePitchTest {
+      margin-top: 8px;
+    }
+
     legend {
       padding: 0 6px;
       font-weight: 700;
@@ -104,7 +111,9 @@
       color: var(--muted);
     }
 
-    input, select, button {
+    input,
+    select,
+    button {
       width: 100%;
       min-height: 38px;
       border: 1px solid var(--border);
@@ -251,11 +260,17 @@
     }
 
     @media (max-width: 900px) {
-      main { grid-template-columns: 1fr; }
-      .preview-panel { min-height: 500px; }
+      main {
+        grid-template-columns: 1fr;
+      }
+
+      .preview-panel {
+        min-height: 500px;
+      }
     }
   </style>
 </head>
+
 <body>
   <header>
     <h1>Lenticular Image Maker</h1>
@@ -354,7 +369,7 @@
         <div class="grid three">
           <label>
             中心LPI
-            <input id="testCenter" type="number" step="0.001" value="40.000" />
+            <input id="testCenter" type="number" step="0.001" value="50.000" />
           </label>
           <label>
             ±範囲
@@ -365,7 +380,7 @@
             <input id="testStep" type="number" min="0.001" step="0.001" value="0.025" />
           </label>
         </div>
-        <button id="generatePitchTest" type="button" style="margin-top:10px">ピッチテストを生成</button>
+        <button id="generatePitchTest" type="button">ピッチテストを生成</button>
       </fieldset>
 
       <div class="button-row">
@@ -738,27 +753,41 @@
       ctx.fillStyle = "white";
       ctx.fillRect(0, 0, width, height);
 
-      const margin = Math.max(8, Math.round(effectivePpi * 0.12));
-      const labelHeight = Math.max(18, Math.round(effectivePpi * 0.16));
-      const gap = Math.max(4, Math.round(effectivePpi * 0.04));
-      const bandHeight = Math.max(20, Math.floor((height - margin * 2 - gap * (values.length - 1)) / values.length));
+      const desiredMargin = Math.max(8, Math.round(effectivePpi * 0.12));
+      const margin = Math.min(desiredMargin, Math.floor(Math.min(width, height) / 20));
+      const usableHeight = Math.max(1, height - margin * 2);
+      const desiredGap = Math.max(4, Math.round(effectivePpi * 0.04));
+      const gapRoom = Math.max(0, usableHeight - values.length);
+      const gap = values.length > 1
+        ? Math.min(desiredGap, gapRoom / (values.length - 1), usableHeight / values.length * 0.2)
+        : 0;
+      const bandHeight = (usableHeight - gap * (values.length - 1)) / values.length;
       const vertical = settings.lensDirection === "vertical";
 
-      ctx.font = `${Math.max(11, Math.round(effectivePpi * 0.08))}px sans-serif`;
+      const labels = values.map((lpi) => lpi.toFixed(3));
+      const desiredFontSize = Math.max(11, Math.round(effectivePpi * 0.08));
+      let fontSize = Math.max(1, Math.min(desiredFontSize, bandHeight * 0.7));
+      ctx.font = `${fontSize}px sans-serif`;
+      const maxLabelWidth = Math.max(1, (width - margin * 2) * 0.35);
+      const measuredLabelWidth = Math.max(...labels.map((label) => ctx.measureText(label).width));
+      if (measuredLabelWidth > maxLabelWidth) {
+        fontSize = Math.max(1, fontSize * maxLabelWidth / measuredLabelWidth);
+        ctx.font = `${fontSize}px sans-serif`;
+      }
       ctx.textBaseline = "middle";
+      const labelWidth = Math.max(...labels.map((label) => ctx.measureText(label).width));
+      const desiredStripeGap = Math.max(6, Math.round(effectivePpi * 0.04));
+      const stripeGap = Math.min(desiredStripeGap, Math.max(1, (width - margin * 2) * 0.03));
+      const xEnd = width - margin;
+      const xStart = Math.max(0, Math.min(xEnd - 1, margin + labelWidth + stripeGap));
 
       values.forEach((lpi, index) => {
         const top = margin + index * (bandHeight + gap);
-        const stripeTop = top + labelHeight;
-        const stripeHeight = Math.max(1, bandHeight - labelHeight);
+        const yStart = top;
+        const yEnd = Math.min(height - margin, top + bandHeight);
 
         ctx.fillStyle = "black";
-        ctx.fillText(`${lpi.toFixed(3)} LPI`, margin, top + labelHeight / 2);
-
-        const xStart = vertical ? margin : margin;
-        const xEnd = width - margin;
-        const yStart = stripeTop;
-        const yEnd = Math.min(height - margin, stripeTop + stripeHeight);
+        ctx.fillText(labels[index], margin, top + bandHeight / 2);
 
         if (vertical) {
           for (let x = xStart; x < xEnd; x++) {
@@ -925,4 +954,5 @@
     clearCanvas();
   </script>
 </body>
+
 </html>
