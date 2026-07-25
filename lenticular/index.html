@@ -319,6 +319,10 @@
             </select>
           </label>
         </div>
+        <label class="check-label">
+          <input id="registrationMarks" type="checkbox" checked />
+          四隅に光学位置合わせマークを重ねる
+        </label>
       </fieldset>
 
       <fieldset>
@@ -343,9 +347,9 @@
             プレビュー倍率
             <select id="previewScale">
               <option value="0.05">5%</option>
-              <option value="0.1" selected>10%</option>
+              <option value="0.1">10%</option>
               <option value="0.2">20%</option>
-              <option value="0.3">30%</option>
+              <option value="0.3" selected>30%</option>
             </select>
           </label>
         </div>
@@ -399,6 +403,7 @@
     const MAX_CANVAS_PIXELS = 150_000_000;
     const MAX_PITCH_VALUES = 60;
     const PREVIEW_DELAY_MS = 250;
+    const MM_PER_INCH = 25.4;
 
     const state = {
       images: [],
@@ -418,6 +423,7 @@
       paperHeight: $("paperHeight"),
       ppi: $("ppi"),
       fitMode: $("fitMode"),
+      registrationMarks: $("registrationMarks"),
       lpi: $("lpi"),
       lensDirection: $("lensDirection"),
       phase: $("phase"),
@@ -445,7 +451,7 @@
     }
 
     function mmToPixels(mm, ppi) {
-      return Math.max(1, Math.round((mm / 25.4) * ppi));
+      return Math.max(1, Math.round((mm / MM_PER_INCH) * ppi));
     }
 
     function getSettings() {
@@ -471,6 +477,7 @@
         phase,
         previewScale,
         fitMode: els.fitMode.value,
+        registrationMarks: els.registrationMarks.checked,
         lensDirection: els.lensDirection.value,
         reverseOrder: els.reverseOrder.checked
       };
@@ -481,6 +488,11 @@
         width: Math.max(1, Math.round(mmToPixels(settings.widthMm, settings.ppi) * scale)),
         height: Math.max(1, Math.round(mmToPixels(settings.heightMm, settings.ppi) * scale))
       };
+    }
+
+    function getInterlacePreviewScale(settings) {
+      const scaleForEveryImage = settings.lpi * state.images.length / settings.ppi;
+      return Math.min(1, Math.max(settings.previewScale, scaleForEveryImage));
     }
 
     async function loadImageFile(file) {
@@ -499,6 +511,21 @@
         };
       } catch (error) {
         URL.revokeObjectURL(url);
+        throw error;
+      }
+    }
+
+    function releaseImage(item) {
+      URL.revokeObjectURL(item.thumbUrl);
+    }
+
+    async function loadImageFiles(files) {
+      const loaded = [];
+      try {
+        for (const file of files) loaded.push(await loadImageFile(file));
+        return loaded;
+      } catch (error) {
+        loaded.forEach(releaseImage);
         throw error;
       }
     }
@@ -554,13 +581,13 @@
 
     function removeImage(index) {
       const [item] = state.images.splice(index, 1);
-      if (item) URL.revokeObjectURL(item.thumbUrl);
+      if (item) releaseImage(item);
       renderImageList();
       schedulePreview();
     }
 
     function clearImages() {
-      state.images.forEach((item) => URL.revokeObjectURL(item.thumbUrl));
+      state.images.forEach(releaseImage);
       state.images = [];
       renderImageList();
       clearCanvas();
@@ -582,6 +609,19 @@
       els.generatePitchTest.disabled = isBusy;
       els.exportPng.disabled = isBusy;
       if (isBusy) els.status.textContent = message;
+    }
+
+    async function runBusyTask(message, failureStatus, task) {
+      setBusy(true, message);
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      try {
+        await task();
+      } catch (error) {
+        console.error(error);
+        updateStatus(failureStatus, error.message);
+      } finally {
+        setBusy(false);
+      }
     }
 
     function applyPaperPreset() {
@@ -640,10 +680,61 @@
       return ctx;
     }
 
+    function drawRegistrationMarks(ctx, width, height, effectivePpi, lpi, axisMap, vertical, imageCount) {
+      const pixelsPerMm = effectivePpi / MM_PER_INCH;
+      const inset = Math.min(1 * pixelsPerMm, width / 4, height / 4);
+      const lensPitch = effectivePpi / lpi;
+      const radius = Math.min(lensPitch, inset * 0.55);
+      const referenceImageIndex = Math.floor((imageCount - 1) / 2);
+      const positions = [
+        [inset, inset],
+        [width - inset, inset],
+        [inset, height - inset],
+        [width - inset, height - inset]
+      ];
+
+      positions.forEach(([x, y]) => {
+        const left = Math.max(0, Math.floor(x - radius));
+        const right = Math.min(width, Math.ceil(x + radius));
+        const top = Math.max(0, Math.floor(y - radius));
+        const bottom = Math.min(height, Math.ceil(y + radius));
+
+        ctx.save();
+        ctx.beginPath();
+        addMappedRunsToPath(
+          ctx,
+          axisMap,
+          referenceImageIndex,
+          vertical,
+          left,
+          right,
+          top,
+          bottom
+        );
+        ctx.clip();
+
+        ctx.beginPath();
+        ctx.arc(x, y, radius, 0, Math.PI * 2);
+        ctx.fillStyle = "white";
+        ctx.fill();
+
+        ctx.beginPath();
+        ctx.arc(x, y, radius * 0.68, 0, Math.PI * 2);
+        ctx.fillStyle = "black";
+        ctx.fill();
+
+        ctx.beginPath();
+        ctx.arc(x, y, radius * 0.22, 0, Math.PI * 2);
+        ctx.fillStyle = "white";
+        ctx.fill();
+        ctx.restore();
+      });
+    }
+
     function createAxisImageMap(length, settings, effectivePpi, imageCount) {
       const map = new Uint8Array(length);
       for (let axis = 0; axis < length; axis++) {
-        const lensPosition = axis * settings.lpi / effectivePpi;
+        const lensPosition = (axis + 0.5) * settings.lpi / effectivePpi;
         const phase = mod(lensPosition + settings.phase, 1);
         let imageIndex = Math.min(imageCount - 1, Math.floor(phase * imageCount));
         if (settings.reverseOrder) imageIndex = imageCount - 1 - imageIndex;
@@ -652,20 +743,31 @@
       return map;
     }
 
-    function addMappedRunsToPath(targetCtx, axisMap, imageIndex, vertical, width, height) {
+    function addMappedRunsToPath(
+      targetCtx,
+      axisMap,
+      imageIndex,
+      vertical,
+      xStart,
+      xEnd,
+      yStart,
+      yEnd
+    ) {
+      const axisStart = vertical ? xStart : yStart;
+      const axisEnd = vertical ? xEnd : yEnd;
       let start = -1;
 
-      for (let axis = 0; axis <= axisMap.length; axis++) {
-        const matches = axis < axisMap.length && axisMap[axis] === imageIndex;
+      for (let axis = axisStart; axis <= axisEnd; axis++) {
+        const matches = axis < axisEnd && axisMap[axis] === imageIndex;
 
         if (matches && start < 0) {
           start = axis;
         } else if (!matches && start >= 0) {
           const runLength = axis - start;
           if (vertical) {
-            targetCtx.rect(start, 0, runLength, height);
+            targetCtx.rect(start, yStart, runLength, yEnd - yStart);
           } else {
-            targetCtx.rect(0, start, width, runLength);
+            targetCtx.rect(xStart, start, xEnd - xStart, runLength);
           }
           start = -1;
         }
@@ -695,13 +797,17 @@
       state.images.forEach((item, imageIndex) => {
         ctx.save();
         ctx.beginPath();
-        addMappedRunsToPath(ctx, axisMap, imageIndex, vertical, width, height);
+        addMappedRunsToPath(ctx, axisMap, imageIndex, vertical, 0, width, 0, height);
         ctx.clip();
         ctx.imageSmoothingEnabled = true;
         ctx.imageSmoothingQuality = "high";
         drawFittedImageContent(ctx, item.image, width, height, settings.fitMode);
         ctx.restore();
       });
+
+      if (settings.registrationMarks) {
+        drawRegistrationMarks(ctx, width, height, effectivePpi, settings.lpi, axisMap, vertical, count);
+      }
 
       return { width, height };
     }
@@ -726,21 +832,118 @@
     }
 
     function drawPitchStripes(ctx, lpi, effectivePpi, vertical, xStart, xEnd, yStart, yEnd) {
+      const axisStart = vertical ? xStart : yStart;
+      const axisEnd = vertical ? xEnd : yEnd;
       ctx.fillStyle = "black";
-      if (vertical) {
-        for (let x = xStart; x < xEnd; x++) {
-          if (mod((x - xStart) * lpi / effectivePpi, 1) < 0.5) {
-            ctx.fillRect(x, yStart, Math.min(1, xEnd - x), yEnd - yStart);
-          }
-        }
-        return;
-      }
 
-      for (let y = yStart; y < yEnd; y++) {
-        if (mod((y - yStart) * lpi / effectivePpi, 1) < 0.5) {
-          ctx.fillRect(xStart, y, xEnd - xStart, Math.min(1, yEnd - y));
+      for (let axis = axisStart; axis < axisEnd; axis++) {
+        if (mod((axis - axisStart) * lpi / effectivePpi, 1) >= 0.5) continue;
+
+        const remaining = Math.min(1, axisEnd - axis);
+        if (vertical) {
+          ctx.fillRect(axis, yStart, remaining, yEnd - yStart);
+        } else {
+          ctx.fillRect(xStart, axis, xEnd - xStart, remaining);
         }
       }
+    }
+
+    function drawPitchBand(ctx, lpi, effectivePpi, vertical, xStart, xEnd, yStart, yEnd) {
+      drawPitchStripes(ctx, lpi, effectivePpi, vertical, xStart, xEnd, yStart, yEnd);
+      ctx.strokeStyle = "#888";
+      ctx.strokeRect(xStart, yStart, xEnd - xStart, yEnd - yStart);
+    }
+
+    function getPitchBandLayout(length, margin, count, effectivePpi) {
+      const usableLength = Math.max(1, length - margin * 2);
+      const desiredGap = Math.max(4, Math.round(effectivePpi * 0.04));
+      const gapRoom = Math.max(0, usableLength - count);
+      const gap = count > 1
+        ? Math.min(desiredGap, gapRoom / (count - 1), usableLength / count * 0.2)
+        : 0;
+      return {
+        gap,
+        bandSize: (usableLength - gap * (count - 1)) / count
+      };
+    }
+
+    function setPitchLabelFont(ctx, labels, desiredSize, maxWidth, maxHeight) {
+      let fontSize = Math.max(1, Math.min(desiredSize, maxHeight));
+      ctx.font = `${fontSize}px sans-serif`;
+      const measuredWidth = Math.max(...labels.map((label) => ctx.measureText(label).width));
+      if (measuredWidth > maxWidth) {
+        fontSize = Math.max(1, fontSize * maxWidth / measuredWidth);
+        ctx.font = `${fontSize}px sans-serif`;
+      }
+      return {
+        fontSize,
+        labelWidth: Math.max(...labels.map((label) => ctx.measureText(label).width))
+      };
+    }
+
+    function drawVerticalPitchTest(ctx, values, labels, width, height, effectivePpi, margin) {
+      const { gap, bandSize: bandHeight } = getPitchBandLayout(
+        height,
+        margin,
+        values.length,
+        effectivePpi
+      );
+      const desiredFontSize = Math.max(11, Math.round(effectivePpi * 0.08));
+      const { labelWidth } = setPitchLabelFont(
+        ctx,
+        labels,
+        desiredFontSize,
+        Math.max(1, (width - margin * 2) * 0.35),
+        bandHeight * 0.7
+      );
+      ctx.textAlign = "start";
+      ctx.textBaseline = "middle";
+
+      const desiredStripeGap = Math.max(6, Math.round(effectivePpi * 0.04));
+      const stripeGap = Math.min(desiredStripeGap, Math.max(1, (width - margin * 2) * 0.03));
+      const xEnd = width - margin;
+      const xStart = Math.max(0, Math.min(xEnd - 1, margin + labelWidth + stripeGap));
+
+      values.forEach((lpi, index) => {
+        const yStart = margin + index * (bandHeight + gap);
+        const yEnd = Math.min(height - margin, yStart + bandHeight);
+
+        ctx.fillStyle = "black";
+        ctx.fillText(labels[index], margin, yStart + bandHeight / 2);
+        drawPitchBand(ctx, lpi, effectivePpi, true, xStart, xEnd, yStart, yEnd);
+      });
+    }
+
+    function drawHorizontalPitchTest(ctx, values, labels, width, height, effectivePpi, margin) {
+      const { gap, bandSize: bandWidth } = getPitchBandLayout(
+        width,
+        margin,
+        values.length,
+        effectivePpi
+      );
+      const desiredFontSize = Math.max(11, Math.round(effectivePpi * 0.08));
+      const { fontSize } = setPitchLabelFont(
+        ctx,
+        labels,
+        desiredFontSize,
+        bandWidth * 0.86,
+        Math.max(1, height * 0.08)
+      );
+      ctx.textAlign = "center";
+      ctx.textBaseline = "top";
+
+      const labelGap = Math.max(2, Math.round(effectivePpi * 0.02));
+      const yStart = Math.min(height - margin - 1, margin + fontSize + labelGap);
+      const yEnd = height - margin;
+
+      values.forEach((lpi, index) => {
+        const xStart = margin + index * (bandWidth + gap);
+        const xEnd = Math.min(width - margin, xStart + bandWidth);
+
+        ctx.fillStyle = "black";
+        ctx.fillText(labels[index], xStart + bandWidth / 2, margin);
+        drawPitchBand(ctx, lpi, effectivePpi, false, xStart, xEnd, yStart, yEnd);
+      });
     }
 
     function renderPitchTestCanvas(targetCanvas, settings, scale = 1) {
@@ -752,44 +955,13 @@
 
       const desiredMargin = Math.max(8, Math.round(effectivePpi * 0.12));
       const margin = Math.min(desiredMargin, Math.floor(Math.min(width, height) / 20));
-      const usableHeight = Math.max(1, height - margin * 2);
-      const desiredGap = Math.max(4, Math.round(effectivePpi * 0.04));
-      const gapRoom = Math.max(0, usableHeight - values.length);
-      const gap = values.length > 1
-        ? Math.min(desiredGap, gapRoom / (values.length - 1), usableHeight / values.length * 0.2)
-        : 0;
-      const bandHeight = (usableHeight - gap * (values.length - 1)) / values.length;
       const vertical = settings.lensDirection === "vertical";
-
       const labels = values.map((lpi) => lpi.toFixed(3));
-      const desiredFontSize = Math.max(11, Math.round(effectivePpi * 0.08));
-      let fontSize = Math.max(1, Math.min(desiredFontSize, bandHeight * 0.7));
-      ctx.font = `${fontSize}px sans-serif`;
-      const maxLabelWidth = Math.max(1, (width - margin * 2) * 0.35);
-      const measuredLabelWidth = Math.max(...labels.map((label) => ctx.measureText(label).width));
-      if (measuredLabelWidth > maxLabelWidth) {
-        fontSize = Math.max(1, fontSize * maxLabelWidth / measuredLabelWidth);
-        ctx.font = `${fontSize}px sans-serif`;
+      if (vertical) {
+        drawVerticalPitchTest(ctx, values, labels, width, height, effectivePpi, margin);
+      } else {
+        drawHorizontalPitchTest(ctx, values, labels, width, height, effectivePpi, margin);
       }
-      ctx.textBaseline = "middle";
-      const labelWidth = Math.max(...labels.map((label) => ctx.measureText(label).width));
-      const desiredStripeGap = Math.max(6, Math.round(effectivePpi * 0.04));
-      const stripeGap = Math.min(desiredStripeGap, Math.max(1, (width - margin * 2) * 0.03));
-      const xEnd = width - margin;
-      const xStart = Math.max(0, Math.min(xEnd - 1, margin + labelWidth + stripeGap));
-
-      values.forEach((lpi, index) => {
-        const top = margin + index * (bandHeight + gap);
-        const yStart = top;
-        const yEnd = Math.min(height - margin, top + bandHeight);
-
-        ctx.fillStyle = "black";
-        ctx.fillText(labels[index], margin, top + bandHeight / 2);
-        drawPitchStripes(ctx, lpi, effectivePpi, vertical, xStart, xEnd, yStart, yEnd);
-
-        ctx.strokeStyle = "#888";
-        ctx.strokeRect(xStart, yStart, xEnd - xStart, yEnd - yStart);
-      });
 
       return { width, height, values };
     }
@@ -801,34 +973,32 @@
     }
 
     async function generatePreview(mode = "interlace") {
-      setBusy(true, mode === "pitch" ? "ピッチテストを生成中…" : "プレビューを生成中…");
-      await new Promise((resolve) => requestAnimationFrame(resolve));
+      return runBusyTask(
+        mode === "pitch" ? "ピッチテストを生成中…" : "プレビューを生成中…",
+        "生成できませんでした。",
+        () => {
+          const settings = getSettings();
+          const scale = mode === "pitch"
+            ? settings.previewScale
+            : getInterlacePreviewScale(settings);
+          const result = renderCanvas(els.previewCanvas, settings, mode, scale);
+          state.lastRenderMode = mode;
 
-      try {
-        const settings = getSettings();
-        const scale = settings.previewScale;
-        const result = renderCanvas(els.previewCanvas, settings, mode, scale);
-        state.lastRenderMode = mode;
-
-        if (mode === "pitch") {
-          updateStatus(
-            `ピッチテスト ${result.width} × ${result.height}px`,
-            `${result.values.length}候補。プレビュー倍率 ${Math.round(scale * 100)}%。`
-          );
-        } else {
-          const full = getOutputDimensions(settings, 1);
-          const pixelsPerLens = settings.ppi / settings.lpi;
-          updateStatus(
-            `プレビュー ${result.width} × ${result.height}px`,
-            `実寸 ${full.width} × ${full.height}px／${settings.lpi.toFixed(3)} LPI／1レンズ ${pixelsPerLens.toFixed(4)}px／画像 ${state.images.length}枚`
-          );
+          if (mode === "pitch") {
+            updateStatus(
+              `ピッチテスト ${result.width} × ${result.height}px`,
+              `${result.values.length}候補。プレビュー倍率 ${Math.round(scale * 100)}%。`
+            );
+          } else {
+            const full = getOutputDimensions(settings, 1);
+            const pixelsPerLens = settings.ppi / settings.lpi;
+            updateStatus(
+              `プレビュー ${result.width} × ${result.height}px`,
+              `実寸 ${full.width} × ${full.height}px／内部倍率 ${Math.round(scale * 100)}%／${settings.lpi.toFixed(3)} LPI／1レンズ ${pixelsPerLens.toFixed(4)}px／画像 ${state.images.length}枚`
+            );
+          }
         }
-      } catch (error) {
-        console.error(error);
-        updateStatus("生成できませんでした。", error.message);
-      } finally {
-        setBusy(false);
-      }
+      );
     }
 
     function canvasToPngBlob(canvas) {
@@ -852,10 +1022,7 @@
     }
 
     async function exportPng() {
-      setBusy(true, "実寸PNGを生成中…");
-      await new Promise((resolve) => requestAnimationFrame(resolve));
-
-      try {
+      return runBusyTask("実寸PNGを生成中…", "書き出しできませんでした。", async () => {
         const settings = getSettings();
         const exportCanvas = document.createElement("canvas");
         const mode = state.lastRenderMode;
@@ -867,12 +1034,7 @@
         downloadBlob(blob, filename);
 
         updateStatus(`書き出し完了 ${result.width} × ${result.height}px`, filename);
-      } catch (error) {
-        console.error(error);
-        updateStatus("書き出しできませんでした。", error.message);
-      } finally {
-        setBusy(false);
-      }
+      });
     }
 
     let previewTimer = null;
@@ -899,8 +1061,7 @@
       setBusy(true, "画像を読み込み中…");
       try {
         const selected = files.slice(0, remaining);
-        const loaded = [];
-        for (const file of selected) loaded.push(await loadImageFile(file));
+        const loaded = await loadImageFiles(selected);
         state.images.push(...loaded);
         renderImageList();
         state.lastRenderMode = "interlace";
@@ -932,6 +1093,7 @@
       els.paperHeight,
       els.ppi,
       els.fitMode,
+      els.registrationMarks,
       els.lpi,
       els.lensDirection,
       els.phase,
