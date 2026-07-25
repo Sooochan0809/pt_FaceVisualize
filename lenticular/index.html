@@ -285,8 +285,8 @@
           <label>
             用紙プリセット
             <select id="paperPreset">
-              <option value="custom">カスタム</option>
-              <option value="a4" selected>A4</option>
+              <option value="custom" selected>カスタム</option>
+              <option value="a4">A4</option>
               <option value="a3">A3</option>
               <option value="postcard">はがき</option>
             </select>
@@ -300,11 +300,11 @@
           </label>
           <label>
             幅（mm）
-            <input id="paperWidth" type="number" min="1" step="0.1" value="210" />
+            <input id="paperWidth" type="number" min="1" step="0.1" value="28.5" />
           </label>
           <label>
             高さ（mm）
-            <input id="paperHeight" type="number" min="1" step="0.1" value="297" />
+            <input id="paperHeight" type="number" min="1" step="0.1" value="38" />
           </label>
           <label>
             出力PPI
@@ -318,10 +318,14 @@
               <option value="stretch">引き伸ばす</option>
             </select>
           </label>
+          <label>
+            画像の明るさ（%）
+            <input id="brightness" type="number" min="50" max="200" step="5" value="160" />
+          </label>
         </div>
         <label class="check-label">
           <input id="registrationMarks" type="checkbox" checked />
-          四隅に光学位置合わせマークを重ねる
+          四隅に6点位置合わせマークを重ねる
         </label>
       </fieldset>
 
@@ -335,8 +339,8 @@
           <label>
             レンズ方向
             <select id="lensDirection">
-              <option value="vertical" selected>縦レンズ</option>
-              <option value="horizontal">横レンズ</option>
+              <option value="vertical">縦レンズ</option>
+              <option value="horizontal" selected>横レンズ</option>
             </select>
           </label>
           <label>
@@ -423,6 +427,7 @@
       paperHeight: $("paperHeight"),
       ppi: $("ppi"),
       fitMode: $("fitMode"),
+      brightness: $("brightness"),
       registrationMarks: $("registrationMarks"),
       lpi: $("lpi"),
       lensDirection: $("lensDirection"),
@@ -461,12 +466,16 @@
       const lpi = Number(els.lpi.value);
       const phase = Number(els.phase.value);
       const previewScale = Number(els.previewScale.value);
+      const brightness = Number(els.brightness.value);
 
-      if (![widthMm, heightMm, ppi, lpi, phase, previewScale].every(Number.isFinite)) {
+      if (![widthMm, heightMm, ppi, lpi, phase, previewScale, brightness].every(Number.isFinite)) {
         throw new Error("数値設定に不正な値があります。");
       }
       if (widthMm <= 0 || heightMm <= 0 || ppi <= 0 || lpi <= 0) {
         throw new Error("幅・高さ・PPI・LPIは0より大きくしてください。");
+      }
+      if (brightness < 50 || brightness > 200) {
+        throw new Error("画像の明るさは50〜200%で指定してください。");
       }
 
       return {
@@ -477,6 +486,7 @@
         phase,
         previewScale,
         fitMode: els.fitMode.value,
+        brightness,
         registrationMarks: els.registrationMarks.checked,
         lensDirection: els.lensDirection.value,
         reverseOrder: els.reverseOrder.checked
@@ -680,11 +690,49 @@
       return ctx;
     }
 
+    function drawSixDotMark(ctx, centerX, centerY, radius) {
+      const columnOffset = radius * 0.36;
+      const rowOffset = radius * 0.42;
+      const dotRadius = radius * 0.16;
+      const offsets = [
+        [-columnOffset, -rowOffset],
+        [columnOffset, -rowOffset],
+        [-columnOffset, 0],
+        [columnOffset, 0],
+        [-columnOffset, rowOffset],
+        [columnOffset, rowOffset]
+      ];
+
+      ctx.beginPath();
+      ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+      ctx.fillStyle = "black";
+      ctx.fill();
+
+      ctx.beginPath();
+      ctx.arc(centerX, centerY, radius * 0.78, 0, Math.PI * 2);
+      ctx.fillStyle = "white";
+      ctx.fill();
+
+      ctx.beginPath();
+      offsets.forEach(([offsetX, offsetY]) => {
+        ctx.moveTo(centerX + offsetX + dotRadius, centerY + offsetY);
+        ctx.arc(centerX + offsetX, centerY + offsetY, dotRadius, 0, Math.PI * 2);
+      });
+      ctx.fillStyle = "black";
+      ctx.fill();
+    }
+
     function drawRegistrationMarks(ctx, width, height, effectivePpi, lpi, axisMap, vertical, imageCount) {
       const pixelsPerMm = effectivePpi / MM_PER_INCH;
-      const inset = Math.min(1 * pixelsPerMm, width / 4, height / 4);
+      const inset = Math.min(1.6 * pixelsPerMm, width / 4, height / 4);
       const lensPitch = effectivePpi / lpi;
-      const radius = Math.min(lensPitch, inset * 0.55);
+      const radius = Math.min(
+        Math.max(1.05 * pixelsPerMm, lensPitch * 1.5),
+        1.4 * pixelsPerMm,
+        inset * 0.75,
+        width / 8,
+        height / 8
+      );
       const referenceImageIndex = Math.floor((imageCount - 1) / 2);
       const positions = [
         [inset, inset],
@@ -713,20 +761,7 @@
         );
         ctx.clip();
 
-        ctx.beginPath();
-        ctx.arc(x, y, radius, 0, Math.PI * 2);
-        ctx.fillStyle = "white";
-        ctx.fill();
-
-        ctx.beginPath();
-        ctx.arc(x, y, radius * 0.68, 0, Math.PI * 2);
-        ctx.fillStyle = "black";
-        ctx.fill();
-
-        ctx.beginPath();
-        ctx.arc(x, y, radius * 0.22, 0, Math.PI * 2);
-        ctx.fillStyle = "white";
-        ctx.fill();
+        drawSixDotMark(ctx, x, y, radius);
         ctx.restore();
       });
     }
@@ -801,6 +836,7 @@
         ctx.clip();
         ctx.imageSmoothingEnabled = true;
         ctx.imageSmoothingQuality = "high";
+        ctx.filter = `brightness(${settings.brightness / 100})`;
         drawFittedImageContent(ctx, item.image, width, height, settings.fitMode);
         ctx.restore();
       });
@@ -994,7 +1030,7 @@
             const pixelsPerLens = settings.ppi / settings.lpi;
             updateStatus(
               `プレビュー ${result.width} × ${result.height}px`,
-              `実寸 ${full.width} × ${full.height}px／内部倍率 ${Math.round(scale * 100)}%／${settings.lpi.toFixed(3)} LPI／1レンズ ${pixelsPerLens.toFixed(4)}px／画像 ${state.images.length}枚`
+              `実寸 ${full.width} × ${full.height}px／内部倍率 ${Math.round(scale * 100)}%／明るさ ${settings.brightness}%／${settings.lpi.toFixed(3)} LPI／1レンズ ${pixelsPerLens.toFixed(4)}px／画像 ${state.images.length}枚`
             );
           }
         }
@@ -1093,6 +1129,7 @@
       els.paperHeight,
       els.ppi,
       els.fitMode,
+      els.brightness,
       els.registrationMarks,
       els.lpi,
       els.lensDirection,
