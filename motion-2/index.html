@@ -1,0 +1,2589 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Motion</title>
+    <style>
+        :root {
+            --panel-bg: #1b2026e0;
+            --accent: #42d392;
+        }
+
+        body {
+            margin: 0;
+            min-height: 100dvh;
+            display: grid;
+            place-items: center;
+            background: #f0f0f0;
+            color: #f4f7fb;
+            font-family: "Yu Gothic Medium", "Yu Gothic", sans-serif;
+        }
+
+        main {
+            position: relative;
+            width: min(100dvw, 75dvh);
+            min-height: 100dvh;
+            aspect-ratio: 3 / 4;
+            overflow: hidden;
+        }
+
+        video,
+        canvas {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+
+        video {
+            object-fit: cover;
+            transform: scaleX(-1);
+        }
+
+        #canvas {
+            transform: scaleX(-1);
+        }
+
+        video[hidden] {
+            display: none;
+        }
+
+        main.file-source video {
+            object-fit: contain;
+        }
+
+        canvas {
+            pointer-events: none;
+        }
+
+        .visualize {
+            position: absolute;
+            inset: 0;
+            z-index: 1;
+            background: #f0f0f0df;
+        }
+
+        #calibrationGuide {
+            position: absolute;
+            inset: 0;
+            z-index: 6;
+            isolation: isolate;
+            display: grid;
+            place-items: center;
+            pointer-events: none;
+            text-align: center;
+            font-weight: 500;
+        }
+
+        #calibrationGuide[hidden] {
+            display: none;
+        }
+
+        #calibrationPoint {
+            position: relative;
+            z-index: 1;
+            width: 42px;
+            height: 42px;
+            transform: rotate(-90deg);
+        }
+
+        #calibrationPointCenter {
+            fill: #111;
+        }
+
+        #calibrationPointBase,
+        #calibrationPointProgress {
+            fill: none;
+            stroke-width: 5;
+        }
+
+        #calibrationPointBase {
+            stroke: #ffffffc9;
+        }
+
+        #calibrationPointProgress {
+            stroke: var(--accent);
+            stroke-dasharray: 100;
+            stroke-dashoffset: calc(100 - var(--progress, 0));
+            transition: stroke-dashoffset 0.12s linear;
+        }
+
+        #calibrationCard {
+            position: absolute;
+            z-index: 2;
+            top: 50%;
+            width: min(22em, 82%);
+            color: #111;
+            white-space: pre-line;
+        }
+
+        #out,
+        #layerControls {
+            padding: 12px;
+            background: var(--panel-bg);
+            border-radius: 8px;
+            font: 0.85em "Yu Gothic Medium", "Yu Gothic", sans-serif;
+            z-index: 10;
+        }
+
+        #out {
+            position: absolute;
+            right: 8px;
+            bottom: 8px;
+            font: 0.85em monospace;
+        }
+
+        #calibControls {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5em;
+            align-items: center;
+            margin-bottom: 0.5em;
+            min-width: 100%;
+        }
+
+        #toggleShapes {
+            margin-left: auto;
+        }
+
+        #paramSetControls,
+        #gainSetControls {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5em;
+            margin-bottom: 0.6em;
+        }
+
+        #paramSetControls select,
+        #gainSetControls select {
+            min-width: 9em;
+            padding: 0.25em 0.35em;
+            font: inherit;
+            font-size: 0.85em;
+        }
+
+        .param {
+            display: flex;
+            gap: 0.35em;
+            align-items: center;
+            min-width: 0;
+            font-size: 0.82em;
+        }
+
+        .param span {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        #layerControls {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            display: flex;
+            flex-direction: column;
+            gap: 0.45em;
+            align-items: flex-start;
+        }
+
+        #layerControls label {
+            display: flex;
+            gap: 0.4em;
+            align-items: center;
+        }
+
+        #shuffleSpectrum {
+            width: 100%;
+            padding: 0.25em 0.4em;
+            border-color: #777;
+            font-size: 0.85em;
+        }
+
+        #sourceControls {
+            position: absolute;
+            top: 1rem;
+            left: 1rem;
+            z-index: 999;
+            display: grid;
+            gap: 8px;
+        }
+
+        #out[hidden],
+        #layerControls[hidden],
+        #sourceControls[hidden] {
+            display: none;
+        }
+
+        #sourceControls input {
+            position: absolute;
+            inline-size: 1px;
+            block-size: 1px;
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        #sourceControls button,
+        #sourceControls label {
+            padding: 8px 10px;
+            border: 0;
+            border-radius: 8px;
+            background: var(--panel-bg);
+            color: #f4f7fb;
+            font: inherit;
+            font-size: 12px;
+            cursor: pointer;
+        }
+
+        button {
+            border: 1px solid #999;
+            border-radius: 4px;
+            padding: 0.35em 0.6em;
+            background: #fff;
+            color: #111;
+            cursor: pointer;
+            font: inherit;
+            overflow-wrap: anywhere;
+        }
+
+        button:disabled {
+            opacity: 0.55;
+            cursor: wait;
+        }
+
+        #status {
+            min-width: min(11em, 100%);
+        }
+
+        .shape {
+            display: grid;
+            grid-template-columns: 9em 7em 4em 3.4em;
+            gap: 0.5em;
+            align-items: center;
+        }
+
+        .bar {
+            position: relative;
+            height: 0.9em;
+            overflow: hidden;
+            background: #ccc;
+        }
+
+        .bar::before {
+            content: "";
+            position: absolute;
+            inset: 0 auto 0 50%;
+            width: 1px;
+            background: #666;
+        }
+
+        .fill {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            width: var(--v);
+            background: var(--accent);
+        }
+
+        .bar.raw::before {
+            display: none;
+        }
+
+        .bar.raw .fill,
+        .bar.positive .fill {
+            left: 50%;
+        }
+
+        .bar.raw .fill {
+            left: 0;
+        }
+
+        .bar.negative .fill {
+            right: 50%;
+            background: #c44;
+        }
+
+        .value {
+            text-align: right;
+        }
+
+        .gain {
+            color: #cbd5df;
+            text-align: right;
+        }
+    </style>
+</head>
+
+<body>
+    <main id="stage">
+        <video id="video" autoplay playsinline muted></video>
+        <canvas id="canvas"></canvas>
+        <section id="visualize_01" class="visualize" hidden>
+            <canvas id="vizCanvas"></canvas>
+        </section>
+        <div id="calibrationGuide" hidden>
+            <svg id="calibrationPoint" viewBox="0 0 42 42" aria-hidden="true">
+                <circle id="calibrationPointBase" cx="21" cy="21" r="12"></circle>
+                <circle id="calibrationPointProgress" cx="21" cy="21" r="12" pathLength="100"></circle>
+                <circle id="calibrationPointCenter" cx="21" cy="21" r="9.5"></circle>
+            </svg>
+            <div id="calibrationCard">
+                <span id="calibrationGuideText"></span>
+            </div>
+        </div>
+        <div id="layerControls">
+            <label>
+                <input id="visualizeToggle" type="checkbox">
+                <span>visualize_01</span>
+            </label>
+            <button id="shuffleSpectrum" type="button" hidden>シャッフル</button>
+        </div>
+        <div id="sourceControls">
+            <button id="cameraButton" type="button">WebCam</button>
+            <label for="fileInput"><span>ファイルから</span>
+                <input id="fileInput" type="file" accept="video/*">
+            </label>
+        </div>
+        <div id="out">
+            <div id="calibControls">
+                <button id="calibrate">キャリブ</button>
+                <button id="measureMotionGain" type="button">係数測定</button>
+                <button id="clearBaseline">解除</button>
+                <button id="toggleShapes" type="button" aria-expanded="false" aria-controls="shapesPanel">▼</button>
+            </div>
+            <div id="paramSetControls">
+                <select id="paramSetSelect" aria-label="パラメーターセット"></select>
+                <button id="saveParamSet" type="button">セット保存</button>
+            </div>
+            <div id="gainSetControls">
+                <select id="motionGainSetSelect" aria-label="係数セット"></select>
+                <button id="saveMotionGainSet" type="button">係数保存</button>
+            </div>
+            <span id="status"></span>
+            <div id="shapesPanel" hidden></div>
+        </div>
+    </main>
+</body>
+
+<script type="module">
+    import { FaceLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.34";
+
+    const $ = id => document.getElementById(id);
+    const ids = [
+        "stage", "video", "canvas", "vizCanvas", "cameraButton", "fileInput",
+        "calibrate", "measureMotionGain", "clearBaseline", "toggleShapes", "status", "paramSetSelect", "saveParamSet", "motionGainSetSelect", "saveMotionGainSet", "shapesPanel", "layerControls", "sourceControls", "out",
+        "visualizeToggle", "visualize_01", "calibrationGuide", "calibrationGuideText", "calibrationPoint", "shuffleSpectrum"
+    ];
+    const {
+        stage, video, canvas, vizCanvas, cameraButton, fileInput,
+        calibrate, measureMotionGain, clearBaseline, toggleShapes, status, paramSetSelect, saveParamSet, motionGainSetSelect, saveMotionGainSet, shapesPanel, layerControls, sourceControls, out,
+        visualizeToggle, visualize_01: visualize, calibrationGuide, calibrationGuideText, calibrationPoint, shuffleSpectrum
+    } = Object.fromEntries(ids.map(id => [id, $(id)]));
+    const ctx = canvas.getContext("2d");
+    const vizCtx = vizCanvas.getContext("2d");
+    const shapes = new Map();
+    const enabledParams = new Set();
+    const spectrum = new Map();
+    const spectrumSharpness = new Map();
+    let spectrumOrder = [];
+    const PARAM_SET_DIR = "../parameter";
+    const base = new Map();
+    const motionGains = new Map();
+    const [WARMUP_FRAMES, CALIBRATION_FRAMES, DEADZONE, SPECTRUM_ZERO_THRESHOLD, VIDEO_BASELINE_SECONDS, VIDEO_BASELINE_PASSES] = [20, 60, 0.005, 0.012, 0.2, 5];
+    const [MOTION_GAIN_SAMPLE_MS, MOTION_GAIN_SET_COUNT, MOTION_GAIN_MIN, MOTION_GAIN_MAX, MOTION_GAIN_EPSILON, MOTION_GAIN_POWER] = [20000, 3, 0, 2, 0.004, 1.5];
+    const [POSE_THRESHOLD, ROLL_THRESHOLD] = [0.26, 0.18];
+    const [LANDMARK_SMOOTHING, PRIMARY_FACE_MAX_DISTANCE] = [0.78, 0.22];
+    const DEFAULT_FACE_LIMIT = 1;
+    const [GUIDE_MESSAGE, WAIT_MESSAGE, MOTION_GAIN_MESSAGE] = ["この点を見つめてください.", "顔を検出中です...", "自由に表情を動かしてください."];
+    const calibration = createCalibrationState();
+    const poseCalibration = createPoseCalibrationState();
+    const motionGainCalibration = { active: false, startedAt: 0, duration: MOTION_GAIN_SAMPLE_MS, setIndex: 0, stats: new Map(), sets: [] };
+    const [VW, VH] = [1280, 720];
+    let activeMode = "camera";
+    let activeObjectUrl = "";
+    let running = false;
+    let loopToken = 0;
+    let calibratingVideoFile = false;
+    let uiHidden = false;
+    let calibrationGuideActive = false;
+    let paramSets = await loadParamSets();
+    let activeParamSetName = "";
+    let motionGainSets = await loadMotionGainSets();
+    let activeMotionGainSetName = "";
+    let neutralPose = null;
+    let currentPoseStable = true;
+    let primaryFaceCenter = null;
+    let smoothedLandmarks = null;
+    let activeFaceLimit = DEFAULT_FACE_LIMIT;
+
+    Object.assign(canvas, { width: 720, height: 960 });
+    Object.assign(vizCanvas, { width: canvas.width, height: canvas.height });
+    resizeLandmarkCanvas();
+
+    const faceLandmarker = await FaceLandmarker.createFromOptions(
+        await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.34/wasm"),
+        {
+            baseOptions: {
+                modelAssetPath: "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/latest/face_landmarker.task"
+            },
+            runningMode: "VIDEO",
+            numFaces: activeFaceLimit,
+            outputFaceBlendshapes: true
+        }
+    );
+
+    const report = message => error => {
+        status.textContent = `${message}: ${error.message}`;
+    };
+
+    startCamera().catch(report("カメラを開始できません"));
+    renderParamSetOptions();
+    renderMotionGainSetOptions();
+
+    document.addEventListener("keydown", event => {
+        if (event.key !== " " || event.repeat) return;
+        uiHidden = !uiHidden;
+        for (const panel of [layerControls, sourceControls, out]) {
+            panel.hidden = uiHidden;
+        }
+        calibrationGuide.hidden = uiHidden || !calibrationGuideActive;
+    });
+
+    window.addEventListener("resize", resizeLandmarkCanvas);
+
+    const layerConfigs = [
+        { toggle: visualizeToggle, layer: visualize, control: shuffleSpectrum }
+    ];
+
+    for (const config of layerConfigs) {
+        config.toggle.onchange = () => toggleLayer(config).catch(report("レイヤー切り替え失敗"));
+    }
+
+    calibrate.onclick = async () => {
+        if (activeMode === "video-file") {
+            stopLoop();
+            calibrate.disabled = true;
+            measureMotionGain.disabled = true;
+            try {
+                await calibrateFromVideoStart();
+                await seekVideo(0);
+                processResults(detectCurrentFrame());
+                await video.play();
+                startLoop();
+            } catch (error) {
+                calibrate.disabled = false;
+                measureMotionGain.disabled = false;
+                status.textContent = `動画キャリブレーション失敗: ${error.message}`;
+            }
+            return;
+        }
+        resetCalibration({ warmup: WARMUP_FRAMES, frames: CALIBRATION_FRAMES });
+        showCalibrationGuide(GUIDE_MESSAGE);
+        calibrate.disabled = true;
+        measureMotionGain.disabled = true;
+    };
+
+    measureMotionGain.onclick = () => {
+        startMotionGainCalibration();
+    };
+
+    clearBaseline.onclick = () => {
+        resetCalibration({ clearGains: true });
+        hideCalibrationGuide();
+        calibrate.disabled = false;
+        measureMotionGain.disabled = false;
+    };
+
+    shuffleSpectrum.onclick = () => {
+        spectrumOrder = shuffle(spectrumOrder);
+    };
+
+    cameraButton.onclick = () => startCamera().catch(report("カメラを開始できません"));
+
+    fileInput.onchange = event => {
+        importFile(event.target.files[0]).catch(report("ファイルを読み込めません"));
+    };
+
+    video.onplay = () => {
+        if (activeMode === "video-file" && !calibratingVideoFile && !running) startLoop();
+    };
+
+    video.onpause = () => {
+        if (activeMode === "video-file" && !calibratingVideoFile) stopLoop();
+    };
+
+    toggleShapes.onclick = () => {
+        setShapesExpanded(shapesPanel.hidden);
+    };
+
+    paramSetSelect.onchange = () => {
+        applyParamSet(paramSetSelect.value);
+    };
+
+    saveParamSet.onclick = async () => {
+        await saveCurrentParamSet();
+    };
+
+    motionGainSetSelect.onchange = () => {
+        applyMotionGainSet(motionGainSetSelect.value);
+    };
+
+    saveMotionGainSet.onclick = async () => {
+        await saveCurrentMotionGainSet();
+    };
+
+    function setShapesExpanded(expanded) {
+        shapesPanel.hidden = !expanded;
+        toggleShapes.setAttribute("aria-expanded", expanded);
+        toggleShapes.textContent = `${expanded ? "▲" : "▼"}`;
+    }
+
+    async function toggleLayer({ toggle, layer, control }) {
+        const active = toggle.checked;
+        layer.hidden = !active;
+        if (control) control.hidden = !active;
+        if (!active) {
+            if (!visualizing()) hideCalibrationGuide();
+            return;
+        }
+
+        setShapesExpanded(false);
+        waitForFaceCalibration();
+    }
+
+    function resizeLandmarkCanvas() {
+        const targetWidth = 720;
+        const targetHeight = 960;
+
+        if (canvas.width === targetWidth && canvas.height === targetHeight) return;
+        Object.assign(canvas, { width: targetWidth, height: targetHeight });
+    }
+
+    function startGuidedCalibration() {
+        if (activeMode === "video-file") return;
+        resetCalibration({ warmup: WARMUP_FRAMES, frames: CALIBRATION_FRAMES });
+        showCalibrationGuide(GUIDE_MESSAGE);
+        updateCalibrationPoint();
+        calibrate.disabled = true;
+        measureMotionGain.disabled = true;
+    }
+
+    function showCalibrationGuide(message) {
+        calibrationGuideActive = true;
+        calibrationGuideText.textContent = message;
+        calibrationGuide.hidden = uiHidden;
+    }
+
+    function hideCalibrationGuide() {
+        calibrationGuideActive = false;
+        calibrationGuide.hidden = true;
+        calibrationPoint.style.setProperty("--progress", 0);
+    }
+
+    function visualizing() {
+        return layerConfigs.some(({ layer }) => !layer.hidden);
+    }
+
+    function calibrationActive() {
+        return calibration.warmup || calibration.remaining;
+    }
+
+    function waitForFaceCalibration() {
+        if (activeMode === "video-file") return;
+        resetCalibration();
+        showCalibrationGuide(WAIT_MESSAGE);
+    }
+
+    function resetCalibration({ warmup = 0, frames = 0, clearGains = false } = {}) {
+        base.clear();
+        if (clearGains) {
+            motionGains.clear();
+            activeMotionGainSetName = "";
+            renderMotionGainSetOptions();
+        }
+        resetMotionVisualState();
+        Object.assign(calibration, { warmup, remaining: frames, samples: 0 });
+        calibration.stats.clear();
+        resetPoseCalibration();
+        resetMotionGainCalibration();
+        status.textContent = "";
+        updateCalibrationPoint();
+    }
+
+    async function startCamera() {
+        stopLoop();
+        stopCameraStream();
+        clearImportedFile();
+        video.srcObject = await navigator.mediaDevices.getUserMedia({
+            video: { width: { ideal: VW }, height: { ideal: VH }, aspectRatio: { ideal: 16 / 9 } }
+        });
+        await video.play();
+        setActiveMode("camera");
+        startLoop();
+    }
+
+    async function importFile(file) {
+        if (!file) return;
+        stopLoop();
+        stopCameraStream();
+        clearImportedFile();
+        activeObjectUrl = URL.createObjectURL(file);
+
+        if (file.type.startsWith("video/")) {
+            await loadMedia(video, activeObjectUrl, "loadeddata");
+            setActiveMode("video-file");
+            video.pause();
+            await seekVideo(0);
+            await calibrateFromVideoStart();
+            await seekVideo(0);
+            processResults(detectCurrentFrame());
+            await video.play();
+            startLoop();
+            return;
+        }
+
+        clearImportedFile();
+        status.textContent = "動画ファイルを選択してください";
+    }
+
+    function startLoop() {
+        if (running) return;
+        running = true;
+        requestAnimationFrame(() => loop(++loopToken));
+    }
+
+    function stopLoop() {
+        running = false;
+        loopToken++;
+        resetPrimaryFaceTracking();
+    }
+
+    function loop(token) {
+        if (!running || token !== loopToken) return;
+        processResults(detectCurrentFrame());
+        requestAnimationFrame(() => loop(token));
+    }
+
+    function detectCurrentFrame() {
+        return faceLandmarker.detectForVideo(video, performance.now());
+    }
+
+    function processResults({ faceLandmarks, faceBlendshapes }) {
+        const primaryFaceIndex = selectPrimaryFaceIndex(faceLandmarks);
+        const rawLandmarks = primaryFaceIndex >= 0 ? faceLandmarks[primaryFaceIndex] : undefined;
+        const landmarks = smoothLandmarks(rawLandmarks);
+        const categories = primaryFaceIndex >= 0 ? faceBlendshapes[primaryFaceIndex]?.categories ?? [] : [];
+        currentPoseStable = isPoseStable(landmarks);
+        updateAutoCalibration(categories.length > 0);
+        drawLandmarks(landmarks);
+        updateShapes(categories, landmarks);
+        updateMotionGainCalibration(categories);
+
+        const displayCategories = categories.length ? categories : zeroDisplayCategories();
+        const activeCategories = selectedCategories(displayCategories);
+        if (!visualize.hidden) drawSpectrum(updateSpectrumFrame(activeCategories));
+    }
+
+    function selectPrimaryFaceIndex(faceLandmarks = []) {
+        if (!faceLandmarks.length) {
+            resetPrimaryFaceTracking();
+            return -1;
+        }
+
+        const centers = faceLandmarks.map(getLandmarkCenter);
+        let selectedIndex = 0;
+
+        if (primaryFaceCenter) {
+            let selectedDistance = Infinity;
+            centers.forEach((center, index) => {
+                const distance = Math.hypot(center.x - primaryFaceCenter.x, center.y - primaryFaceCenter.y);
+                if (distance < selectedDistance) {
+                    selectedDistance = distance;
+                    selectedIndex = index;
+                }
+            });
+
+            if (selectedDistance > PRIMARY_FACE_MAX_DISTANCE) {
+                selectedIndex = largestFaceIndex(faceLandmarks);
+                smoothedLandmarks = null;
+            }
+        } else {
+            selectedIndex = largestFaceIndex(faceLandmarks);
+        }
+
+        primaryFaceCenter = centers[selectedIndex];
+        return selectedIndex;
+    }
+
+    function largestFaceIndex(faceLandmarks = []) {
+        return faceLandmarks.reduce((bestIndex, landmarks, index) => {
+            const currentArea = landmarkBoundsArea(landmarks);
+            const bestArea = landmarkBoundsArea(faceLandmarks[bestIndex]);
+            return currentArea > bestArea ? index : bestIndex;
+        }, 0);
+    }
+
+    function landmarkBoundsArea(landmarks = []) {
+        const bounds = landmarkBounds(landmarks);
+        return bounds ? (bounds.maxX - bounds.minX) * (bounds.maxY - bounds.minY) : 0;
+    }
+
+    function landmarkBounds(landmarks = []) {
+        if (!landmarks.length) return null;
+        const bounds = landmarks.reduce((box, point) => ({
+            minX: Math.min(box.minX, point.x),
+            minY: Math.min(box.minY, point.y),
+            maxX: Math.max(box.maxX, point.x),
+            maxY: Math.max(box.maxY, point.y)
+        }), { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity });
+
+        return Number.isFinite(bounds.minX) && bounds.maxX > bounds.minX && bounds.maxY > bounds.minY
+            ? bounds
+            : null;
+    }
+
+    function getLandmarkCenter(landmarks = []) {
+        if (!landmarks.length) return { x: 0, y: 0 };
+        const sum = landmarks.reduce((total, point) => ({
+            x: total.x + point.x,
+            y: total.y + point.y
+        }), { x: 0, y: 0 });
+
+        return {
+            x: sum.x / landmarks.length,
+            y: sum.y / landmarks.length
+        };
+    }
+
+    function smoothLandmarks(landmarks = []) {
+        if (!landmarks.length) {
+            resetPrimaryFaceTracking();
+            return [];
+        }
+
+        if (!smoothedLandmarks || smoothedLandmarks.length !== landmarks.length) {
+            smoothedLandmarks = landmarks.map(point => ({ ...point }));
+            return smoothedLandmarks;
+        }
+
+        const currentWeight = 1 - LANDMARK_SMOOTHING;
+        smoothedLandmarks = landmarks.map((point, index) => {
+            const previous = smoothedLandmarks[index];
+            return {
+                x: previous.x * LANDMARK_SMOOTHING + point.x * currentWeight,
+                y: previous.y * LANDMARK_SMOOTHING + point.y * currentWeight,
+                z: (previous.z ?? point.z ?? 0) * LANDMARK_SMOOTHING + (point.z ?? previous.z ?? 0) * currentWeight,
+                visibility: point.visibility,
+                presence: point.presence
+            };
+        });
+
+        primaryFaceCenter = getLandmarkCenter(smoothedLandmarks);
+        return smoothedLandmarks;
+    }
+
+    function resetPrimaryFaceTracking() {
+        primaryFaceCenter = null;
+        smoothedLandmarks = null;
+    }
+
+    function resetMotionVisualState() {
+        [spectrum, spectrumSharpness].forEach(map => map.clear());
+    }
+
+    function updateAutoCalibration(faceDetected) {
+        if (!visualizing() || activeMode === "video-file") return;
+
+        if (!faceDetected) {
+            if (base.size || calibrationActive()) waitForFaceCalibration();
+        } else if (!base.size && !calibrationActive()) {
+            startGuidedCalibration();
+        }
+    }
+
+    function setActiveMode(mode) {
+        activeMode = mode;
+        stage.classList.toggle("file-source", mode !== "camera");
+        video.hidden = false;
+        video.controls = video.loop = mode === "video-file";
+    }
+
+    function stopCameraStream() {
+        const stream = video.srcObject instanceof MediaStream ? video.srcObject : null;
+        if (stream) stream.getTracks().forEach(track => track.stop());
+        video.srcObject = null;
+    }
+
+    function clearImportedFile() {
+        if (activeObjectUrl) URL.revokeObjectURL(activeObjectUrl);
+        activeObjectUrl = "";
+        video.removeAttribute("src");
+        video.load();
+        fileInput.value = "";
+    }
+
+    function loadMedia(media, src, eventName) {
+        return new Promise((resolve, reject) => {
+            const done = () => {
+                media.removeEventListener(eventName, done);
+                media.removeEventListener("error", fail);
+                resolve();
+            };
+            const fail = () => {
+                media.removeEventListener(eventName, done);
+                media.removeEventListener("error", fail);
+                reject(new Error("メディアを読み込めません"));
+            };
+            media.addEventListener(eventName, done, { once: true });
+            media.addEventListener("error", fail, { once: true });
+            media.src = src;
+        });
+    }
+
+    function seekVideo(time) {
+        return new Promise(resolve => {
+            if (Math.abs(video.currentTime - time) < 0.001) {
+                resolve();
+                return;
+            }
+            video.addEventListener("seeked", resolve, { once: true });
+            video.currentTime = time;
+        });
+    }
+
+    function waitVideoFrame() {
+        return new Promise(resolve => {
+            let done = false;
+            const finish = () => {
+                if (done) return;
+                done = true;
+                resolve();
+            };
+            setTimeout(finish, 80);
+            if ("requestVideoFrameCallback" in video) {
+                video.requestVideoFrameCallback(finish);
+                return;
+            }
+            requestAnimationFrame(finish);
+        });
+    }
+
+    function updateShapes(categories, landmarks) {
+        updateCalibration(categories, landmarks);
+
+        for (const { categoryName, score } of categories) {
+            if (!shapes.has(categoryName)) {
+                const row = document.createElement("div");
+                const label = document.createElement("label");
+                const input = document.createElement("input");
+                const name = document.createElement("span");
+                const bar = document.createElement("span");
+                const fill = document.createElement("span");
+                const value = document.createElement("span");
+                const gain = document.createElement("span");
+
+                row.className = "shape";
+                label.className = "param";
+                label.title = categoryName;
+                input.type = "checkbox";
+                input.checked = savedParamEnabled(categoryName);
+                name.textContent = categoryName;
+                bar.className = "bar raw";
+                fill.className = "fill";
+                value.className = "value";
+                gain.className = "gain";
+                input.onchange = () => {
+                    setParamEnabled(categoryName, input.checked);
+                };
+
+                setParamEnabled(categoryName, input.checked);
+                label.append(input, name);
+                bar.append(fill);
+                row.append(label, bar, value, gain);
+                shapesPanel.appendChild(row);
+                shapes.set(categoryName, { input, bar, value, gain });
+            }
+            const { bar, value, gain } = shapes.get(categoryName);
+            const calibrated = base.size > 0;
+            const displayScore = calibrated ? adjustedCalibratedScore(categoryName, score) : score;
+            const width = calibrated
+                ? Math.min(Math.abs(displayScore) * 100, 50)
+                : Math.min(score * 100, 100);
+            bar.className = `bar ${calibrated ? (displayScore < 0 ? "negative" : "positive") : "raw"}`;
+            bar.style.setProperty("--v", `${width}%`);
+            value.textContent = calibrated ? signed(displayScore) : score.toFixed(4);
+            gain.textContent = calibrated ? `x${motionGain(categoryName).toFixed(2)}` : "";
+        }
+    }
+
+    function selectedCategories(categories) {
+        return categories.filter(({ categoryName }) => enabledParams.has(categoryName));
+    }
+
+    function zeroDisplayCategories() {
+        const names = enabledParams.size ? [...enabledParams] : [...base.keys()];
+        return names.map(categoryName => ({ categoryName, score: 0 }));
+    }
+
+    function setParamEnabled(categoryName, enabled) {
+        if (enabled) {
+            enabledParams.add(categoryName);
+            return;
+        }
+
+        enabledParams.delete(categoryName);
+        [spectrum, spectrumSharpness].forEach(map => map.delete(categoryName));
+    }
+
+    function savedParamEnabled(categoryName) {
+        const paramSet = paramSets[activeParamSetName];
+        return paramSet && categoryName in paramSet ? Boolean(paramSet[categoryName]) : true;
+    }
+
+    async function loadParamSets() {
+        try {
+            const sets = {};
+
+            for (let index = 1; index <= 99; index++) {
+                const name = datasetName(index);
+                const response = await fetch(`${PARAM_SET_DIR}/${name}`, { cache: "no-store" });
+                if (response.status === 404) break;
+                if (!response.ok) throw new Error(`${name}: HTTP ${response.status}`);
+
+                const text = await response.text();
+                if (!text.trim()) continue;
+
+                const stored = JSON.parse(text);
+                const paramSet = stored?.[name] ?? stored;
+                if (validParamSet(paramSet)) sets[name] = paramSet;
+            }
+
+            return sets;
+        } catch (error) {
+            status.textContent = `parameterを読み込めません: ${error.message}`;
+            return {};
+        }
+    }
+
+    function validParamSet(value) {
+        return value && typeof value === "object" && !Array.isArray(value);
+    }
+
+    function renderParamSetOptions(selectedName = activeParamSetName) {
+        const names = Object.keys(paramSets).sort((a, b) => a.localeCompare(b, "ja", { numeric: true }));
+        paramSetSelect.replaceChildren(new Option("セットなし", ""));
+
+        for (const name of names) {
+            paramSetSelect.appendChild(new Option(name, name));
+        }
+
+        activeParamSetName = names.includes(selectedName) ? selectedName : "";
+        paramSetSelect.value = activeParamSetName;
+    }
+
+    async function saveCurrentParamSet() {
+        if (!shapes.size) {
+            status.textContent = "保存できるパラメーターがありません";
+            return;
+        }
+
+        const name = nextParamSetName();
+        const paramSet = Object.fromEntries([...shapes].map(([categoryName, { input }]) => [categoryName, input.checked]));
+        paramSets[name] = paramSet;
+
+        try {
+            await writeParamSetFile(JSON.stringify(paramSet, null, 2), name);
+            renderParamSetOptions(name);
+            status.textContent = `${name} を書き出しました`;
+        } catch (error) {
+            delete paramSets[name];
+            status.textContent = `保存できません: ${error.message}`;
+        }
+    }
+
+    async function writeParamSetFile(json, name) {
+        const blob = new Blob([json], { type: "application/json" });
+
+        if ("showSaveFilePicker" in window) {
+            const handle = await window.showSaveFilePicker({ suggestedName: name });
+            const writable = await handle.createWritable();
+            await writable.write(blob);
+            await writable.close();
+            return;
+        }
+
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = name;
+        link.click();
+        setTimeout(() => URL.revokeObjectURL(url), 0);
+    }
+
+    function nextParamSetName() {
+        let index = Object.keys(paramSets).length + 1;
+        let name = "";
+
+        do {
+            name = datasetName(index++);
+        } while (name in paramSets);
+
+        return name;
+    }
+
+    function datasetName(index) {
+        return `dataset${String(index).padStart(2, "0")}`;
+    }
+
+    function applyParamSet(name) {
+        activeParamSetName = name;
+        const paramSet = paramSets[name];
+
+        for (const [categoryName, { input }] of shapes) {
+            input.checked = paramSet && categoryName in paramSet ? Boolean(paramSet[categoryName]) : true;
+            setParamEnabled(categoryName, input.checked);
+        }
+
+        status.textContent = name ? `${name} を適用しました` : "";
+    }
+
+    async function loadMotionGainSets() {
+        try {
+            const sets = {};
+
+            for (let index = 1; index <= 99; index++) {
+                const name = motionGainSetName(index);
+                const response = await fetch(`${PARAM_SET_DIR}/${name}.json`, { cache: "no-store" });
+                if (response.status === 404) break;
+                if (!response.ok) throw new Error(`${name}.json: HTTP ${response.status}`);
+
+                const text = await response.text();
+                if (!text.trim()) continue;
+
+                const gainSet = normalizeMotionGainSet(JSON.parse(text));
+                if (validMotionGainSet(gainSet)) sets[name] = gainSet;
+            }
+
+            return sets;
+        } catch (error) {
+            status.textContent = `係数セットを読み込めません: ${error.message}`;
+            return {};
+        }
+    }
+
+    function validMotionGainSet(value) {
+        return value && typeof value === "object" && !Array.isArray(value)
+            && Object.keys(value).length > 0
+            && Object.values(value).every(gain => Number.isFinite(gain));
+    }
+
+    function renderMotionGainSetOptions(selectedName = activeMotionGainSetName) {
+        const names = Object.keys(motionGainSets).sort((a, b) => a.localeCompare(b, "ja", { numeric: true }));
+        motionGainSetSelect.replaceChildren(new Option("係数なし", ""));
+
+        for (const name of names) {
+            motionGainSetSelect.appendChild(new Option(name, name));
+        }
+
+        activeMotionGainSetName = names.includes(selectedName) ? selectedName : "";
+        motionGainSetSelect.value = activeMotionGainSetName;
+    }
+
+    function applyMotionGainSet(name) {
+        activeMotionGainSetName = name;
+        motionGains.clear();
+
+        const gainSet = motionGainSets[name];
+        if (gainSet) {
+            for (const [categoryName, gain] of Object.entries(gainSet)) {
+                motionGains.set(categoryName, clamp(gain, MOTION_GAIN_MIN, MOTION_GAIN_MAX));
+            }
+        }
+
+        resetMotionVisualState();
+        status.textContent = name ? `${name} を適用しました` : "係数を解除しました";
+    }
+
+    async function saveCurrentMotionGainSet() {
+        if (!motionGains.size) {
+            status.textContent = "保存できる係数がありません";
+            return;
+        }
+
+        const name = nextMotionGainSetName();
+        const gainSet = Object.fromEntries([...motionGains].map(([categoryName, gain]) => [categoryName, roundGain(gain)]));
+        const payload = {
+            version: 1,
+            type: "motionGainSet",
+            createdAt: new Date().toISOString(),
+            setCount: MOTION_GAIN_SET_COUNT,
+            secondsPerSet: MOTION_GAIN_SAMPLE_MS / 1000,
+            gains: gainSet
+        };
+
+        motionGainSets[name] = gainSet;
+
+        try {
+            await writeParamSetFile(JSON.stringify(payload, null, 2), `${name}.json`);
+            renderMotionGainSetOptions(name);
+            status.textContent = `${name}.json を書き出しました`;
+        } catch (error) {
+            delete motionGainSets[name];
+            status.textContent = `係数を保存できません: ${error.message}`;
+        }
+    }
+
+    function normalizeMotionGainSet(stored) {
+        const source = stored?.gains ?? stored;
+        if (!source || typeof source !== "object" || Array.isArray(source)) return null;
+
+        return Object.fromEntries(Object.entries(source)
+            .map(([categoryName, gain]) => [categoryName, Number(gain)])
+            .filter(([, gain]) => Number.isFinite(gain))
+            .map(([categoryName, gain]) => [categoryName, roundGain(gain)]));
+    }
+
+    function nextMotionGainSetName() {
+        let index = Object.keys(motionGainSets).length + 1;
+        let name = "";
+
+        do {
+            name = motionGainSetName(index++);
+        } while (name in motionGainSets);
+
+        return name;
+    }
+
+    function motionGainSetName(index) {
+        return `motionGainSet${String(index).padStart(2, "0")}`;
+    }
+
+    function updateCalibration(categories, landmarks) {
+        if ((!calibration.warmup && !calibration.remaining) || !categories.length) return;
+
+        if (calibration.warmup) {
+            status.textContent = `準備中 ${--calibration.warmup}`;
+            updateCalibrationPoint();
+            return;
+        }
+
+        accumulateCategoryStats(calibration.stats, categories);
+        addPoseCalibrationSample(landmarks);
+        calibration.samples++;
+        status.textContent = `キャリブレーション中 ${--calibration.remaining}`;
+        updateCalibrationPoint();
+
+        if (calibration.remaining) return;
+
+        base.clear();
+        writeCalibrationBase(base, calibration.stats, calibration.samples);
+        finishPoseCalibration();
+        calibrate.disabled = false;
+        measureMotionGain.disabled = false;
+        hideCalibrationGuide();
+        status.textContent = `キャリブ済み (${calibration.samples} frames)`;
+    }
+
+    function updateCalibrationPoint(progressValue) {
+        const progress = progressValue ?? (!calibrationActive() || calibration.warmup
+            ? 0
+            : clamp((CALIBRATION_FRAMES - calibration.remaining) / CALIBRATION_FRAMES * 100, 0, 100));
+        calibrationPoint.style.setProperty("--progress", progress);
+    }
+
+    async function calibrateFromVideoStart() {
+        const duration = Math.min(VIDEO_BASELINE_SECONDS, video.duration || VIDEO_BASELINE_SECONDS);
+        const samplesByName = new Map();
+        let sampleCount = 0;
+        resetPoseCalibration();
+
+        calibratingVideoFile = true;
+        try {
+            for (let pass = 0; pass < VIDEO_BASELINE_PASSES; pass++) {
+                status.textContent = `動画キャリブレーション中 ${pass + 1}/${VIDEO_BASELINE_PASSES}`;
+                await seekVideo(0);
+                await video.play();
+                while (video.currentTime < duration) {
+                    await waitVideoFrame();
+                    const result = detectCurrentFrame();
+                    const categories = result.faceBlendshapes[0]?.categories ?? [];
+                    if (!categories.length) continue;
+                    sampleCount++;
+                    addPoseCalibrationSample(result.faceLandmarks[0]);
+                    for (const { categoryName, score } of categories) {
+                        const values = samplesByName.get(categoryName) ?? [];
+                        values.push(score);
+                        samplesByName.set(categoryName, values);
+                    }
+                }
+                video.pause();
+            }
+        } finally {
+            video.pause();
+            calibratingVideoFile = false;
+        }
+
+        if (!sampleCount) {
+            status.textContent = `最初の${VIDEO_BASELINE_SECONDS}秒x${VIDEO_BASELINE_PASSES}回で顔を検出できません`;
+            return;
+        }
+
+        base.clear();
+        calibration.stats.clear();
+        Object.assign(calibration, { warmup: 0, remaining: 0, samples: sampleCount });
+        for (const [categoryName, values] of samplesByName) {
+            const mean = values.reduce((sum, value) => sum + value, 0) / values.length;
+            const min = Math.min(...values);
+            const max = Math.max(...values);
+            const dead = Math.max((max - min) * 0.1, DEADZONE);
+            base.set(categoryName, { mean, min, max, dead });
+        }
+        finishPoseCalibration();
+        calibrate.disabled = false;
+        measureMotionGain.disabled = false;
+        hideCalibrationGuide();
+        status.textContent = `キャリブ済み (${VIDEO_BASELINE_SECONDS * VIDEO_BASELINE_PASSES}s)`;
+    }
+
+    function accumulateCategoryStats(stats, categories) {
+        for (const { categoryName, score } of categories) {
+            const stat = stats.get(categoryName) ?? { sum: 0, sq: 0 };
+            stat.sum += score;
+            stat.sq += score * score;
+            stats.set(categoryName, stat);
+        }
+    }
+
+    function writeCalibrationBase(targetBase, stats, sampleCount) {
+        if (!sampleCount) return;
+
+        for (const [categoryName, { sum, sq }] of stats) {
+            const mean = sum / sampleCount;
+            const variance = Math.max(sq / sampleCount - mean * mean, 0);
+            targetBase.set(categoryName, { mean, dead: Math.max(Math.sqrt(variance) * 3, DEADZONE) });
+        }
+    }
+
+    function calibratedScore(categoryName, score, baseMap = base) {
+        const { mean = 0, dead = 0, min = mean - dead, max = mean + dead } = baseMap.get(categoryName) ?? {};
+        if (score >= min - dead && score <= max + dead) return 0;
+        return score < mean ? score - (min - dead) : score - (max + dead);
+    }
+
+    function poseGatedCalibratedScore(categoryName, score, poseStable = currentPoseStable, baseMap = base) {
+        return poseStable ? calibratedScore(categoryName, score, baseMap) : 0;
+    }
+
+    function adjustedCalibratedScore(categoryName, score, poseStable = currentPoseStable, baseMap = base) {
+        return poseGatedCalibratedScore(categoryName, score, poseStable, baseMap) * motionGain(categoryName);
+    }
+
+    function motionGain(categoryName) {
+        return motionGains.get(categoryName) ?? 1;
+    }
+
+    function resetPoseCalibration() {
+        neutralPose = null;
+        currentPoseStable = true;
+        resetPoseCalibrationState(poseCalibration);
+    }
+
+    function addPoseCalibrationSample(landmarks = []) {
+        addPoseCalibrationSampleToState(poseCalibration, landmarks);
+    }
+
+    function finishPoseCalibration() {
+        neutralPose = finishPoseCalibrationState(poseCalibration);
+    }
+
+    function createCalibrationState(warmup = 0, frames = 0) {
+        return { warmup, remaining: frames, samples: 0, stats: new Map() };
+    }
+
+    function createPoseCalibrationState() {
+        return { samples: 0, sum: null };
+    }
+
+    function resetPoseCalibrationState(state) {
+        Object.assign(state, { samples: 0, sum: null });
+    }
+
+    function addPoseCalibrationSampleToState(state, landmarks = []) {
+        const pose = getPose(landmarks);
+        if (!pose) return;
+
+        state.sum ??= { scale: 0, yaw: 0, pitch: 0, roll: 0 };
+
+        for (const key of Object.keys(state.sum)) {
+            state.sum[key] += pose[key];
+        }
+        state.samples++;
+    }
+
+    function finishPoseCalibrationState(state) {
+        if (!state.samples || !state.sum) return null;
+        return Object.fromEntries(Object.entries(state.sum)
+            .map(([key, value]) => [key, value / state.samples]));
+    }
+
+    function isPoseStable(landmarks = [], poseThreshold = POSE_THRESHOLD, rollThreshold = ROLL_THRESHOLD) {
+        return isPoseStableForBase(landmarks, base, neutralPose, poseThreshold, rollThreshold);
+    }
+
+    function isPoseStableForBase(landmarks = [], baseMap = base, basePose = neutralPose, poseThreshold = POSE_THRESHOLD, rollThreshold = ROLL_THRESHOLD) {
+        if (!baseMap.size || !basePose) return true;
+        const pose = getPose(landmarks);
+        if (!pose) return false;
+
+        const dPose = poseDiff(pose, basePose);
+        const dRoll = Math.abs(angleDiff(pose.roll, basePose.roll));
+        return dPose < poseThreshold && dRoll < rollThreshold;
+    }
+
+    function getPose(landmarks = []) {
+        const leftEye = averageLandmarks(landmarks, [33, 133]);
+        const rightEye = averageLandmarks(landmarks, [263, 362]);
+        const nose = landmarks[1];
+        if (!leftEye || !rightEye || !nose) return null;
+
+        const eyeCenter = midpoint(leftEye, rightEye);
+        const eyeDistance = Math.hypot(rightEye.x - leftEye.x, rightEye.y - leftEye.y);
+        if (!Number.isFinite(eyeDistance) || eyeDistance <= 0.001) return null;
+
+        const roll = Math.atan2(rightEye.y - leftEye.y, rightEye.x - leftEye.x);
+        const noseVector = rotatePoint({ x: nose.x - eyeCenter.x, y: nose.y - eyeCenter.y }, -roll);
+
+        return {
+            scale: eyeDistance,
+            yaw: noseVector.x / eyeDistance,
+            pitch: noseVector.y / eyeDistance,
+            roll
+        };
+    }
+
+    function poseDiff(pose, basePose) {
+        const scale = Math.max(basePose.scale, 0.001);
+        return (
+            Math.abs(Math.log(Math.max(pose.scale, 0.001) / scale)) +
+            Math.abs(pose.yaw - basePose.yaw) +
+            Math.abs(pose.pitch - basePose.pitch)
+        );
+    }
+
+    function angleDiff(value, baseValue) {
+        return Math.atan2(Math.sin(value - baseValue), Math.cos(value - baseValue));
+    }
+
+    function averageLandmarks(landmarks, indices) {
+        const points = indices.map(index => landmarks[index]).filter(Boolean);
+        if (!points.length) return null;
+        return {
+            x: points.reduce((sum, point) => sum + point.x, 0) / points.length,
+            y: points.reduce((sum, point) => sum + point.y, 0) / points.length
+        };
+    }
+
+    function rotatePoint(point, angle) {
+        const [cos, sin] = [Math.cos(angle), Math.sin(angle)];
+        return {
+            x: point.x * cos - point.y * sin,
+            y: point.x * sin + point.y * cos
+        };
+    }
+
+    function startMotionGainCalibration() {
+        if (!base.size || calibrationActive()) {
+            status.textContent = "先にキャリブレーションしてください";
+            return;
+        }
+        Object.assign(motionGainCalibration, {
+            active: true,
+            startedAt: performance.now(),
+            duration: MOTION_GAIN_SAMPLE_MS,
+            setIndex: 0
+        });
+        motionGainCalibration.stats.clear();
+        motionGainCalibration.sets = [];
+        motionGains.clear();
+        activeMotionGainSetName = "";
+        renderMotionGainSetOptions();
+        resetMotionVisualState();
+        showCalibrationGuide(`${MOTION_GAIN_MESSAGE}\n1/${MOTION_GAIN_SET_COUNT}`);
+        calibrate.disabled = true;
+        measureMotionGain.disabled = true;
+        updateCalibrationPoint(0);
+    }
+
+    function resetMotionGainCalibration() {
+        Object.assign(motionGainCalibration, {
+            active: false,
+            startedAt: 0,
+            duration: MOTION_GAIN_SAMPLE_MS,
+            setIndex: 0
+        });
+        motionGainCalibration.stats.clear();
+        motionGainCalibration.sets = [];
+    }
+
+    function updateMotionGainCalibration(categories) {
+        if (!motionGainCalibration.active || !base.size) return;
+
+        const elapsed = performance.now() - motionGainCalibration.startedAt;
+        const remaining = Math.max(Math.ceil((motionGainCalibration.duration - elapsed) / 1000), 0);
+
+        if (!categories.length) {
+            status.textContent = `係数測定 ${motionGainCalibration.setIndex + 1}/${MOTION_GAIN_SET_COUNT}: 顔を検出中 ${remaining}s`;
+            updateCalibrationPoint(clamp(elapsed / motionGainCalibration.duration * 100, 0, 100));
+            if (elapsed >= motionGainCalibration.duration) finishMotionGainCalibrationSet();
+            return;
+        }
+
+        for (const { categoryName, score } of categories) {
+            const value = Math.abs(poseGatedCalibratedScore(categoryName, score));
+            const stat = motionGainCalibration.stats.get(categoryName) ?? { max: 0 };
+            stat.max = Math.max(stat.max, value);
+            motionGainCalibration.stats.set(categoryName, stat);
+        }
+
+        status.textContent = `係数測定 ${motionGainCalibration.setIndex + 1}/${MOTION_GAIN_SET_COUNT}: ${remaining}s`;
+        updateCalibrationPoint(clamp(elapsed / motionGainCalibration.duration * 100, 0, 100));
+
+        if (elapsed < motionGainCalibration.duration) return;
+        finishMotionGainCalibrationSet();
+    }
+
+    function finishMotionGainCalibrationSet() {
+        const amplitudes = [...motionGainCalibration.stats.entries()]
+            .map(([categoryName, stat]) => ({ categoryName, amount: stat.max }))
+            .filter(({ amount }) => amount >= MOTION_GAIN_EPSILON);
+
+        if (!amplitudes.length) {
+            resetMotionGainCalibration();
+            calibrate.disabled = false;
+            measureMotionGain.disabled = false;
+            hideCalibrationGuide();
+            status.textContent = "係数測定: 変動を検出できません";
+            return;
+        }
+
+        const target = median(amplitudes.map(({ amount }) => amount));
+        const setGains = {};
+
+        for (const [categoryName, stat] of motionGainCalibration.stats) {
+            const gain = stat.max < MOTION_GAIN_EPSILON
+                ? MOTION_GAIN_MAX
+                : (target / stat.max) ** MOTION_GAIN_POWER;
+            setGains[categoryName] = roundGain(gain);
+        }
+
+        motionGainCalibration.sets.push(setGains);
+        motionGainCalibration.setIndex++;
+
+        if (motionGainCalibration.setIndex < MOTION_GAIN_SET_COUNT) {
+            motionGainCalibration.startedAt = performance.now();
+            motionGainCalibration.stats.clear();
+            showCalibrationGuide(`${MOTION_GAIN_MESSAGE}\n${motionGainCalibration.setIndex + 1}/${MOTION_GAIN_SET_COUNT}`);
+            updateCalibrationPoint(0);
+            return;
+        }
+
+        finishMotionGainCalibration();
+    }
+
+    function finishMotionGainCalibration() {
+        const averagedGains = averageMotionGainSets(motionGainCalibration.sets);
+        const classifications = { easy: 0, hard: 0 };
+
+        motionGains.clear();
+        for (const [categoryName, gain] of Object.entries(averagedGains)) {
+            motionGains.set(categoryName, gain);
+            if (gain < 0.75) classifications.easy++;
+            if (gain > 1.25) classifications.hard++;
+        }
+
+        resetMotionGainCalibration();
+        calibrate.disabled = false;
+        measureMotionGain.disabled = false;
+        hideCalibrationGuide();
+        status.textContent = `係数測定済み (${MOTION_GAIN_SET_COUNT}セット平均): 動きやすい ${classifications.easy}, 動きにくい ${classifications.hard}`;
+    }
+
+    function averageMotionGainSets(sets) {
+        const valuesByName = new Map();
+
+        for (const set of sets) {
+            for (const [categoryName, gain] of Object.entries(set)) {
+                if (!Number.isFinite(gain)) continue;
+                const values = valuesByName.get(categoryName) ?? [];
+                values.push(gain);
+                valuesByName.set(categoryName, values);
+            }
+        }
+
+        return Object.fromEntries([...valuesByName].map(([categoryName, values]) => [
+            categoryName,
+            roundGain(values.reduce((sum, value) => sum + value, 0) / values.length)
+        ]));
+    }
+
+    function roundGain(value) {
+        return Number(clamp(value, MOTION_GAIN_MIN, MOTION_GAIN_MAX).toFixed(4));
+    }
+
+    function median(values) {
+        const sorted = [...values].sort((a, b) => a - b);
+        const center = Math.floor(sorted.length / 2);
+        return sorted.length % 2
+            ? sorted[center]
+            : (sorted[center - 1] + sorted[center]) / 2;
+    }
+
+    function signed(value) {
+        return `${value >= 0 ? "+" : ""}${value.toFixed(4)}`;
+    }
+
+    function updateSpectrumFrame(categories, { poseStable = currentPoseStable, values = spectrum, sharpnessValues = spectrumSharpness, orderState = null, baseMap = base } = {}) {
+        const { width, height } = vizCanvas;
+        if (!categories.length) {
+            return { active: false, points: [] };
+        }
+
+        const [cx, cy] = [width / 2, height / 2];
+        const baseRadius = Math.min(width, height) * 0.28;
+        const maxSpike = Math.min(width, height) * 0.18;
+        const calibrated = baseMap.size > 0;
+        const ordered = orderedSpectrumCategories(categories, orderState);
+        const points = ordered.map(({ categoryName, score }, i) => {
+            const rawValue = calibrated ? adjustedCalibratedScore(categoryName, score, poseStable, baseMap) : 0;
+            const value = Math.abs(rawValue) < SPECTRUM_ZERO_THRESHOLD ? 0 : rawValue;
+            const previous = values.get(categoryName) ?? 0;
+            const smoothed = previous * 0.82 + value * 0.18;
+            const rawSpeed = Math.max(Math.abs(smoothed - previous) - 0.002, 0);
+            const previousSharpness = sharpnessValues.get(categoryName) ?? 0;
+            const changeSharpness = Math.min(rawSpeed * 180, 1);
+            const sharpness = value === 0 ? previousSharpness * 0.82 : Math.max(previousSharpness, changeSharpness);
+            values.set(categoryName, smoothed);
+            sharpnessValues.set(categoryName, sharpness);
+            const angle = i / ordered.length * Math.PI * 2 - Math.PI / 2;
+            const radius = baseRadius + Math.max(-1, Math.min(smoothed * 18, 1)) * maxSpike;
+            return {
+                x: cx + Math.cos(angle) * radius,
+                y: cy + Math.sin(angle) * radius,
+                sharpness
+            };
+        });
+
+        return { active: calibrated, points };
+    }
+
+    function drawSpectrum({ active, points }) {
+        const { width, height } = vizCanvas;
+        vizCtx.clearRect(0, 0, width, height);
+        drawSpectrumPath(vizCtx, points, active);
+    }
+
+    function drawFullscreenFaceSpectrums(faceLandmarks = [], faceBlendshapes = []) {
+        resizeFullscreenCanvas();
+        vizCtx6.setTransform(1, 0, 0, 1, 0, 0);
+        vizCtx6.clearRect(0, 0, vizCanvas6.width, vizCanvas6.height);
+        const assignments = assignViz6Faces(faceLandmarks, faceBlendshapes);
+        const visibleFaces = assignments.length;
+        let calibratingFaces = 0;
+        const activeStates = new Set(assignments.map(({ faceState }) => faceState));
+
+        for (const faceState of viz6Faces) {
+            if (!activeStates.has(faceState)) {
+                resetViz6VisualState(faceState);
+            }
+        }
+
+        for (const { landmarks, blendshapes, faceState } of assignments) {
+            const displayCategories = blendshapes?.categories?.length
+                ? blendshapes.categories
+                : zeroDisplayCategories();
+            const activeCategories = selectedCategories(displayCategories);
+            updateViz6FaceCalibration(faceState, displayCategories, landmarks);
+            if (viz6FaceCalibrationActive(faceState)) calibratingFaces++;
+            drawFullscreenFaceVisual(activeCategories, landmarks, faceState);
+        }
+
+        updateViz6CalibrationStatus(calibratingFaces, visibleFaces);
+    }
+
+    function assignViz6Faces(faceLandmarks = [], faceBlendshapes = []) {
+        const detections = faceLandmarks
+            .map((landmarks, index) => ({
+                landmarks,
+                blendshapes: faceBlendshapes[index],
+                center: getLandmarkCenter(landmarks),
+                area: landmarkBoundsArea(landmarks)
+            }))
+            .filter(({ landmarks }) => landmarks?.length)
+            .sort((a, b) => b.area - a.area)
+            .slice(0, VIZ6_MAX_FACES);
+        const availableStates = new Set(viz6Faces);
+        const assignments = [];
+
+        for (const detection of detections) {
+            const nearest = nearestViz6FaceState(detection, availableStates);
+            let faceState = nearest.distance <= PRIMARY_FACE_MAX_DISTANCE
+                ? nearest.faceState
+                : null;
+
+            if (!faceState) {
+                faceState = reusableViz6FaceState(availableStates);
+                resetViz6Face(faceState);
+            }
+
+            availableStates.delete(faceState);
+            faceState.center = detection.center;
+            assignments.push({ ...detection, faceState });
+        }
+
+        return assignments;
+    }
+
+    function nearestViz6FaceState(detection, availableStates) {
+        let faceState = null;
+        let distance = Infinity;
+
+        for (const candidate of availableStates) {
+            if (!candidate.center) continue;
+
+            const candidateDistance = Math.hypot(
+                detection.center.x - candidate.center.x,
+                detection.center.y - candidate.center.y
+            );
+            if (candidateDistance < distance) {
+                distance = candidateDistance;
+                faceState = candidate;
+            }
+        }
+
+        return { faceState, distance };
+    }
+
+    function reusableViz6FaceState(availableStates) {
+        for (const faceState of availableStates) {
+            if (!faceState.base.size && !viz6FaceCalibrationActive(faceState)) return faceState;
+        }
+
+        return availableStates.values().next().value;
+    }
+
+    function drawFullscreenFaceVisual(categories, landmarks, faceState) {
+        const anchor = getFullscreenHeadCornerAnchor(landmarks);
+        if (!anchor) return;
+
+        faceState.anchor = faceState.anchor
+            ? {
+                x: faceState.anchor.x * 0.72 + anchor.x * 0.28,
+                y: faceState.anchor.y * 0.72 + anchor.y * 0.28,
+                radius: faceState.anchor.radius * 0.72 + anchor.radius * 0.28,
+                bubbleX: (faceState.anchor.bubbleX ?? anchor.bubbleX) * 0.72 + anchor.bubbleX * 0.28,
+                bubbleY: (faceState.anchor.bubbleY ?? anchor.bubbleY) * 0.72 + anchor.bubbleY * 0.28
+            }
+            : anchor;
+
+        const sourceRadius = Math.min(vizCanvas.width, vizCanvas.height) * 0.28;
+        const scale = faceState.anchor.radius / sourceRadius;
+        const poseStable = isPoseStableForBase(landmarks, faceState.base, faceState.neutralPose, VIZ6_POSE_THRESHOLD, VIZ6_ROLL_THRESHOLD);
+
+        const dpr = fullscreenCanvasDpr();
+        vizCtx6.setTransform(dpr, 0, 0, dpr, 0, 0);
+        drawForeheadBubbleTrail(vizCtx6, faceState.anchor);
+        vizCtx6.save();
+        vizCtx6.translate(faceState.anchor.x, faceState.anchor.y);
+        vizCtx6.scale(scale, scale);
+        vizCtx6.translate(-vizCanvas.width / 2, -vizCanvas.height / 2);
+        drawViz6Mode(vizCtx6, categories, faceState, poseStable);
+        vizCtx6.restore();
+    }
+
+    function drawViz6Mode(targetCtx, categories, faceState, poseStable) {
+        if (viz6Mode === 1 || viz6Mode === 5) {
+            const frame = updateViz6SpectrumFrame(categories, faceState, poseStable);
+            if (viz6Mode === 1) {
+                drawSpectrumPath(targetCtx, frame.points, frame.active);
+            } else {
+                drawViz6SpectrumTimeline(targetCtx, faceState, frame);
+            }
+            return;
+        }
+
+        const motionValues = updateMotionValuesForState(categories, {
+            poseStable,
+            values: faceState.circles,
+            baseMap: faceState.base
+        });
+
+        if (viz6Mode === 2) {
+            drawMotionCirclesOnContext(targetCtx, motionValues, { monochrome: viz2Monochrome });
+        } else if (viz6Mode === 3) {
+            drawViz6MotionLayers(targetCtx, motionValues);
+        } else if (viz6Mode === 4) {
+            drawViz6WaveLine(targetCtx, faceState, motionValues);
+        }
+    }
+
+    function updateViz6SpectrumFrame(categories, faceState, poseStable) {
+        return updateSpectrumFrame(categories, {
+            poseStable,
+            values: faceState.spectrum,
+            sharpnessValues: faceState.spectrumSharpness,
+            orderState: faceState,
+            baseMap: faceState.base
+        });
+    }
+
+    function updateViz6FaceCalibration(faceState, categories, landmarks) {
+        if (!categories.length || faceState.base.size) return;
+        faceState.calibration ??= createCalibrationState(WARMUP_FRAMES, CALIBRATION_FRAMES);
+
+        if (faceState.calibration.warmup) {
+            faceState.calibration.warmup--;
+            return;
+        }
+
+        accumulateCategoryStats(faceState.calibration.stats, categories);
+
+        addPoseCalibrationSampleToState(faceState.poseCalibration, landmarks);
+        faceState.calibration.samples++;
+        faceState.calibration.remaining--;
+
+        if (faceState.calibration.remaining > 0) return;
+
+        faceState.base.clear();
+        writeCalibrationBase(faceState.base, faceState.calibration.stats, faceState.calibration.samples);
+        faceState.neutralPose = finishPoseCalibrationState(faceState.poseCalibration);
+        faceState.calibration = null;
+    }
+
+    function viz6FaceCalibrationActive(faceState) {
+        return Boolean(faceState.calibration?.warmup || faceState.calibration?.remaining);
+    }
+
+    function updateViz6CalibrationStatus(calibratingFaces, visibleFaces) {
+        if (!visualizing() || visualize6.hidden || !visibleFaces) return;
+
+        if (calibratingFaces) {
+            status.textContent = `visualize_06 キャリブレーション中 ${calibratingFaces}/${visibleFaces}`;
+            return;
+        }
+
+        const calibratedFaces = viz6Faces.filter(face => face.base.size).length;
+        if (calibratedFaces) {
+            status.textContent = `visualize_06 キャリブ済み ${calibratedFaces}/${visibleFaces}`;
+        }
+    }
+
+    function updateMotionValuesForState(categories, { poseStable = currentPoseStable, values = circles, baseMap = base } = {}) {
+        const calibrated = baseMap.size > 0;
+        const motionValues = categories.map(({ categoryName, score }) => {
+            const target = calibrated ? adjustedCalibratedScore(categoryName, score, poseStable, baseMap) : 0;
+            const state = values.get(categoryName) ?? { value: 0, speed: 0, phase: Math.random() * Math.PI * 2 };
+            const previous = state.value;
+            state.value = previous * 0.78 + target * 0.22;
+            state.speed = state.speed * 0.72 + Math.abs(state.value - previous) * 0.28;
+            state.phase += 0.02 + Math.abs(state.value) * 0.16;
+            values.set(categoryName, state);
+            return { ...state, categoryName, amount: Math.abs(state.value) };
+        });
+
+        return { calibrated, values: motionValues, maxAmount: Math.max(...motionValues.map(({ amount }) => amount), calibrated ? 0.08 : 0.25) };
+    }
+
+    function drawViz6SpectrumTimeline(targetCtx, faceState, { active, points }) {
+        if (!points.length) {
+            faceState.spectrumHistory = [];
+            faceState.spectrumLastSnapshotAt = 0;
+            return;
+        }
+
+        updateSpectrumHistoryState(faceState, points, active);
+        drawSpectrumHistoryOnContext(targetCtx, faceState.spectrumHistory, vizCanvas.width, vizCanvas.height);
+    }
+
+    function drawMotionCirclesOnContext(targetCtx, { calibrated, values, maxAmount }, { monochrome = false } = {}) {
+        if (!values.length) return;
+
+        const [cx, cy] = [vizCanvas.width / 2, vizCanvas.height / 2];
+        const minStage = Math.min(vizCanvas.width, vizCanvas.height);
+
+        targetCtx.save();
+        targetCtx.lineWidth = 1.8;
+        targetCtx.lineCap = "round";
+        targetCtx.lineJoin = "round";
+
+        values.forEach(({ value, speed, phase, amount }, i) => {
+            const normalized = clamp(amount / maxAmount, 0, 1);
+            const radius = minStage * (0.12 + normalized * 0.28);
+            const amplitude = minStage * normalized * 0.08;
+            const sharpness = clamp(speed * (calibrated ? 220 : 42), 0, 1) ** 0.65;
+            const waves = Math.round(3 + normalized * 10);
+            const hue = (i * 41 + 165) % 360;
+            const alpha = 0.36 + normalized * 0.55;
+
+            [targetCtx.strokeStyle, targetCtx.fillStyle] = monochrome
+                ? [`rgba(40, 40, 40, ${alpha})`, `rgba(40, 40, 40, ${0.025 + normalized * 0.075})`]
+                : [`hsla(${hue}, 55%, ${value >= 0 ? 42 : 55}%, ${alpha})`, `hsla(${hue}, 62%, 58%, ${0.035 + normalized * 0.09})`];
+            drawWavyCircle(targetCtx, cx, cy, radius, amplitude, waves, phase, sharpness);
+        });
+
+        targetCtx.restore();
+    }
+
+    function drawViz6MotionLayers(targetCtx, { calibrated, values, maxAmount }) {
+        if (!values.length) return;
+
+        const [cx, cy] = [vizCanvas.width / 2, vizCanvas.height / 2];
+        const minStage = Math.min(vizCanvas.width, vizCanvas.height);
+        const centerOffset = (values.length - 1) * minStage * 0.015 * 0.5;
+
+        targetCtx.save();
+        targetCtx.lineWidth = 1.5;
+        targetCtx.lineCap = "round";
+        targetCtx.lineJoin = "round";
+
+        values.forEach(({ value, speed, phase, amount }, i) => {
+            const normalized = clamp(amount / maxAmount, 0, 1);
+            const radius = minStage * (0.14 + normalized * 0.27);
+            const amplitude = minStage * normalized * 0.055;
+            const sharpness = clamp(speed * (calibrated ? 220 : 42), 0, 1) ** 0.65;
+            const waves = Math.round(3 + normalized * 10);
+            const depthOffset = i * minStage * 0.015 - centerOffset;
+            const hue = (i * 41 + 165) % 360;
+            const alpha = 0.36 + normalized * 0.45;
+
+            [targetCtx.strokeStyle, targetCtx.fillStyle] = viz3Monochrome
+                ? [`rgba(46, 46, 46, ${alpha})`, `rgba(46, 46, 46, ${0.03 + normalized * 0.08})`]
+                : [`hsla(${hue}, 58%, ${value >= 0 ? 42 : 55}%, ${alpha})`, `hsla(${hue}, 62%, 58%, ${0.04 + normalized * 0.1})`];
+            drawWavyCircle(targetCtx, cx + depthOffset, cy - depthOffset * 0.35, radius, amplitude, waves, phase, sharpness);
+        });
+
+        targetCtx.restore();
+    }
+
+    function drawViz6WaveLine(targetCtx, faceState, { values, maxAmount }) {
+        if (!values.length) {
+            faceState.waveHistory = [];
+            faceState.waveLastSnapshotAt = 0;
+            return;
+        }
+
+        const now = performance.now();
+        const currentValues = values.map(({ amount }) => clamp(amount / maxAmount, 0, 1));
+        if (faceState.waveHistory[0]?.values.length !== currentValues.length) {
+            faceState.waveHistory = [];
+            faceState.waveLastSnapshotAt = 0;
+        }
+        if (!faceState.waveLastSnapshotAt || now - faceState.waveLastSnapshotAt >= viz4SnapshotIntervalMs) {
+            faceState.waveHistory.unshift({
+                values: currentValues,
+                createdAt: now
+            });
+            faceState.waveLastSnapshotAt = now;
+        }
+        faceState.waveHistory = faceState.waveHistory.filter(({ createdAt }) => now - createdAt <= viz4HistoryLifetimeMs);
+
+        drawViz6WaveGrid(targetCtx);
+        for (let i = faceState.waveHistory.length - 1; i >= 0; i--) {
+            const { values: historyValues, createdAt } = faceState.waveHistory[i];
+            const age = clamp((now - createdAt) / viz4HistoryLifetimeMs, 0, 1);
+            drawViz6WaveRow(targetCtx, historyValues, age, i === 0);
+        }
+    }
+
+    function drawViz6WaveGrid(targetCtx) {
+        const { centerX, frontHalf, backHalf, frontY, backY } = viz6WavePerspective();
+
+        targetCtx.save();
+        targetCtx.strokeStyle = "rgba(69, 72, 79, 0.18)";
+        targetCtx.lineWidth = 1;
+
+        for (let row = 0; row < VIZ4_ROWS; row++) {
+            const t = row / (VIZ4_ROWS - 1);
+            const y = frontY + (backY - frontY) * t;
+            const halfWidth = frontHalf + (backHalf - frontHalf) * t;
+            targetCtx.beginPath();
+            targetCtx.moveTo(centerX - halfWidth, y);
+            targetCtx.lineTo(centerX + halfWidth, y);
+            targetCtx.stroke();
+        }
+        for (let col = 0; col < VIZ4_COLUMNS; col++) {
+            const t = col / (VIZ4_COLUMNS - 1);
+            const frontX = centerX - frontHalf + frontHalf * 2 * t;
+            const backX = centerX - backHalf + backHalf * 2 * t;
+            targetCtx.beginPath();
+            targetCtx.moveTo(frontX, frontY);
+            targetCtx.lineTo(backX, backY);
+            targetCtx.stroke();
+        }
+
+        targetCtx.restore();
+    }
+
+    function drawViz6WaveRow(targetCtx, values, age, active) {
+        const { height, centerX, frontHalf, backHalf, frontY, backY } = viz6WavePerspective();
+        const waveHeight = height * 0.24;
+        const rowY = frontY + (backY - frontY) * age;
+        const halfWidth = frontHalf + (backHalf - frontHalf) * age;
+        const lastIndex = Math.max(values.length - 1, 1);
+
+        targetCtx.save();
+        targetCtx.globalAlpha = active ? 0.96 : 0.78 * (1 - age * 0.55);
+        targetCtx.strokeStyle = "rgba(22, 126, 112, 0.92)";
+        targetCtx.lineWidth = active ? 2.5 : 1.3;
+        targetCtx.lineJoin = "round";
+        targetCtx.lineCap = "round";
+        targetCtx.beginPath();
+        values.forEach((normalized, i) => {
+            const t = i / lastIndex;
+            const x = centerX - halfWidth + halfWidth * 2 * t;
+            const y = rowY - normalized * waveHeight * (1 - age * 0.24);
+            if (i === 0) {
+                targetCtx.moveTo(x, y);
+            } else {
+                targetCtx.lineTo(x, y);
+            }
+        });
+        targetCtx.stroke();
+        targetCtx.restore();
+    }
+
+    function viz6WavePerspective() {
+        const { width, height } = vizCanvas;
+        return {
+            width,
+            height,
+            centerX: width * 0.48,
+            frontHalf: width * 0.36,
+            backHalf: width * 0.18,
+            frontY: height * 0.69,
+            backY: height * 0.3
+        };
+    }
+
+    function getFullscreenHeadCornerAnchor(landmarks) {
+        const mediaRect = getMediaRectInViewport();
+        if (!mediaRect) return null;
+
+        const bounds = landmarkBounds(landmarks);
+        if (!bounds) return null;
+
+        const topRight = normalizedToViewportPoint({ x: bounds.minX, y: bounds.minY }, mediaRect);
+        const forehead = normalizedToViewportPoint(landmarks[10] ?? {
+            x: (bounds.minX + bounds.maxX) / 2,
+            y: bounds.minY
+        }, mediaRect);
+        const faceWidth = (bounds.maxX - bounds.minX) * mediaRect.width;
+        const faceHeight = (bounds.maxY - bounds.minY) * mediaRect.height;
+        const radius = clamp(Math.max(faceWidth, faceHeight) * 0.3, 52, Math.max(window.innerWidth, window.innerHeight) * 0.27);
+        const margin = radius * 1.75;
+        const angle = -Math.PI / 3;
+        const distance = radius * 1.5;
+        const x = clamp(topRight.x + Math.cos(angle) * distance, margin, window.innerWidth - margin);
+        const y = clamp(topRight.y + Math.sin(angle) * distance, margin, window.innerHeight - margin);
+
+        return { x, y, radius, bubbleX: forehead.x, bubbleY: forehead.y };
+    }
+
+    function drawForeheadBubbleTrail(targetCtx, { x, y, radius, bubbleX, bubbleY }) {
+        const dx = bubbleX - x;
+        const dy = bubbleY - y;
+        const distance = Math.hypot(dx, dy);
+        if (!distance) return;
+
+        const [ux, uy] = [dx / distance, dy / distance];
+        const startDistance = Math.min(radius * 1.52, distance * 0.46);
+        const start = {
+            x: x + ux * startDistance,
+            y: y + uy * startDistance
+        };
+        const end = {
+            x: x + dx * 0.92,
+            y: y + dy * 0.92
+        };
+        const bend = Math.min(radius * 0.46, distance * 0.24);
+        const control = {
+            x: (start.x + end.x) / 2 + uy * bend,
+            y: (start.y + end.y) / 2 - ux * bend
+        };
+
+        targetCtx.save();
+        targetCtx.strokeStyle = "rgba(153, 153, 153, 0.82)";
+        targetCtx.lineWidth = Math.max(0.9, radius * 0.015);
+
+        for (const { t, size } of [
+            { t: 0.2, size: 0.2 },
+            { t: 0.52, size: 0.13 },
+            { t: 0.84, size: 0.074 }
+        ]) {
+            const point = quadraticPoint(start, control, end, t);
+            targetCtx.beginPath();
+            targetCtx.arc(point.x, point.y, radius * size, 0, Math.PI * 2);
+            targetCtx.stroke();
+        }
+
+        targetCtx.restore();
+    }
+
+    function quadraticPoint(start, control, end, t) {
+        const mt = 1 - t;
+        return {
+            x: mt * mt * start.x + 2 * mt * t * control.x + t * t * end.x,
+            y: mt * mt * start.y + 2 * mt * t * control.y + t * t * end.y
+        };
+    }
+
+    function normalizedToViewportPoint(point, mediaRect) {
+        return {
+            x: mediaRect.left + (1 - point.x) * mediaRect.width,
+            y: mediaRect.top + point.y * mediaRect.height
+        };
+    }
+
+    function getMediaRectInViewport() {
+        const stageRect = stage.getBoundingClientRect();
+        const [sw, sh] = [video.videoWidth || VW, video.videoHeight || VH];
+        if (!stageRect.width || !stageRect.height || !sw || !sh) return null;
+
+        const fitContain = activeMode === "video-file";
+        const scale = fitContain
+            ? Math.min(stageRect.width / sw, stageRect.height / sh)
+            : Math.max(stageRect.width / sw, stageRect.height / sh);
+        const width = sw * scale;
+        const height = sh * scale;
+
+        return {
+            left: stageRect.left + (stageRect.width - width) / 2,
+            top: stageRect.top + (stageRect.height - height) / 2,
+            width,
+            height
+        };
+    }
+
+    function resizeFullscreenCanvas() {
+        const { width, height } = fullscreenCanvasSize();
+        const dpr = fullscreenCanvasDpr();
+        const targetWidth = Math.round(width * dpr);
+        const targetHeight = Math.round(height * dpr);
+        if (vizCanvas6.width === targetWidth && vizCanvas6.height === targetHeight) return;
+
+        Object.assign(vizCanvas6, { width: targetWidth, height: targetHeight });
+    }
+
+    function fullscreenCanvasSize() {
+        return {
+            width: window.innerWidth || document.documentElement.clientWidth || 1,
+            height: window.innerHeight || document.documentElement.clientHeight || 1
+        };
+    }
+
+    function fullscreenCanvasDpr() {
+        return Math.min(window.devicePixelRatio || 1, 2);
+    }
+
+    function createViz6FaceState() {
+        return {
+            base: new Map(),
+            calibration: null,
+            poseCalibration: createPoseCalibrationState(),
+            neutralPose: null,
+            spectrum: new Map(),
+            spectrumSharpness: new Map(),
+            spectrumOrder: [],
+            circles: new Map(),
+            spectrumHistory: [],
+            spectrumLastSnapshotAt: 0,
+            waveHistory: [],
+            waveLastSnapshotAt: 0,
+            center: null,
+            anchor: null
+        };
+    }
+
+    function clearViz6CanvasAndState() {
+        resetViz6Faces();
+        vizCtx6.setTransform(1, 0, 0, 1, 0, 0);
+        vizCtx6.clearRect(0, 0, vizCanvas6.width, vizCanvas6.height);
+    }
+
+    function resetViz6Faces() {
+        for (const face of viz6Faces) {
+            resetViz6Face(face);
+        }
+    }
+
+    function resetViz6Face(face) {
+        face.base.clear();
+        face.calibration = null;
+        resetPoseCalibrationState(face.poseCalibration);
+        face.neutralPose = null;
+        face.center = null;
+        resetViz6VisualState(face);
+    }
+
+    function resetViz6VisualState(face) {
+        face.spectrum.clear();
+        face.spectrumSharpness.clear();
+        face.spectrumOrder = [];
+        face.circles.clear();
+        face.spectrumHistory = [];
+        face.spectrumLastSnapshotAt = 0;
+        face.waveHistory = [];
+        face.waveLastSnapshotAt = 0;
+        face.anchor = null;
+    }
+
+    function drawSpectrumTimeline({ active, points }) {
+        const { width, height } = vizCanvas5;
+        vizCtx5.clearRect(0, 0, width, height);
+        if (!points.length) return;
+
+        updateSpectrumHistory(points, active);
+        drawSpectrumHistoryOnContext(vizCtx5, spectrumHistory, width, height);
+    }
+
+    function updateSpectrumHistory(points, active) {
+        const state = { spectrumHistory, spectrumLastSnapshotAt };
+        updateSpectrumHistoryState(state, points, active);
+        spectrumHistory = state.spectrumHistory;
+        spectrumLastSnapshotAt = state.spectrumLastSnapshotAt;
+    }
+
+    function updateSpectrumHistoryState(state, points, active) {
+        const now = performance.now();
+
+        if (state.spectrumHistory[0]?.points.length !== points.length) {
+            state.spectrumHistory = [];
+            state.spectrumLastSnapshotAt = 0;
+        }
+        if (!state.spectrumLastSnapshotAt || now - state.spectrumLastSnapshotAt >= viz5SnapshotIntervalMs) {
+            state.spectrumHistory.unshift({
+                points: points.map(point => ({ ...point })),
+                active,
+                createdAt: now
+            });
+            state.spectrumLastSnapshotAt = now;
+        }
+        state.spectrumHistory = state.spectrumHistory.filter(({ createdAt }) => now - createdAt <= viz5HistoryLifetimeMs);
+    }
+
+    function drawSpectrumHistoryOnContext(targetCtx, history, width, height) {
+        const now = performance.now();
+
+        for (let i = history.length - 1; i >= 0; i--) {
+            const { points, active, createdAt } = history[i];
+            const age = clamp((now - createdAt) / viz5HistoryLifetimeMs, 0, 1);
+            const scale = 0.82 * (1 - age * 0.18);
+            const dx = age * width * 0.16;
+            const dy = -age * height * 0.22;
+
+            targetCtx.save();
+            targetCtx.globalAlpha = 1 - age * 0.72;
+            targetCtx.translate(width / 2 + dx, height / 2 + dy);
+            targetCtx.scale(scale, scale);
+            targetCtx.translate(-width / 2, -height / 2);
+            drawSpectrumPath(targetCtx, points, active);
+            targetCtx.restore();
+        }
+    }
+
+    function orderedSpectrumCategories(categories, orderState = null) {
+        const byName = new Map(categories.map(category => [category.categoryName, category]));
+        const sourceOrder = orderState?.spectrumOrder ?? spectrumOrder;
+        const known = sourceOrder.filter(categoryName => byName.has(categoryName));
+        const added = categories
+            .map(({ categoryName }) => categoryName)
+            .filter(categoryName => !known.includes(categoryName));
+        const nextOrder = known.length ? [...known, ...shuffle(added)] : shuffle(categories.map(({ categoryName }) => categoryName));
+
+        if (orderState) {
+            orderState.spectrumOrder = nextOrder;
+        } else {
+            spectrumOrder = nextOrder;
+        }
+
+        return nextOrder.map(categoryName => byName.get(categoryName)).filter(Boolean);
+    }
+
+    function shuffle(items) {
+        const shuffled = [...items];
+        for (let i = shuffled.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+        }
+        return shuffled;
+    }
+
+    function drawSpectrumPath(targetCtx, points, active) {
+        if (points.length < 3) return;
+
+        targetCtx.save();
+        targetCtx.lineWidth = 3;
+        targetCtx.lineJoin = "miter";
+        targetCtx.miterLimit = 2.5;
+        targetCtx.lineCap = "round";
+        targetCtx.strokeStyle = active ? "#999" : "#bbb";
+        targetCtx.beginPath();
+
+        const start = midpoint(points[points.length - 1], points[0]);
+        targetCtx.moveTo(start.x, start.y);
+
+        for (let i = 0; i < points.length; i++) {
+            const previous = points[(i - 1 + points.length) % points.length];
+            const current = points[i];
+            const next = points[(i + 1) % points.length];
+            const previousMid = midpoint(previous, current);
+            const nextMid = midpoint(current, next);
+            const sharpness = current.sharpness ?? 0;
+
+            if (sharpness > 0.85) {
+                targetCtx.lineTo(current.x, current.y);
+                targetCtx.lineTo(nextMid.x, nextMid.y);
+            } else if (sharpness > 0.08) {
+                const corner = 0.45 + sharpness * 0.5;
+                const entry = lerpPoint(previousMid, current, corner);
+                const exit = lerpPoint(nextMid, current, corner);
+                targetCtx.quadraticCurveTo(current.x, current.y, entry.x, entry.y);
+                targetCtx.lineTo(current.x, current.y);
+                targetCtx.lineTo(exit.x, exit.y);
+                targetCtx.quadraticCurveTo(current.x, current.y, nextMid.x, nextMid.y);
+            } else {
+                targetCtx.quadraticCurveTo(current.x, current.y, nextMid.x, nextMid.y);
+            }
+        }
+
+        targetCtx.closePath();
+        targetCtx.stroke();
+        targetCtx.restore();
+    }
+
+    function updateMotionValues(categories) {
+        return updateMotionValuesForState(categories, { values: circles });
+    }
+
+    function drawMotionCircles(motionValues) {
+        const { width, height } = vizCanvas2;
+        vizCtx2.clearRect(0, 0, width, height);
+        drawMotionCirclesOnContext(vizCtx2, motionValues, { monochrome: viz2Monochrome });
+    }
+
+    function setupViz3() {
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(42, vizCanvas3.width / vizCanvas3.height, 0.1, 100);
+        const renderer = new THREE.WebGLRenderer({ canvas: vizCanvas3, alpha: true, antialias: true });
+        const group = new THREE.Group();
+
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+        renderer.setSize(vizCanvas3.width, vizCanvas3.height, false);
+        renderer.setClearColor(0xf0f0f0, 0);
+        camera.position.set(-4, 1, 4);
+        camera.lookAt(0, 0, 0);
+
+        scene.add(group);
+
+        return { scene, camera, renderer, group };
+    }
+
+    function setupViz4() {
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(38, vizCanvas4.width / vizCanvas4.height, 0.1, 100);
+        const renderer = new THREE.WebGLRenderer({ canvas: vizCanvas4, alpha: true, antialias: true });
+        const group = new THREE.Group();
+        const lineMaterial = new THREE.LineBasicMaterial({ color: 0x167e70, transparent: true, opacity: 0.92 });
+        const ridge = new THREE.Line(new THREE.BufferGeometry(), lineMaterial);
+        const trail = new THREE.LineSegments(new THREE.BufferGeometry(), lineMaterial);
+        const grid = new THREE.LineSegments(
+            createViz4GridGeometry(),
+            new THREE.LineBasicMaterial({ color: 0x45484f, transparent: true, opacity: 0.18 })
+        );
+
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+        renderer.setSize(vizCanvas4.width, vizCanvas4.height, false);
+        renderer.setClearColor(0xf0f0f0, 0);
+        camera.position.set(3.6, 3.1, 4.8);
+        camera.lookAt(0, 0, 0);
+        group.rotation.set(-0.04, -0.58, 0.02);
+        group.add(grid, trail, ridge);
+        scene.add(group);
+
+        return { scene, camera, renderer, ridge, trail };
+    }
+
+    function createViz4GridGeometry() {
+        const points = [];
+        const leftX = VIZ4_WIDTH / 2;
+        const rightX = -VIZ4_WIDTH / 2;
+        const frontZ = -VIZ4_DEPTH / 2;
+        const backZ = VIZ4_DEPTH / 2;
+
+        for (let row = 0; row < VIZ4_ROWS; row++) {
+            const z = frontZ + (VIZ4_DEPTH * row) / (VIZ4_ROWS - 1);
+            points.push(new THREE.Vector3(leftX, VIZ4_BASE_Y, z), new THREE.Vector3(rightX, VIZ4_BASE_Y, z));
+        }
+        for (let i = 0; i < VIZ4_COLUMNS; i++) {
+            const x = leftX + ((rightX - leftX) * i) / (VIZ4_COLUMNS - 1);
+            points.push(new THREE.Vector3(x, VIZ4_BASE_Y, frontZ), new THREE.Vector3(x, VIZ4_BASE_Y, backZ));
+        }
+
+        return new THREE.BufferGeometry().setFromPoints(points);
+    }
+
+    function drawThreeWaveLine({ values, maxAmount }) {
+        if (!values.length) {
+            viz4History = [];
+            viz4LastSnapshotAt = 0;
+            viz4.renderer.clear();
+            return;
+        }
+
+        const now = performance.now();
+        const currentValues = values.map(({ amount }) => clamp(amount / maxAmount, 0, 1));
+        const ridgePoints = [];
+        const trailPoints = [];
+        const lastIndex = Math.max(values.length - 1, 1);
+        const backZ = VIZ4_DEPTH / 2;
+
+        if (viz4History[0]?.values.length !== currentValues.length) {
+            viz4History = [];
+            viz4LastSnapshotAt = 0;
+        }
+        if (!viz4LastSnapshotAt || now - viz4LastSnapshotAt >= viz4SnapshotIntervalMs) {
+            viz4History.unshift({
+                values: currentValues,
+                createdAt: now
+            });
+            viz4LastSnapshotAt = now;
+        }
+        viz4History = viz4History.filter(({ createdAt }) => now - createdAt <= viz4HistoryLifetimeMs);
+
+        viz4History.forEach(({ values: historyValues, createdAt }, historyIndex) => {
+            const rowT = clamp((now - createdAt) / viz4HistoryLifetimeMs, 0, 1);
+            const z = backZ - VIZ4_DEPTH * rowT;
+            const points = historyValues.map((normalizedValue, i) => {
+                const t = i / lastIndex;
+                const x = (0.5 - t) * VIZ4_WIDTH;
+                const y = VIZ4_BASE_Y + normalizedValue * VIZ4_HEIGHT;
+                return new THREE.Vector3(x, y, z);
+            });
+
+            if (historyIndex === 0) {
+                ridgePoints.push(...points);
+            } else {
+                for (let i = 0; i < points.length - 1; i++) {
+                    trailPoints.push(points[i], points[i + 1]);
+                }
+            }
+        });
+
+        viz4.ridge.geometry.dispose();
+        viz4.ridge.geometry = new THREE.BufferGeometry().setFromPoints(ridgePoints);
+        viz4.trail.geometry.dispose();
+        viz4.trail.geometry = new THREE.BufferGeometry().setFromPoints(trailPoints);
+        viz4.renderer.render(viz4.scene, viz4.camera);
+    }
+
+    function drawMotionCircleLayers({ calibrated, values, maxAmount }) {
+        if (!values.length) {
+            clearViz3CircleLayers();
+            viz3.renderer.clear();
+            return;
+        }
+
+        const activeNames = new Set(values.map(({ categoryName }) => categoryName));
+        for (const [categoryName, shell] of circleLayers) {
+            if (!activeNames.has(categoryName)) {
+                viz3.group.remove(shell);
+                disposeViz3Object(shell);
+                circleLayers.delete(categoryName);
+            }
+        }
+
+        const baseRadius = 0.34;
+        const layerGap = 0.055;
+        const centerOffset = (values.length - 1) * layerGap * 0.5;
+
+        values.forEach(({ categoryName, value, speed, phase, amount }, i) => {
+            const normalized = clamp(amount / maxAmount, 0, 1);
+            const radius = baseRadius + normalized * 0.82;
+            const amplitude = normalized * 0.12;
+            const waves = Math.round(3 + normalized * 10);
+            const targetDepth = i * layerGap - centerOffset;
+            const sharpness = clamp(speed * (calibrated ? 220 : 42), 0, 1) ** 0.65;
+            const hue = (i * 41 + 165) % 360;
+            const color = viz3Monochrome
+                ? new THREE.Color(0.18, 0.18, 0.18)
+                : new THREE.Color(`hsl(${hue}, 58%, ${value >= 0 ? 42 : 55}%)`);
+            let shell = circleLayers.get(categoryName);
+
+            if (!shell) {
+                shell = new THREE.Group();
+                const fillMaterial = new THREE.MeshBasicMaterial({
+                    color,
+                    transparent: true,
+                    opacity: 0.16,
+                    side: THREE.DoubleSide
+                });
+                const lineMaterial = new THREE.LineBasicMaterial({
+                    color,
+                    transparent: true,
+                    opacity: 0.78
+                });
+                const fill = new THREE.Mesh(
+                    createWavyCircleFillGeometry(radius, amplitude, waves, phase, sharpness),
+                    fillMaterial
+                );
+                const line = new THREE.LineLoop(
+                    createWavyCircleLineGeometry(radius, amplitude, waves, phase, sharpness),
+                    lineMaterial
+                );
+
+                shell.add(fill, line);
+                shell.userData = { depth: targetDepth, fill, line };
+                viz3.group.add(shell);
+                circleLayers.set(categoryName, shell);
+            }
+
+            shell.userData.fill.geometry.dispose();
+            shell.userData.line.geometry.dispose();
+            shell.userData.fill.geometry = createWavyCircleFillGeometry(radius, amplitude, waves, phase, sharpness);
+            shell.userData.line.geometry = createWavyCircleLineGeometry(radius, amplitude, waves, phase, sharpness);
+            shell.userData.depth = shell.userData.depth * 0.82 + targetDepth * 0.18;
+            shell.position.x = shell.userData.depth;
+            shell.scale.setScalar(1 + sharpness * 0.02);
+            shell.userData.fill.material.color.copy(color);
+            shell.userData.line.material.color.copy(color);
+            shell.userData.fill.material.opacity = 0.06 + normalized * 0.17;
+            shell.userData.line.material.opacity = 0.42 + normalized * 0.42;
+        });
+
+        viz3.renderer.render(viz3.scene, viz3.camera);
+    }
+
+    function createWavyCircleFillGeometry(radius, amplitude, waves, phase, sharpness) {
+        const radialSegments = 72;
+        const positions = [0, 0, 0];
+        const indices = [];
+
+        for (let i = 0; i < radialSegments; i++) {
+            const angle = i / radialSegments * Math.PI * 2;
+            const wave = shapedWave(angle * waves + phase, sharpness);
+            const r = radius + wave * amplitude;
+            positions.push(0, Math.cos(angle) * r, Math.sin(angle) * r);
+        }
+
+        for (let i = 1; i <= radialSegments; i++) {
+            indices.push(0, i, i === radialSegments ? 1 : i + 1);
+        }
+
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+        geometry.setIndex(indices);
+        return geometry;
+    }
+
+    function createWavyCircleLineGeometry(radius, amplitude, waves, phase, sharpness) {
+        const radialSegments = 96;
+        const points = [];
+
+        for (let i = 0; i < radialSegments; i++) {
+            const angle = i / radialSegments * Math.PI * 2;
+            const wave = shapedWave(angle * waves + phase, sharpness);
+            const r = radius + wave * amplitude;
+            points.push(new THREE.Vector3(0, Math.cos(angle) * r, Math.sin(angle) * r));
+        }
+
+        return new THREE.BufferGeometry().setFromPoints(points);
+    }
+
+    function clearViz3CircleLayers() {
+        for (const shell of circleLayers.values()) {
+            viz3.group.remove(shell);
+            disposeViz3Object(shell);
+        }
+        circleLayers.clear();
+        viz3.renderer.clear();
+    }
+
+    function disposeViz3Object(object) {
+        object.traverse(child => {
+            if (child.geometry) child.geometry.dispose();
+            if (child.material) child.material.dispose();
+        });
+    }
+
+    function drawWavyCircle(targetCtx, cx, cy, radius, amplitude, waves, phase, sharpness) {
+        const steps = 96;
+        targetCtx.beginPath();
+
+        for (let i = 0; i <= steps; i++) {
+            const angle = i / steps * Math.PI * 2;
+            const wave = shapedWave(angle * waves + phase, sharpness);
+            const r = radius + wave * amplitude;
+            const x = cx + Math.cos(angle) * r;
+            const y = cy + Math.sin(angle) * r;
+            if (i === 0) {
+                targetCtx.moveTo(x, y);
+            } else {
+                targetCtx.lineTo(x, y);
+            }
+        }
+
+        targetCtx.closePath();
+        targetCtx.fill();
+        targetCtx.stroke();
+    }
+
+    function shapedWave(angle, sharpness) {
+        const wrapped = ((angle % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+        const triangle = 1 - Math.abs(wrapped / Math.PI - 1);
+        const pointed = Math.pow(triangle, 1 + sharpness * 8) * 2 - 1;
+        const smooth = Math.cos(angle);
+        return smooth * (1 - sharpness) + pointed * sharpness;
+    }
+
+    function clamp(value, min, max) {
+        return Math.max(min, Math.min(value, max));
+    }
+
+    function midpoint(a, b) {
+        return {
+            x: (a.x + b.x) / 2,
+            y: (a.y + b.y) / 2
+        };
+    }
+
+    function lerpPoint(a, b, t) {
+        return {
+            x: a.x + (b.x - a.x) * t,
+            y: a.y + (b.y - a.y) * t
+        };
+    }
+
+    function drawLandmarks(landmarks = []) {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        if (!currentPoseStable) return;
+
+        const [sw, sh] = [
+            video.videoWidth || VW,
+            video.videoHeight || VH
+        ];
+        const scale = Math.max(canvas.width / sw, canvas.height / sh);
+        const [dx, dy] = [(canvas.width - sw * scale) / 2, (canvas.height - sh * scale) / 2];
+
+        ctx.fillStyle = "green";
+        ctx.beginPath();
+        for (const p of landmarks) {
+            const [x, y] = [p.x * sw * scale + dx, p.y * sh * scale + dy];
+            ctx.moveTo(x, y);
+            ctx.arc(x, y, 1.2, 0, Math.PI * 2);
+        }
+        ctx.fill();
+    }
+</script>
+
+</html>
