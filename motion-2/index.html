@@ -386,7 +386,8 @@
     const shapes = new Map();
     const enabledParams = new Set();
     const spectrum = new Map();
-    const spectrumSharpness = new Map();
+    const spectrumVelocity = new Map();
+    const spectrumPhase = new Map();
     let spectrumOrder = [];
     const PARAM_SET_DIR = "../parameter";
     const base = new Map();
@@ -782,7 +783,7 @@
     }
 
     function resetMotionVisualState() {
-        [spectrum, spectrumSharpness].forEach(map => map.clear());
+        [spectrum, spectrumVelocity, spectrumPhase].forEach(map => map.clear());
     }
 
     function updateAutoCalibration(faceDetected) {
@@ -926,7 +927,7 @@
         }
 
         enabledParams.delete(categoryName);
-        [spectrum, spectrumSharpness].forEach(map => map.delete(categoryName));
+        [spectrum, spectrumVelocity, spectrumPhase].forEach(map => map.delete(categoryName));
     }
 
     function savedParamEnabled(categoryName) {
@@ -1547,23 +1548,36 @@
         const maxSpike = Math.min(width, height) * 0.18;
         const calibrated = base.size > 0;
         const ordered = orderedSpectrumCategories(categories);
-        const points = ordered.map(({ categoryName, score }, i) => {
+        const time = performance.now() * 0.001;
+        const springStates = ordered.map(({ categoryName, score }) => {
             const rawValue = calibrated ? adjustedCalibratedScore(categoryName, score) : 0;
             const value = Math.abs(rawValue) < SPECTRUM_ZERO_THRESHOLD ? 0 : rawValue;
+            const target = clamp(value * 18, -1, 1);
             const previous = spectrum.get(categoryName) ?? 0;
-            const smoothed = previous * 0.82 + value * 0.18;
-            const rawSpeed = Math.max(Math.abs(smoothed - previous) - 0.002, 0);
-            const previousSharpness = spectrumSharpness.get(categoryName) ?? 0;
-            const changeSharpness = Math.min(rawSpeed * 180, 1);
-            const sharpness = value === 0 ? previousSharpness * 0.82 : Math.max(previousSharpness, changeSharpness);
-            spectrum.set(categoryName, smoothed);
-            spectrumSharpness.set(categoryName, sharpness);
+            const velocity = ((spectrumVelocity.get(categoryName) ?? 0) + (target - previous) * 0.055) * 0.86;
+
+            spectrumVelocity.set(categoryName, velocity);
+            return { categoryName, position: previous + velocity, velocity };
+        });
+        const points = springStates.map(({ categoryName, position, velocity }, i) => {
+            const left = springStates[(i - 1 + springStates.length) % springStates.length].position;
+            const right = springStates[(i + 1) % springStates.length].position;
+            const diffused = position + (left + right - position * 2) * 0.1;
             const angle = i / ordered.length * Math.PI * 2 - Math.PI / 2;
-            const radius = baseRadius + Math.max(-1, Math.min(smoothed * 18, 1)) * maxSpike;
+            const phase = spectrumPhase.get(categoryName) ?? Math.random() * Math.PI * 2;
+            const breathing = Math.sin(time * 0.55) * 0.012;
+            const surfaceMotion =
+                Math.sin(time * 0.75 + angle * 2 + phase) * 0.012
+                + Math.sin(time * 0.31 - angle * 3 + phase * 0.7) * 0.007;
+            const ripple = Math.sin(time * 1.8 + phase) * Math.min(Math.abs(velocity) * 0.22, 0.035);
+            const deformation = clamp(diffused + breathing + surfaceMotion + ripple, -1, 1);
+            const radius = baseRadius + deformation * maxSpike;
+
+            spectrum.set(categoryName, diffused);
+            spectrumPhase.set(categoryName, phase);
             return {
                 x: cx + Math.cos(angle) * radius,
-                y: cy + Math.sin(angle) * radius,
-                sharpness
+                y: cy + Math.sin(angle) * radius
             };
         });
 
@@ -1603,40 +1617,34 @@
 
         targetCtx.save();
         targetCtx.lineWidth = 3;
-        targetCtx.lineJoin = "miter";
-        targetCtx.miterLimit = 2.5;
+        targetCtx.lineJoin = "round";
         targetCtx.lineCap = "round";
-        targetCtx.strokeStyle = active ? "#999" : "#bbb";
+        targetCtx.strokeStyle = active ? "#7f8c88" : "#bbb";
+        targetCtx.fillStyle = active ? "rgba(66, 211, 146, 0.055)" : "rgba(160, 160, 160, 0.025)";
+        targetCtx.shadowColor = active ? "rgba(66, 211, 146, 0.16)" : "transparent";
+        targetCtx.shadowBlur = active ? 12 : 0;
         targetCtx.beginPath();
-
-        const start = midpoint(points[points.length - 1], points[0]);
-        targetCtx.moveTo(start.x, start.y);
+        targetCtx.moveTo(points[0].x, points[0].y);
 
         for (let i = 0; i < points.length; i++) {
-            const previous = points[(i - 1 + points.length) % points.length];
-            const current = points[i];
-            const next = points[(i + 1) % points.length];
-            const previousMid = midpoint(previous, current);
-            const nextMid = midpoint(current, next);
-            const sharpness = current.sharpness ?? 0;
-
-            if (sharpness > 0.85) {
-                targetCtx.lineTo(current.x, current.y);
-                targetCtx.lineTo(nextMid.x, nextMid.y);
-            } else if (sharpness > 0.08) {
-                const corner = 0.45 + sharpness * 0.5;
-                const entry = lerpPoint(previousMid, current, corner);
-                const exit = lerpPoint(nextMid, current, corner);
-                targetCtx.quadraticCurveTo(current.x, current.y, entry.x, entry.y);
-                targetCtx.lineTo(current.x, current.y);
-                targetCtx.lineTo(exit.x, exit.y);
-                targetCtx.quadraticCurveTo(current.x, current.y, nextMid.x, nextMid.y);
-            } else {
-                targetCtx.quadraticCurveTo(current.x, current.y, nextMid.x, nextMid.y);
-            }
+            const p0 = points[(i - 1 + points.length) % points.length];
+            const p1 = points[i];
+            const p2 = points[(i + 1) % points.length];
+            const p3 = points[(i + 2) % points.length];
+            const tension = 0.82;
+            const cp1 = {
+                x: p1.x + (p2.x - p0.x) * tension / 6,
+                y: p1.y + (p2.y - p0.y) * tension / 6
+            };
+            const cp2 = {
+                x: p2.x - (p3.x - p1.x) * tension / 6,
+                y: p2.y - (p3.y - p1.y) * tension / 6
+            };
+            targetCtx.bezierCurveTo(cp1.x, cp1.y, cp2.x, cp2.y, p2.x, p2.y);
         }
 
         targetCtx.closePath();
+        targetCtx.fill();
         targetCtx.stroke();
         targetCtx.restore();
     }
@@ -1649,13 +1657,6 @@
         return {
             x: (a.x + b.x) / 2,
             y: (a.y + b.y) / 2
-        };
-    }
-
-    function lerpPoint(a, b, t) {
-        return {
-            x: a.x + (b.x - a.x) * t,
-            y: a.y + (b.y - a.y) * t
         };
     }
 
