@@ -30,6 +30,7 @@
         }
 
         video,
+        #sourceImage,
         canvas {
             position: absolute;
             inset: 0;
@@ -38,7 +39,8 @@
             display: block;
         }
 
-        video {
+        video,
+        #sourceImage {
             object-fit: cover;
             transform: scaleX(-1);
         }
@@ -47,11 +49,13 @@
             transform: scaleX(-1);
         }
 
-        video[hidden] {
+        video[hidden],
+        #sourceImage[hidden] {
             display: none;
         }
 
-        main.file-source video {
+        main.file-source video,
+        main.file-source #sourceImage {
             object-fit: contain;
         }
 
@@ -64,6 +68,7 @@
             inset: 0;
             z-index: 1;
             background: #f0f0f0df;
+            transition: background-color 0.8s ease;
         }
 
         #calibrationGuide {
@@ -319,6 +324,7 @@
 <body>
     <main id="stage">
         <video id="video" autoplay playsinline muted></video>
+        <img id="sourceImage" alt="" hidden>
         <canvas id="canvas"></canvas>
         <section id="visualize_01" class="visualize" hidden>
             <canvas id="vizCanvas"></canvas>
@@ -342,8 +348,14 @@
         </div>
         <div id="sourceControls">
             <button id="cameraButton" type="button">WebCam</button>
-            <label for="fileInput"><span>ファイルから</span>
+            <label for="fileInput"><span>動画</span>
                 <input id="fileInput" type="file" accept="video/*">
+            </label>
+            <label for="neutralImageInput"><span>無表情画像</span>
+                <input id="neutralImageInput" type="file" accept="image/jpeg,image/png,image/webp">
+            </label>
+            <label for="expressionImageInput"><span>表情画像</span>
+                <input id="expressionImageInput" type="file" accept="image/jpeg,image/png,image/webp">
             </label>
         </div>
         <div id="out">
@@ -372,12 +384,12 @@
 
     const $ = id => document.getElementById(id);
     const ids = [
-        "stage", "video", "canvas", "vizCanvas", "cameraButton", "fileInput",
+        "stage", "video", "sourceImage", "canvas", "vizCanvas", "cameraButton", "fileInput", "neutralImageInput", "expressionImageInput",
         "calibrate", "measureMotionGain", "clearBaseline", "toggleShapes", "status", "paramSetSelect", "saveParamSet", "motionGainSetSelect", "saveMotionGainSet", "shapesPanel", "layerControls", "sourceControls", "out",
         "visualizeToggle", "visualize_01", "calibrationGuide", "calibrationGuideText", "calibrationPoint", "shuffleSpectrum"
     ];
     const {
-        stage, video, canvas, vizCanvas, cameraButton, fileInput,
+        stage, video, sourceImage, canvas, vizCanvas, cameraButton, fileInput, neutralImageInput, expressionImageInput,
         calibrate, measureMotionGain, clearBaseline, toggleShapes, status, paramSetSelect, saveParamSet, motionGainSetSelect, saveMotionGainSet, shapesPanel, layerControls, sourceControls, out,
         visualizeToggle, visualize_01: visualize, calibrationGuide, calibrationGuideText, calibrationPoint, shuffleSpectrum
     } = Object.fromEntries(ids.map(id => [id, $(id)]));
@@ -388,8 +400,31 @@
     const spectrum = new Map();
     const spectrumVelocity = new Map();
     const spectrumPhase = new Map();
+    const shapeWeights = new Map();
     let spectrumOrder = [];
+    let visualizeStartedAt = 0;
+    let dominantShapeName = "circle";
     const PARAM_SET_DIR = "../parameter";
+    const MATERIAL_TRANSITION_SECONDS = 2.5;
+    const SHAPE_POINT_COUNT = 48;
+    const MATERIAL_PHASES = [
+        { start: 0, name: "breathing", spring: 0.035, damping: 0.91, diffusion: 0.16, response: 0.42, breathing: 0.018, noise: 0.008, noiseSpeed: 0.35, ripple: 0.08, tension: 0.94, fill: 0.032, glow: 7, lineWidth: 2.4, stroke: [125, 140, 136], fillColor: [155, 185, 174], background: [240, 240, 240] },
+        { start: 12, name: "gel", spring: 0.055, damping: 0.86, diffusion: 0.1, response: 1, breathing: 0.012, noise: 0.019, noiseSpeed: 0.75, ripple: 0.22, tension: 0.82, fill: 0.09, glow: 12, lineWidth: 4, stroke: [59, 158, 111], fillColor: [66, 211, 146], background: [232, 245, 238] },
+        { start: 30, name: "water", spring: 0.04, damping: 0.94, diffusion: 0.24, response: 0.84, breathing: 0.007, noise: 0.012, noiseSpeed: 0.55, ripple: 0.45, tension: 0.92, fill: 0.045, glow: 16, lineWidth: 2.1, stroke: [56, 142, 184], fillColor: [86, 190, 222], background: [230, 241, 247] },
+        { start: 48, name: "elastic", spring: 0.11, damping: 0.77, diffusion: 0.055, response: 1.08, breathing: 0.005, noise: 0.008, noiseSpeed: 1.1, ripple: 0.3, tension: 0.68, fill: 0.04, glow: 9, lineWidth: 3, stroke: [222, 103, 76], fillColor: [244, 141, 105], background: [248, 237, 231] },
+        { start: 66, name: "viscous", spring: 0.022, damping: 0.955, diffusion: 0.13, response: 0.9, breathing: 0.014, noise: 0.016, noiseSpeed: 0.25, ripple: 0.1, tension: 0.98, fill: 0.12, glow: 8, lineWidth: 5.2, stroke: [105, 76, 128], fillColor: [145, 102, 166], background: [235, 229, 239] },
+        { start: 82, name: "fusion", spring: 0.06, damping: 0.88, diffusion: 0.18, response: 1, breathing: 0.012, noise: 0.015, noiseSpeed: 0.72, ripple: 0.32, tension: 0.84, fill: 0.1, glow: 18, lineWidth: 3.6, stroke: [123, 94, 163], fillColor: [82, 185, 163], background: [237, 233, 245] }
+    ];
+    const SHAPE_GESTURES = [
+        { name: "star", categories: ["cheekPuff"], strength: 9 },
+        { name: "triangle", categories: ["jawOpen"], strength: 8 },
+        { name: "trapezoid", categories: ["mouthSmileLeft", "mouthSmileRight"], strength: 11 },
+        { name: "diamond", categories: ["browInnerUp", "browOuterUpLeft", "browOuterUpRight"], strength: 11 },
+        { name: "ellipse", categories: ["eyeBlinkLeft", "eyeBlinkRight"], strength: 9 },
+        { name: "pentagon", categories: ["mouthPucker"], strength: 10 },
+        { name: "square", categories: ["mouthPressLeft", "mouthPressRight"], strength: 11 }
+    ];
+    const SHAPE_TEMPLATES = createShapeTemplates(SHAPE_POINT_COUNT);
     const base = new Map();
     const motionGains = new Map();
     const [WARMUP_FRAMES, CALIBRATION_FRAMES, DEADZONE, SPECTRUM_ZERO_THRESHOLD, VIDEO_BASELINE_SECONDS, VIDEO_BASELINE_PASSES] = [20, 60, 0.005, 0.012, 0.2, 5];
@@ -403,6 +438,10 @@
     const [VW, VH] = [1280, 720];
     let activeMode = "camera";
     let activeObjectUrl = "";
+    let imagePairObjectUrls = [];
+    let imagePairResults = null;
+    let landmarkerRunningMode = "VIDEO";
+    const imagePairFiles = { neutral: null, expression: null };
     let running = false;
     let loopToken = 0;
     let calibratingVideoFile = false;
@@ -455,6 +494,7 @@
     visualizeToggle.onchange = toggleVisualize;
 
     calibrate.onclick = async () => {
+        if (activeMode === "image-pair") return;
         if (activeMode === "video-file") {
             stopLoop();
             calibrate.disabled = true;
@@ -498,6 +538,12 @@
     fileInput.onchange = event => {
         importFile(event.target.files[0]).catch(report("ファイルを読み込めません"));
     };
+    neutralImageInput.onchange = event => {
+        selectImagePairFile("neutral", event.target.files[0]);
+    };
+    expressionImageInput.onchange = event => {
+        selectImagePairFile("expression", event.target.files[0]);
+    };
 
     video.onplay = () => {
         if (activeMode === "video-file" && !calibratingVideoFile && !running) startLoop();
@@ -538,10 +584,14 @@
         visualize.hidden = !active;
         shuffleSpectrum.hidden = !active;
         if (!active) {
+            visualizeStartedAt = 0;
+            resetMotionVisualState();
             if (!visualizing()) hideCalibrationGuide();
             return;
         }
 
+        visualizeStartedAt = performance.now();
+        resetMotionVisualState();
         setShapesExpanded(false);
         waitForFaceCalibration();
     }
@@ -555,7 +605,7 @@
     }
 
     function startGuidedCalibration() {
-        if (activeMode === "video-file") return;
+        if (activeMode !== "camera") return;
         resetCalibration({ warmup: WARMUP_FRAMES, frames: CALIBRATION_FRAMES });
         showCalibrationGuide(GUIDE_MESSAGE);
         updateCalibrationPoint();
@@ -584,7 +634,7 @@
     }
 
     function waitForFaceCalibration() {
-        if (activeMode === "video-file") return;
+        if (activeMode !== "camera") return;
         resetCalibration();
         showCalibrationGuide(WAIT_MESSAGE);
     }
@@ -609,6 +659,8 @@
         stopLoop();
         stopCameraStream();
         clearImportedFile();
+        clearImagePairMedia();
+        await setLandmarkerMode("VIDEO");
         video.srcObject = await navigator.mediaDevices.getUserMedia({
             video: { width: { ideal: VW }, height: { ideal: VH }, aspectRatio: { ideal: 16 / 9 } }
         });
@@ -622,9 +674,11 @@
         stopLoop();
         stopCameraStream();
         clearImportedFile();
+        clearImagePairMedia();
         activeObjectUrl = URL.createObjectURL(file);
 
         if (file.type.startsWith("video/")) {
+            await setLandmarkerMode("VIDEO");
             await loadMedia(video, activeObjectUrl, "loadeddata");
             setActiveMode("video-file");
             video.pause();
@@ -639,6 +693,87 @@
 
         clearImportedFile();
         status.textContent = "動画ファイルを選択してください";
+    }
+
+    function selectImagePairFile(kind, file) {
+        if (!file) return;
+        if (!file.type.startsWith("image/")) {
+            status.textContent = "JPEG・PNG・WebP画像を選択してください";
+            return;
+        }
+
+        imagePairFiles[kind] = file;
+        const missing = [
+            imagePairFiles.neutral ? "" : "無表情画像",
+            imagePairFiles.expression ? "" : "表情画像"
+        ].filter(Boolean);
+
+        if (missing.length) {
+            status.textContent = `${missing.join("と")}を選択してください`;
+            return;
+        }
+
+        importImagePair().catch(report("画像を解析できません"));
+    }
+
+    async function importImagePair() {
+        const { neutral, expression } = imagePairFiles;
+        if (!neutral || !expression) return;
+
+        stopLoop();
+        stopCameraStream();
+        clearImportedFile();
+        clearImagePairMedia({ resetInputs: false });
+        imagePairObjectUrls = [URL.createObjectURL(neutral), URL.createObjectURL(expression)];
+        const neutralImage = new Image();
+
+        await Promise.all([
+            loadMedia(neutralImage, imagePairObjectUrls[0], "load"),
+            loadMedia(sourceImage, imagePairObjectUrls[1], "load")
+        ]);
+        await setLandmarkerMode("IMAGE");
+
+        const neutralResults = faceLandmarker.detect(neutralImage);
+        const expressionResults = faceLandmarker.detect(sourceImage);
+        const neutralCategories = neutralResults.faceBlendshapes[0]?.categories ?? [];
+        const neutralLandmarks = neutralResults.faceLandmarks[0] ?? [];
+
+        if (!neutralCategories.length) throw new Error("無表情画像から顔を検出できません");
+        if (!expressionResults.faceBlendshapes[0]?.categories?.length) {
+            throw new Error("表情画像から顔を検出できません");
+        }
+
+        applyImagePairBaseline(neutralCategories, neutralLandmarks);
+        imagePairResults = expressionResults;
+        setActiveMode("image-pair");
+        resetPrimaryFaceTracking();
+        processResults(imagePairResults);
+        startLoop();
+        status.textContent = "2枚の画像を解析しました";
+    }
+
+    function applyImagePairBaseline(categories, landmarks) {
+        base.clear();
+        for (const { categoryName, score } of categories) {
+            base.set(categoryName, {
+                mean: score,
+                dead: DEADZONE,
+                min: score - DEADZONE,
+                max: score + DEADZONE
+            });
+        }
+
+        neutralPose = getPose(landmarks);
+        Object.assign(calibration, { warmup: 0, remaining: 0, samples: 0 });
+        calibration.stats.clear();
+        resetMotionVisualState();
+        hideCalibrationGuide();
+    }
+
+    async function setLandmarkerMode(mode) {
+        if (landmarkerRunningMode === mode) return;
+        await faceLandmarker.setOptions({ runningMode: mode });
+        landmarkerRunningMode = mode;
     }
 
     function startLoop() {
@@ -660,6 +795,7 @@
     }
 
     function detectCurrentFrame() {
+        if (activeMode === "image-pair") return imagePairResults;
         return faceLandmarker.detectForVideo(video, performance.now());
     }
 
@@ -676,7 +812,7 @@
 
         const displayCategories = categories.length ? categories : zeroDisplayCategories();
         const activeCategories = selectedCategories(displayCategories);
-        if (!visualize.hidden) drawSpectrum(updateSpectrumFrame(activeCategories));
+        if (!visualize.hidden) drawSpectrum(updateSpectrumFrame(activeCategories, displayCategories));
     }
 
     function selectPrimaryFaceIndex(faceLandmarks = []) {
@@ -784,10 +920,12 @@
 
     function resetMotionVisualState() {
         [spectrum, spectrumVelocity, spectrumPhase].forEach(map => map.clear());
+        shapeWeights.clear();
+        dominantShapeName = "circle";
     }
 
     function updateAutoCalibration(faceDetected) {
-        if (!visualizing() || activeMode === "video-file") return;
+        if (!visualizing() || activeMode !== "camera") return;
 
         if (!faceDetected) {
             if (base.size || calibrationActive()) waitForFaceCalibration();
@@ -799,8 +937,13 @@
     function setActiveMode(mode) {
         activeMode = mode;
         stage.classList.toggle("file-source", mode !== "camera");
-        video.hidden = false;
+        video.hidden = mode === "image-pair";
+        sourceImage.hidden = mode !== "image-pair";
         video.controls = video.loop = mode === "video-file";
+        const imageMode = mode === "image-pair";
+        calibrate.disabled = imageMode;
+        measureMotionGain.disabled = imageMode;
+        clearBaseline.disabled = imageMode;
     }
 
     function stopCameraStream() {
@@ -815,6 +958,20 @@
         video.removeAttribute("src");
         video.load();
         fileInput.value = "";
+    }
+
+    function clearImagePairMedia({ resetInputs = true } = {}) {
+        for (const url of imagePairObjectUrls) URL.revokeObjectURL(url);
+        imagePairObjectUrls = [];
+        imagePairResults = null;
+        sourceImage.removeAttribute("src");
+        sourceImage.hidden = true;
+
+        if (!resetInputs) return;
+        imagePairFiles.neutral = null;
+        imagePairFiles.expression = null;
+        neutralImageInput.value = "";
+        expressionImageInput.value = "";
     }
 
     function loadMedia(media, src, eventName) {
@@ -1537,57 +1694,261 @@
         return `${value >= 0 ? "+" : ""}${value.toFixed(4)}`;
     }
 
-    function updateSpectrumFrame(categories) {
+    function updateSpectrumFrame(categories, shapeCategories = categories) {
         const { width, height } = vizCanvas;
-        if (!categories.length) {
-            return { active: false, points: [] };
+        const now = performance.now();
+        const material = currentMaterial(now);
+        if (!categories.length && !shapeCategories.length) {
+            return { active: false, points: [], material, shapeName: "circle" };
         }
 
         const [cx, cy] = [width / 2, height / 2];
-        const baseRadius = Math.min(width, height) * 0.28;
-        const maxSpike = Math.min(width, height) * 0.18;
+        const baseRadius = Math.min(width, height) * 0.33;
+        const maxSpike = Math.min(width, height) * 0.15;
         const calibrated = base.size > 0;
         const ordered = orderedSpectrumCategories(categories);
-        const time = performance.now() * 0.001;
+        const time = now * 0.001;
         const springStates = ordered.map(({ categoryName, score }) => {
             const rawValue = calibrated ? adjustedCalibratedScore(categoryName, score) : 0;
             const value = Math.abs(rawValue) < SPECTRUM_ZERO_THRESHOLD ? 0 : rawValue;
-            const target = clamp(value * 18, -1, 1);
+            const target = clamp(value * 18 * material.response, -1, 1);
             const previous = spectrum.get(categoryName) ?? 0;
-            const velocity = ((spectrumVelocity.get(categoryName) ?? 0) + (target - previous) * 0.055) * 0.86;
+            const velocity =
+                ((spectrumVelocity.get(categoryName) ?? 0) + (target - previous) * material.spring)
+                * material.damping;
+            const phase = spectrumPhase.get(categoryName) ?? Math.random() * Math.PI * 2;
 
             spectrumVelocity.set(categoryName, velocity);
-            return { categoryName, position: previous + velocity, velocity };
+            spectrumPhase.set(categoryName, phase);
+            return { categoryName, position: previous + velocity, velocity, phase };
         });
-        const points = springStates.map(({ categoryName, position, velocity }, i) => {
+        const diffusedStates = springStates.map(({ categoryName, position, velocity, phase }, i) => {
             const left = springStates[(i - 1 + springStates.length) % springStates.length].position;
             const right = springStates[(i + 1) % springStates.length].position;
-            const diffused = position + (left + right - position * 2) * 0.1;
-            const angle = i / ordered.length * Math.PI * 2 - Math.PI / 2;
-            const phase = spectrumPhase.get(categoryName) ?? Math.random() * Math.PI * 2;
-            const breathing = Math.sin(time * 0.55) * 0.012;
-            const surfaceMotion =
-                Math.sin(time * 0.75 + angle * 2 + phase) * 0.012
-                + Math.sin(time * 0.31 - angle * 3 + phase * 0.7) * 0.007;
-            const ripple = Math.sin(time * 1.8 + phase) * Math.min(Math.abs(velocity) * 0.22, 0.035);
-            const deformation = clamp(diffused + breathing + surfaceMotion + ripple, -1, 1);
-            const radius = baseRadius + deformation * maxSpike;
+            const diffused = position + (left + right - position * 2) * material.diffusion;
 
             spectrum.set(categoryName, diffused);
-            spectrumPhase.set(categoryName, phase);
+            return { position: diffused, velocity, phase };
+        });
+        const surfaceStates = resampleCyclicStates(diffusedStates, SHAPE_POINT_COUNT);
+        const shape = updateShapeMorph(shapeCategories, calibrated);
+        const points = surfaceStates.map(({ position, velocity, phase }, i) => {
+            const templatePoint = blendedTemplatePoint(i, shape.weights);
+            const length = Math.hypot(templatePoint.x, templatePoint.y) || 1;
+            const normal = { x: templatePoint.x / length, y: templatePoint.y / length };
+            const angle = Math.atan2(templatePoint.y, templatePoint.x);
+            const breathing = Math.sin(time * material.noiseSpeed * 0.75) * material.breathing;
+            const surfaceMotion =
+                Math.sin(time * material.noiseSpeed + angle * 2 + phase) * material.noise
+                + Math.sin(time * material.noiseSpeed * 0.43 - angle * 3 + phase * 0.7) * material.noise * 0.58;
+            const ripple =
+                Math.sin(time * (1.2 + material.noiseSpeed) + phase)
+                * Math.min(Math.abs(velocity) * material.ripple, 0.055);
+            const deformation = clamp(position + breathing + surfaceMotion + ripple, -1, 1);
+            const displacement = deformation * maxSpike;
+
             return {
-                x: cx + Math.cos(angle) * radius,
-                y: cy + Math.sin(angle) * radius
+                x: cx + templatePoint.x * baseRadius + normal.x * displacement,
+                y: cy + templatePoint.y * baseRadius + normal.y * displacement
             };
         });
 
-        return { active: calibrated, points };
+        return { active: calibrated, points, material, shapeName: shape.name };
     }
 
-    function drawSpectrum({ active, points }) {
+    function resampleCyclicStates(states, count) {
+        if (!states.length) {
+            return Array.from({ length: count }, (_, index) => ({
+                position: 0,
+                velocity: 0,
+                phase: index / count * Math.PI * 2
+            }));
+        }
+
+        return Array.from({ length: count }, (_, index) => {
+            const sourcePosition = index / count * states.length;
+            const leftIndex = Math.floor(sourcePosition) % states.length;
+            const rightIndex = (leftIndex + 1) % states.length;
+            const amount = sourcePosition - Math.floor(sourcePosition);
+            const left = states[leftIndex];
+            const right = states[rightIndex];
+
+            return {
+                position: left.position + (right.position - left.position) * amount,
+                velocity: left.velocity + (right.velocity - left.velocity) * amount,
+                phase: left.phase + (right.phase - left.phase) * amount
+            };
+        });
+    }
+
+    function updateShapeMorph(categories, calibrated) {
+        const byName = new Map(categories.map(category => [category.categoryName, category.score]));
+        const targets = new Map();
+
+        for (const gesture of SHAPE_GESTURES) {
+            const available = gesture.categories.filter(categoryName => byName.has(categoryName));
+            const average = available.length
+                ? available.reduce((sum, categoryName) => {
+                    const score = calibrated ? adjustedCalibratedScore(categoryName, byName.get(categoryName)) : 0;
+                    return sum + Math.max(score, 0);
+                }, 0) / available.length
+                : 0;
+            targets.set(gesture.name, smoothstep(clamp(average * gesture.strength, 0, 1)));
+        }
+
+        const strongest = Math.max(0, ...targets.values());
+        targets.set("circle", Math.max(0.1, 1 - strongest));
+
+        for (const [name, target] of targets) {
+            const previous = shapeWeights.get(name) ?? (name === "circle" ? 1 : 0);
+            shapeWeights.set(name, previous * 0.86 + target * 0.14);
+        }
+
+        const total = [...shapeWeights.values()].reduce((sum, value) => sum + value, 0) || 1;
+        const weights = new Map([...shapeWeights].map(([name, value]) => [name, value / total]));
+        let candidate = { name: "circle", weight: weights.get("circle") ?? 0 };
+
+        for (const gesture of SHAPE_GESTURES) {
+            const weight = weights.get(gesture.name) ?? 0;
+            if (weight > candidate.weight) candidate = { ...gesture, weight };
+        }
+
+        const currentWeight = weights.get(dominantShapeName) ?? 0;
+        if (candidate.name === dominantShapeName || candidate.weight > currentWeight + 0.08) {
+            dominantShapeName = candidate.name;
+        }
+        return { weights, name: dominantShapeName };
+    }
+
+    function blendedTemplatePoint(index, weights) {
+        const point = { x: 0, y: 0 };
+
+        for (const [name, weight] of weights) {
+            const templatePoint = SHAPE_TEMPLATES[name][index];
+            point.x += templatePoint.x * weight;
+            point.y += templatePoint.y * weight;
+        }
+
+        return point;
+    }
+
+    function createShapeTemplates(pointCount) {
+        const circle = Array.from({ length: pointCount }, (_, index) => {
+            const angle = index / pointCount * Math.PI * 2 - Math.PI / 2;
+            return { x: Math.cos(angle), y: Math.sin(angle) };
+        });
+        const starVertices = Array.from({ length: 10 }, (_, index) => {
+            const angle = index / 10 * Math.PI * 2 - Math.PI / 2;
+            const radius = index % 2 ? 0.43 : 1;
+            return { x: Math.cos(angle) * radius, y: Math.sin(angle) * radius };
+        });
+
+        return {
+            circle,
+            star: samplePolygonPerimeter(starVertices, pointCount),
+            triangle: samplePolygonPerimeter([
+                { x: 0, y: -1.05 },
+                { x: 0.96, y: 0.78 },
+                { x: -0.96, y: 0.78 }
+            ], pointCount),
+            trapezoid: samplePolygonPerimeter([
+                { x: 0, y: -0.72 },
+                { x: 0.62, y: -0.72 },
+                { x: 1, y: 0.72 },
+                { x: -1, y: 0.72 },
+                { x: -0.62, y: -0.72 }
+            ], pointCount),
+            diamond: samplePolygonPerimeter([
+                { x: 0, y: -1.08 },
+                { x: 0.9, y: 0 },
+                { x: 0, y: 1.08 },
+                { x: -0.9, y: 0 }
+            ], pointCount),
+            ellipse: circle.map(({ x, y }) => ({ x: x * 1.05, y: y * 0.48 })),
+            pentagon: samplePolygonPerimeter(regularPolygonVertices(5), pointCount),
+            square: samplePolygonPerimeter([
+                { x: 0, y: -0.82 },
+                { x: 0.82, y: -0.82 },
+                { x: 0.82, y: 0.82 },
+                { x: -0.82, y: 0.82 },
+                { x: -0.82, y: -0.82 }
+            ], pointCount)
+        };
+    }
+
+    function regularPolygonVertices(count) {
+        return Array.from({ length: count }, (_, index) => {
+            const angle = index / count * Math.PI * 2 - Math.PI / 2;
+            return { x: Math.cos(angle), y: Math.sin(angle) };
+        });
+    }
+
+    function samplePolygonPerimeter(vertices, pointCount) {
+        const edges = vertices.map((start, index) => {
+            const end = vertices[(index + 1) % vertices.length];
+            return { start, end, length: Math.hypot(end.x - start.x, end.y - start.y) };
+        });
+        const perimeter = edges.reduce((sum, edge) => sum + edge.length, 0);
+
+        return Array.from({ length: pointCount }, (_, pointIndex) => {
+            let distance = pointIndex / pointCount * perimeter;
+            let edge = edges[0];
+
+            for (const candidate of edges) {
+                edge = candidate;
+                if (distance <= edge.length) break;
+                distance -= edge.length;
+            }
+
+            const amount = edge.length ? distance / edge.length : 0;
+            return {
+                x: edge.start.x + (edge.end.x - edge.start.x) * amount,
+                y: edge.start.y + (edge.end.y - edge.start.y) * amount
+            };
+        });
+    }
+
+    function currentMaterial(now) {
+        const startedAt = visualizeStartedAt || now;
+        const elapsed = clamp((now - startedAt) / 1000, 0, 90);
+        let phaseIndex = 0;
+
+        while (phaseIndex + 1 < MATERIAL_PHASES.length && elapsed >= MATERIAL_PHASES[phaseIndex + 1].start) {
+            phaseIndex++;
+        }
+
+        const current = MATERIAL_PHASES[phaseIndex];
+        if (!phaseIndex) return current;
+
+        const previous = MATERIAL_PHASES[phaseIndex - 1];
+        const transition = smoothstep(clamp((elapsed - current.start) / MATERIAL_TRANSITION_SECONDS, 0, 1));
+        return interpolateMaterial(previous, current, transition);
+    }
+
+    function interpolateMaterial(from, to, amount) {
+        const material = { name: to.name };
+
+        for (const key of ["spring", "damping", "diffusion", "response", "breathing", "noise", "noiseSpeed", "ripple", "tension", "fill", "glow", "lineWidth"]) {
+            material[key] = from[key] + (to[key] - from[key]) * amount;
+        }
+        for (const key of ["stroke", "fillColor", "background"]) {
+            material[key] = from[key].map((value, index) => value + (to[key][index] - value) * amount);
+        }
+
+        return material;
+    }
+
+    function smoothstep(value) {
+        return value * value * (3 - 2 * value);
+    }
+
+    function drawSpectrum({ active, points, material, shapeName }) {
         const { width, height } = vizCanvas;
+        visualize.dataset.material = material.name;
+        visualize.dataset.shape = shapeName;
+        visualize.style.backgroundColor = rgba(material.background, 0.9);
         vizCtx.clearRect(0, 0, width, height);
-        drawSpectrumPath(vizCtx, points, active);
+        drawSpectrumPath(vizCtx, points, active, material);
     }
 
     function orderedSpectrumCategories(categories) {
@@ -1612,17 +1973,17 @@
         return shuffled;
     }
 
-    function drawSpectrumPath(targetCtx, points, active) {
+    function drawSpectrumPath(targetCtx, points, active, material) {
         if (points.length < 3) return;
 
         targetCtx.save();
-        targetCtx.lineWidth = 3;
+        targetCtx.lineWidth = material.lineWidth;
         targetCtx.lineJoin = "round";
         targetCtx.lineCap = "round";
-        targetCtx.strokeStyle = active ? "#7f8c88" : "#bbb";
-        targetCtx.fillStyle = active ? "rgba(66, 211, 146, 0.055)" : "rgba(160, 160, 160, 0.025)";
-        targetCtx.shadowColor = active ? "rgba(66, 211, 146, 0.16)" : "transparent";
-        targetCtx.shadowBlur = active ? 12 : 0;
+        targetCtx.strokeStyle = active ? rgba(material.stroke, 0.96) : rgba(material.stroke, 0.48);
+        targetCtx.fillStyle = active ? rgba(material.fillColor, material.fill) : rgba(material.fillColor, material.fill * 0.35);
+        targetCtx.shadowColor = active ? rgba(material.fillColor, 0.2) : "transparent";
+        targetCtx.shadowBlur = active ? material.glow : 0;
         targetCtx.beginPath();
         targetCtx.moveTo(points[0].x, points[0].y);
 
@@ -1631,7 +1992,7 @@
             const p1 = points[i];
             const p2 = points[(i + 1) % points.length];
             const p3 = points[(i + 2) % points.length];
-            const tension = 0.82;
+            const tension = material.tension;
             const cp1 = {
                 x: p1.x + (p2.x - p0.x) * tension / 6,
                 y: p1.y + (p2.y - p0.y) * tension / 6
@@ -1649,6 +2010,10 @@
         targetCtx.restore();
     }
 
+    function rgba([red, green, blue], alpha) {
+        return `rgba(${Math.round(red)}, ${Math.round(green)}, ${Math.round(blue)}, ${alpha})`;
+    }
+
     function clamp(value, min, max) {
         return Math.max(min, Math.min(value, max));
     }
@@ -1664,11 +2029,14 @@
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         if (!currentPoseStable) return;
 
+        const media = activeMode === "image-pair" ? sourceImage : video;
         const [sw, sh] = [
-            video.videoWidth || VW,
-            video.videoHeight || VH
+            media.videoWidth || media.naturalWidth || VW,
+            media.videoHeight || media.naturalHeight || VH
         ];
-        const scale = Math.max(canvas.width / sw, canvas.height / sh);
+        const scale = activeMode === "camera"
+            ? Math.max(canvas.width / sw, canvas.height / sh)
+            : Math.min(canvas.width / sw, canvas.height / sh);
         const [dx, dy] = [(canvas.width - sw * scale) / 2, (canvas.height - sh * scale) / 2];
 
         ctx.fillStyle = "green";
