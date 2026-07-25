@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="ja">
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Face Visualize UI</title>
+    <style>
+        :root {
+            color-scheme: light;
+            font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            display: grid;
+            place-items: center;
+            padding: 24px;
+            background: #fff7e8;
+            color: #2f2250;
+        }
+
+        main {
+            width: min(100%, 320px);
+        }
+
+        button {
+            width: 100%;
+            min-height: 112px;
+            border: 0;
+            border-radius: 28px;
+            display: grid;
+            place-items: center;
+            padding: 16px 24px;
+            background: #6251d6;
+            box-shadow: 0 7px 0 rgb(47 34 80 / 18%);
+            color: #fff;
+            font: inherit;
+            font-size: 26px;
+            font-weight: 750;
+            text-align: center;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        button:active {
+            transform: translateY(3px);
+            box-shadow: 0 2px 0 rgb(47 34 80 / 12%);
+        }
+
+        button:disabled {
+            cursor: wait;
+            opacity: 0.55;
+        }
+    </style>
+</head>
+
+<body>
+    <main>
+        <button id="panelStart" type="button" disabled>準備中...</button>
+    </main>
+
+    <script>
+        const panelStart = document.getElementById("panelStart");
+        const targetOrigin = location.origin === "null" ? "*" : location.origin;
+
+        function send(action) {
+            if (!window.opener || window.opener.closed) {
+                panelStart.textContent = "スタート";
+                panelStart.disabled = false;
+                return;
+            }
+            window.opener.postMessage({ source: "motion-control-panel", action }, targetOrigin);
+        }
+
+        function setReady() {
+            panelStart.disabled = false;
+            panelStart.textContent = "スタート";
+        }
+
+        panelStart.onclick = () => {
+            panelStart.disabled = true;
+            panelStart.textContent = "体験中...";
+            send("camera");
+        };
+
+        window.addEventListener("message", event => {
+            if (event.source !== window.opener || event.data?.source !== "motion-main") return;
+            if (location.origin !== "null" && event.origin !== location.origin) return;
+
+            if (event.data.type === "ready") {
+                setReady();
+            } else if (event.data.type === "camera-started") {
+                panelStart.textContent = "体験中...";
+            }
+        });
+
+        send("panel-ready");
+    </script>
+</body>
+
+</html>

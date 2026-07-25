@@ -51,30 +51,6 @@
             object-fit: cover;
         }
 
-        #startExperience {
-            position: absolute;
-            bottom: clamp(42px, 7vh, 78px);
-            left: 50%;
-            z-index: 1;
-            min-width: 11em;
-            padding: 0.9em 2.2em;
-            border: 0;
-            border-radius: 999px;
-            background: #28124d;
-            box-shadow: 0 10px 26px #28124d4d;
-            color: #fff;
-            font-size: clamp(0.95rem, 2.4vw, 1.15rem);
-            font-weight: 700;
-            letter-spacing: 0.14em;
-            transform: translateX(-50%);
-            transition: transform 0.18s ease, box-shadow 0.18s ease;
-        }
-
-        #startExperience:hover:not(:disabled) {
-            box-shadow: 0 14px 32px #28124d66;
-            transform: translateX(-50%) scale(1.04);
-        }
-
         video,
         #sourceImage,
         canvas {
@@ -371,7 +347,6 @@
     <main id="stage">
         <div id="startScreen">
             <img id="startThumbnail" src="./thumbnail.png" alt="">
-            <button id="startExperience" type="button" disabled>LOADING...</button>
         </div>
         <video id="video" autoplay playsinline muted></video>
         <img id="sourceImage" alt="" hidden>
@@ -429,17 +404,25 @@
     </main>
 </body>
 
+<script>
+    window.motionControlPanel = window.open(
+        "./control-panel.html",
+        "motion2-control-panel",
+        "popup=yes,width=420,height=720,resizable=yes,scrollbars=yes"
+    );
+</script>
+
 <script type="module">
     import { FaceLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.34";
 
     const $ = id => document.getElementById(id);
     const ids = [
-        "stage", "startScreen", "startExperience", "video", "sourceImage", "canvas", "vizCanvas", "cameraButton", "fileInput", "neutralImageInput", "expressionImageInput",
+        "stage", "startScreen", "video", "sourceImage", "canvas", "vizCanvas", "cameraButton", "fileInput", "neutralImageInput", "expressionImageInput",
         "calibrate", "measureMotionGain", "clearBaseline", "toggleShapes", "status", "paramSetSelect", "saveParamSet", "motionGainSetSelect", "saveMotionGainSet", "shapesPanel", "layerControls", "sourceControls", "out",
         "visualizeToggle", "visualize_01", "calibrationGuide", "calibrationGuideText", "calibrationPoint", "shuffleSpectrum"
     ];
     const {
-        stage, startScreen, startExperience, video, sourceImage, canvas, vizCanvas, cameraButton, fileInput, neutralImageInput, expressionImageInput,
+        stage, startScreen, video, sourceImage, canvas, vizCanvas, cameraButton, fileInput, neutralImageInput, expressionImageInput,
         calibrate, measureMotionGain, clearBaseline, toggleShapes, status, paramSetSelect, saveParamSet, motionGainSetSelect, saveMotionGainSet, shapesPanel, layerControls, sourceControls, out,
         visualizeToggle, visualize_01: visualize, calibrationGuide, calibrationGuideText, calibrationPoint, shuffleSpectrum
     } = Object.fromEntries(ids.map(id => [id, $(id)]));
@@ -491,6 +474,7 @@
     let imagePairObjectUrls = [];
     let imagePairResults = null;
     let landmarkerRunningMode = "VIDEO";
+    let controlPanelWindow = window.motionControlPanel;
     const imagePairFiles = { neutral: null, expression: null };
     let running = false;
     let loopToken = 0;
@@ -523,26 +507,13 @@
     );
 
     const report = message => error => {
-        status.textContent = `${message}: ${error.message}`;
+        const text = `${message}: ${error.message}`;
+        status.textContent = text;
+        setControlPanelStatus(text);
     };
 
-    startExperience.onclick = async () => {
-        startExperience.disabled = true;
-        startExperience.textContent = "STARTING...";
-
-        try {
-            await startCamera();
-            visualizeToggle.checked = true;
-            toggleVisualize();
-            startScreen.hidden = true;
-        } catch (error) {
-            startExperience.disabled = false;
-            startExperience.textContent = "RETRY";
-            status.textContent = `カメラを開始できません: ${error.message}`;
-        }
-    };
-    startExperience.disabled = false;
-    startExperience.textContent = "START";
+    window.addEventListener("message", handleControlPanelMessage);
+    sendControlPanelMessage({ type: "ready" });
     renderParamSetOptions();
     renderMotionGainSetOptions();
 
@@ -556,6 +527,9 @@
     });
 
     window.addEventListener("resize", resizeLandmarkCanvas);
+    window.addEventListener("beforeunload", () => {
+        if (controlPanelWindow && !controlPanelWindow.closed) controlPanelWindow.close();
+    });
 
     visualizeToggle.onchange = toggleVisualize;
 
@@ -599,16 +573,16 @@
         spectrumOrder = shuffle(spectrumOrder);
     };
 
-    cameraButton.onclick = () => startCamera().catch(report("カメラを開始できません"));
+    cameraButton.onclick = () => startCameraExperience().catch(report("カメラを開始できません"));
 
     fileInput.onchange = event => {
-        importFile(event.target.files[0]).catch(report("ファイルを読み込めません"));
+        importVideoExperience(event.target.files[0]).catch(report("ファイルを読み込めません"));
     };
     neutralImageInput.onchange = event => {
-        selectImagePairFile("neutral", event.target.files[0]);
+        selectImagePairFile("neutral", event.target.files[0])?.catch(report("画像を解析できません"));
     };
     expressionImageInput.onchange = event => {
-        selectImagePairFile("expression", event.target.files[0]);
+        selectImagePairFile("expression", event.target.files[0])?.catch(report("画像を解析できません"));
     };
 
     video.onplay = () => {
@@ -643,6 +617,64 @@
         shapesPanel.hidden = !expanded;
         toggleShapes.setAttribute("aria-expanded", expanded);
         toggleShapes.textContent = `${expanded ? "▲" : "▼"}`;
+    }
+
+    function enterExperience() {
+        if (!visualizeToggle.checked) {
+            visualizeToggle.checked = true;
+            toggleVisualize();
+        }
+        startScreen.hidden = true;
+        uiHidden = true;
+        for (const panel of [layerControls, sourceControls, out]) {
+            panel.hidden = true;
+        }
+        calibrationGuide.hidden = !calibrationGuideActive;
+    }
+
+    async function startCameraExperience() {
+        setControlPanelStatus("カメラを準備しています…");
+        await startCamera();
+        enterExperience();
+        setControlPanelStatus("体験中");
+    }
+
+    async function importVideoExperience(file) {
+        if (!file) return;
+        setControlPanelStatus("動画を読み込んでいます…");
+        await importFile(file);
+        enterExperience();
+        setControlPanelStatus("動画で体験中");
+    }
+
+    function setControlPanelStatus(message) {
+        sendControlPanelMessage({ type: "status", message });
+    }
+
+    function sendControlPanelMessage(message) {
+        if (!controlPanelWindow || controlPanelWindow.closed) return;
+        const targetOrigin = location.origin === "null" ? "*" : location.origin;
+        controlPanelWindow.postMessage({ source: "motion-main", ...message }, targetOrigin);
+    }
+
+    function handleControlPanelMessage(event) {
+        if (event.source !== controlPanelWindow || event.data?.source !== "motion-control-panel") return;
+        if (location.origin !== "null" && event.origin !== location.origin) return;
+
+        const { action, file } = event.data;
+        if (action === "panel-ready") {
+            sendControlPanelMessage({ type: "ready" });
+        } else if (action === "camera") {
+            startCameraExperience()
+                .then(() => sendControlPanelMessage({ type: "camera-started" }))
+                .catch(report("カメラを開始できません"));
+        } else if (action === "video") {
+            importVideoExperience(file).catch(report("動画を読み込めません"));
+        } else if (action === "neutral-image") {
+            selectImagePairFile("neutral", file)?.catch(report("画像を解析できません"));
+        } else if (action === "expression-image") {
+            selectImagePairFile("expression", file)?.catch(report("画像を解析できません"));
+        }
     }
 
     function toggleVisualize() {
@@ -764,7 +796,9 @@
     function selectImagePairFile(kind, file) {
         if (!file) return;
         if (!file.type.startsWith("image/")) {
-            status.textContent = "JPEG・PNG・WebP画像を選択してください";
+            const message = "JPEG・PNG・WebP画像を選択してください";
+            status.textContent = message;
+            setControlPanelStatus(message);
             return;
         }
 
@@ -775,11 +809,14 @@
         ].filter(Boolean);
 
         if (missing.length) {
-            status.textContent = `${missing.join("と")}を選択してください`;
+            const message = `${missing.join("と")}を選択してください`;
+            status.textContent = message;
+            setControlPanelStatus(message);
             return;
         }
 
-        importImagePair().catch(report("画像を解析できません"));
+        setControlPanelStatus("2枚の画像を解析しています…");
+        return importImagePair();
     }
 
     async function importImagePair() {
@@ -816,6 +853,8 @@
         processResults(imagePairResults);
         startLoop();
         status.textContent = "2枚の画像を解析しました";
+        enterExperience();
+        setControlPanelStatus("2枚の画像で体験中");
     }
 
     function applyImagePairBaseline(categories, landmarks) {
