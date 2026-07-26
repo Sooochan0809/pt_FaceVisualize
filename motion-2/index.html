@@ -16,7 +16,10 @@
             --start-reveal-delay: 0.2s;
             --start-reveal-duration: 1.85s;
             --thumbnail-exit-duration: 1.3s;
-            --thumbnail-return-delay: 0.75s;
+            --scene-transition-easing: cubic-bezier(0.5, 0, 0.18, 1);
+            --thumbnail-transition-easing: cubic-bezier(0.55, 0, 0.3, 1);
+            --thumbnail-return-delay:
+                calc(var(--start-reveal-delay) + var(--start-reveal-duration) - var(--thumbnail-exit-duration));
         }
 
         body {
@@ -69,6 +72,16 @@
             display: none;
         }
 
+        #thumbnailReturnBackground::after {
+            content: "";
+            position: absolute;
+            inset: 0;
+            z-index: 1;
+            background:
+                url("./assets/images/background.png") center / 100% 100% no-repeat;
+            pointer-events: none;
+        }
+
         .thumbnailReturnIris {
             position: absolute;
             top: 50%;
@@ -81,38 +94,29 @@
             will-change: width;
         }
 
-        .thumbnailReturnTexture {
-            position: absolute;
-            inset: 0;
-            z-index: 1;
+        .startThumbnailLayer,
+        #experienceBackground {
             display: block;
-            width: 100%;
-            height: 100%;
-            object-fit: fill;
-            pointer-events: none;
             user-select: none;
             -webkit-user-drag: none;
         }
 
         .startThumbnailLayer {
             position: absolute;
-            display: block;
             height: auto;
-            user-select: none;
-            -webkit-user-drag: none;
         }
 
         #experienceBackground {
             position: absolute;
             inset: 0;
-            z-index: 3;
-            display: block;
             width: 100%;
             height: 100%;
             object-fit: fill;
             pointer-events: none;
-            user-select: none;
-            -webkit-user-drag: none;
+        }
+
+        #experienceBackground {
+            z-index: 3;
         }
 
         .startThumbnailTitle {
@@ -143,24 +147,24 @@
         #stage.is-starting #video,
         #stage.is-starting .visualize {
             animation:
-                revealExperienceScene var(--start-reveal-duration) cubic-bezier(0.5, 0, 0.18, 1) var(--start-reveal-delay) both;
+                revealExperienceScene var(--start-reveal-duration) var(--scene-transition-easing) var(--start-reveal-delay) both;
         }
 
         #startScreen.is-returning .thumbnailReturnIris {
             animation:
-                openThumbnailIris var(--start-reveal-duration) cubic-bezier(0.5, 0, 0.18, 1) reverse both;
+                openThumbnailIris var(--start-reveal-duration) var(--scene-transition-easing) reverse both;
         }
 
         #startScreen.is-transitioning .startThumbnailTitle,
         #startScreen.is-transitioning .startThumbnailDetail {
             animation:
-                exitThumbnailLayer var(--thumbnail-exit-duration) cubic-bezier(0.55, 0, 0.3, 1) forwards;
+                exitThumbnailLayer var(--thumbnail-exit-duration) var(--thumbnail-transition-easing) forwards;
         }
 
         #startScreen.is-returning .startThumbnailTitle,
         #startScreen.is-returning .startThumbnailDetail {
             animation:
-                exitThumbnailLayer var(--thumbnail-exit-duration) cubic-bezier(0.55, 0, 0.3, 1) var(--thumbnail-return-delay) reverse both;
+                exitThumbnailLayer var(--thumbnail-exit-duration) var(--thumbnail-transition-easing) var(--thumbnail-return-delay) reverse both;
         }
 
         @keyframes revealExperienceScene {
@@ -523,9 +527,7 @@
             place-items: center;
             padding: 6%;
             background:
-                url("./assets/images/background.png")
-                center / 100% 100%
-                no-repeat;
+                url("./assets/images/background.png") center / 100% 100% no-repeat;
             color: #2f2250;
             pointer-events: none;
         }
@@ -879,7 +881,6 @@
             <div id="startThumbnail" aria-label="Suitopiaぷちフェス 顔あそび 体験その1">
                 <div id="thumbnailReturnBackground" aria-hidden="true" hidden>
                     <span class="thumbnailReturnIris"></span>
-                    <img class="thumbnailReturnTexture" src="./assets/images/background.png" alt="">
                 </div>
                 <img class="startThumbnailLayer startThumbnailTitle" src="./assets/images/title_block.png"
                     alt="Suitopiaぷちフェス！ 顔あそび">
@@ -1093,8 +1094,7 @@
         let lastScoreEventAt = 0;
         let experienceSessionId = 0;
         let experienceFinished = false;
-        let experienceResultTimer = 0;
-        let experienceReturnTimer = 0;
+        let experiencePhaseTimer = 0;
         let workMusicPlaybackRate = WORK_MUSIC_RATE_NORMAL;
         const previousMotionScores = new Map();
         const discoveredScoreShapes = new Set(["circle"]);
@@ -1258,23 +1258,28 @@
             startScreen.hidden = true;
         }
 
+        function waitForAnimation(element) {
+            return new Promise(resolve => {
+                element.addEventListener("animationend", resolve, { once: true });
+            });
+        }
+
         async function playStartTransition() {
             thumbnailReturnBackground.hidden = true;
             stage.classList.remove("is-preparing");
             stage.classList.add("is-starting");
             startScreen.classList.add("is-transitioning");
             activateExperience();
-            await new Promise(resolve => video.addEventListener("animationend", resolve, { once: true }));
+            await waitForAnimation(video);
             startScreen.hidden = true;
             startScreen.classList.remove("is-transitioning");
             stage.classList.remove("is-starting");
         }
 
         async function playReturnTransition() {
-            const animationFinished = new Promise(resolve => {
+            const animationFinished = waitForAnimation(
                 startScreen.querySelector(".startThumbnailDetail")
-                    .addEventListener("animationend", resolve, { once: true });
-            });
+            );
 
             thumbnailReturnBackground.hidden = false;
             startScreen.hidden = false;
@@ -1439,12 +1444,10 @@
             resetScoreState();
         }
 
-    function resetScoreState() {
-        window.clearTimeout(experienceResultTimer);
-        window.clearTimeout(experienceReturnTimer);
-        experienceResultTimer = 0;
-        experienceReturnTimer = 0;
-        experienceScore = 0;
+        function resetScoreState() {
+            window.clearTimeout(experiencePhaseTimer);
+            experiencePhaseTimer = 0;
+            experienceScore = 0;
             lastScoreEventAt = 0;
             experienceFinished = false;
             workMusicPlaybackRate = WORK_MUSIC_RATE_NORMAL;
@@ -1495,7 +1498,7 @@
             sendControlPanelMessage({ type: "finish" });
             const sessionId = experienceSessionId;
 
-            experienceResultTimer = window.setTimeout(() => {
+            experiencePhaseTimer = window.setTimeout(() => {
                 if (sessionId !== experienceSessionId || !experienceFinished) return;
                 showExperienceResults(sessionId);
             }, EXPERIENCE_RESULT_DELAY_MS);
@@ -1524,12 +1527,12 @@
                 );
             }
 
-        experienceResults.hidden = false;
-        experienceReturnTimer = window.setTimeout(() => {
-            if (sessionId !== experienceSessionId || !experienceFinished) return;
-            playReturnTransition();
-        }, EXPERIENCE_RESULTS_DISPLAY_MS);
-    }
+            experienceResults.hidden = false;
+            experiencePhaseTimer = window.setTimeout(() => {
+                if (sessionId !== experienceSessionId || !experienceFinished) return;
+                playReturnTransition();
+            }, EXPERIENCE_RESULTS_DISPLAY_MS);
+        }
 
         function saveScoreRanking(score) {
             const player = {

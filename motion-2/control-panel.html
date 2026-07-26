@@ -142,6 +142,12 @@
             audio.play().catch(() => { });
         }
 
+        function stopWorkMusic(fade = false) {
+            const stop = fade ? fadeOutAudio : stopAudio;
+            stop(workMusic, WORK_MUSIC_VOLUME);
+            workMusic.playbackRate = 1;
+        }
+
         function send(action) {
             if (!window.opener || window.opener.closed) {
                 setButton("スタート", false);
@@ -178,8 +184,7 @@
                     fadeOutAudio(thumbnailMusic, THUMBNAIL_MUSIC_VOLUME);
                     break;
                 case "thumbnail-restored":
-                    stopAudio(workMusic, WORK_MUSIC_VOLUME);
-                    workMusic.playbackRate = 1;
+                    stopWorkMusic();
                     playLoopMusic(thumbnailMusic, THUMBNAIL_MUSIC_VOLUME);
                     setButton("スタート", false);
                     break;
@@ -187,8 +192,7 @@
                     playLoopMusic(workMusic, WORK_MUSIC_VOLUME);
                     break;
                 case "work-music-stop":
-                    fadeOutAudio(workMusic, WORK_MUSIC_VOLUME);
-                    workMusic.playbackRate = 1;
+                    stopWorkMusic(true);
                     break;
                 case "work-music-rate": {
                     const playbackRate = Number(event.data.playbackRate);
