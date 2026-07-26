@@ -13,6 +13,9 @@
             --panel-bg: #1b2026e0;
             --accent: #42d392;
             --shape-center-y: 40%;
+            --start-reveal-delay: 0.75s;
+            --start-reveal-duration: 1.85s;
+            --thumbnail-exit-duration: 1.3s;
         }
 
         body {
@@ -41,7 +44,7 @@
             display: grid;
             place-items: center;
             overflow: hidden;
-            background: #fffaf2;
+            pointer-events: none;
         }
 
         #startScreen[hidden] {
@@ -51,9 +54,94 @@
         #startThumbnail {
             position: absolute;
             inset: 0;
+            overflow: hidden;
+        }
+
+        .startThumbnailLayer {
+            position: absolute;
+            display: block;
+            height: auto;
+            user-select: none;
+            -webkit-user-drag: none;
+        }
+
+        #experienceBackground {
+            position: absolute;
+            inset: 0;
+            z-index: 3;
+            display: block;
             width: 100%;
             height: 100%;
-            object-fit: cover;
+            object-fit: fill;
+            pointer-events: none;
+            user-select: none;
+            -webkit-user-drag: none;
+        }
+
+        .startThumbnailTitle {
+            --thumbnail-exit-y: -55vh;
+            top: 33.659%;
+            left: 22.5022%;
+            z-index: 1002;
+            width: 56.212%;
+        }
+
+        .startThumbnailDetail {
+            --thumbnail-exit-y: 55vh;
+            top: 49.1451%;
+            left: 16.4205%;
+            z-index: 1002;
+            width: 66.7246%;
+        }
+
+        #stage.is-preparing #video,
+        #stage.is-preparing .visualize {
+            clip-path: circle(0 at 50% 50%);
+        }
+
+        #stage.is-preparing #canvas {
+            display: none;
+        }
+
+        #stage.is-starting #video,
+        #stage.is-starting .visualize {
+            animation:
+                revealExperienceScene
+                var(--start-reveal-duration)
+                cubic-bezier(0.5, 0, 0.18, 1)
+                var(--start-reveal-delay)
+                both;
+        }
+
+        #startScreen.is-transitioning .startThumbnailTitle,
+        #startScreen.is-transitioning .startThumbnailDetail {
+            animation:
+                exitThumbnailLayer
+                var(--thumbnail-exit-duration)
+                cubic-bezier(0.55, 0, 0.3, 1)
+                forwards;
+        }
+
+        @keyframes revealExperienceScene {
+            from {
+                clip-path: circle(0 at 50% 50%);
+            }
+
+            to {
+                clip-path: circle(115% at 50% 50%);
+            }
+        }
+
+        @keyframes exitThumbnailLayer {
+            from {
+                opacity: 1;
+                transform: translateY(0);
+            }
+
+            to {
+                opacity: 0;
+                transform: translateY(var(--thumbnail-exit-y));
+            }
         }
 
         video,
@@ -68,16 +156,19 @@
 
         video,
         #sourceImage {
+            z-index: 0;
             object-fit: cover;
             transform: scaleX(-1);
         }
 
         #canvas {
+            z-index: 4;
             transform: scaleX(-1);
         }
 
         video[hidden],
-        #sourceImage[hidden] {
+        #sourceImage[hidden],
+        #canvas[hidden] {
             display: none;
         }
 
@@ -93,7 +184,7 @@
         .visualize {
             position: absolute;
             inset: 0;
-            z-index: 1;
+            z-index: 2;
             background: #f0f0f0df;
             transition: background-color 0.8s ease;
         }
@@ -586,8 +677,12 @@
 
 <body>
     <main id="stage">
+        <img id="experienceBackground" src="./background.png" alt="" aria-hidden="true">
         <div id="startScreen">
-            <img id="startThumbnail" src="./thumbnail.png" alt="">
+            <div id="startThumbnail" aria-label="Suitopiaぷちフェス 顔あそび 体験その1">
+                <img class="startThumbnailLayer startThumbnailTitle" src="./title_block.png" alt="Suitopiaぷちフェス！ 顔あそび">
+                <img class="startThumbnailLayer startThumbnailDetail" src="./detail_block.png" alt="体験その① 顔をたくさん動かして、いろんな形を作ってみよう！">
+            </div>
         </div>
         <video id="video" autoplay playsinline muted></video>
         <img id="sourceImage" alt="" hidden>
@@ -616,14 +711,14 @@
                 </span>
             </div>
         </div>
-        <div id="layerControls">
+        <div id="layerControls" hidden>
             <label>
                 <input id="visualizeToggle" type="checkbox">
                 <span>visualize_01</span>
             </label>
             <button id="shuffleSpectrum" type="button" hidden>シャッフル</button>
         </div>
-        <div id="sourceControls">
+        <div id="sourceControls" hidden>
             <button id="cameraButton" type="button">WebCam</button>
             <label for="fileInput"><span>動画</span>
                 <input id="fileInput" type="file" accept="video/*">
@@ -635,7 +730,7 @@
                 <input id="expressionImageInput" type="file" accept="image/jpeg,image/png,image/webp">
             </label>
         </div>
-        <div id="out">
+        <div id="out" hidden>
             <div id="calibControls">
                 <button id="calibrate">キャリブ</button>
                 <button id="measureMotionGain" type="button">係数測定</button>
@@ -758,7 +853,8 @@
     let running = false;
     let loopToken = 0;
     let calibratingVideoFile = false;
-    let uiHidden = false;
+    let startTransitionActive = false;
+    let uiHidden = true;
     let calibrationGuideActive = false;
     let calibrationIntroUntil = 0;
     let calibrationStage = "idle";
@@ -805,11 +901,8 @@
 
     document.addEventListener("keydown", event => {
         if (event.key !== " " || event.repeat) return;
-        uiHidden = !uiHidden;
-        for (const panel of debugPanels) {
-            panel.hidden = uiHidden;
-        }
-        calibrationGuide.hidden = !calibrationGuideActive;
+        setDebugUiHidden(!uiHidden);
+        syncCalibrationGuideVisibility();
     });
 
     window.addEventListener("resize", resizeLandmarkCanvas);
@@ -905,22 +998,61 @@
         toggleShapes.textContent = `${expanded ? "▲" : "▼"}`;
     }
 
-    function enterExperience() {
+    function setDebugUiHidden(hidden) {
+        uiHidden = hidden;
+        for (const panel of debugPanels) {
+            panel.hidden = hidden;
+        }
+    }
+
+    function syncCalibrationGuideVisibility() {
+        calibrationGuide.hidden = startTransitionActive || !calibrationGuideActive;
+    }
+
+    function activateExperience() {
         if (!visualizeToggle.checked) {
             visualizeToggle.checked = true;
             toggleVisualize();
         }
+        canvas.hidden = true;
+        setDebugUiHidden(true);
+        syncCalibrationGuideVisibility();
+    }
+
+    function enterExperience() {
+        activateExperience();
         startScreen.hidden = true;
-        uiHidden = true;
-        for (const panel of debugPanels) {
-            panel.hidden = true;
-        }
-        calibrationGuide.hidden = !calibrationGuideActive;
+    }
+
+    async function playStartTransition() {
+        stage.classList.remove("is-preparing");
+        stage.classList.add("is-starting");
+        startScreen.classList.add("is-transitioning");
+        activateExperience();
+        await new Promise(resolve => video.addEventListener("animationend", resolve, { once: true }));
+        startScreen.hidden = true;
+        startScreen.classList.remove("is-transitioning");
+        stage.classList.remove("is-starting");
     }
 
     async function startCameraExperience() {
-        await startCamera();
-        enterExperience();
+        const shouldAnimate = !startScreen.hidden;
+        startTransitionActive = shouldAnimate;
+        if (shouldAnimate) {
+            stage.classList.add("is-preparing");
+        }
+        try {
+            await startCamera();
+            if (shouldAnimate) {
+                await playStartTransition();
+            } else {
+                enterExperience();
+            }
+        } finally {
+            stage.classList.remove("is-preparing");
+            startTransitionActive = false;
+            syncCalibrationGuideVisibility();
+        }
     }
 
     async function importVideoExperience(file) {
@@ -1530,6 +1662,7 @@
 
     function updateAutoCalibration(faceDetected, landmarks) {
         if (!visualizing() || activeMode !== "camera") return;
+        if (startTransitionActive) return;
         const facePositioned = faceDetected && faceFitsCalibrationFrame(landmarks);
 
         if (calibrationStage === "positioning") {
