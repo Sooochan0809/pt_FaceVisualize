@@ -5,10 +5,14 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Face Visualize UI</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@700&display=swap" rel="stylesheet">
     <style>
         :root {
             color-scheme: light;
-            font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
+            font-family: "Zen Maru Gothic", sans-serif;
+            font-weight: 700;
         }
 
         * {
@@ -42,7 +46,7 @@
             color: #fff;
             font: inherit;
             font-size: 26px;
-            font-weight: 750;
+            font-weight: 700;
             text-align: center;
             cursor: pointer;
             user-select: none;
@@ -71,21 +75,19 @@
 
         function send(action) {
             if (!window.opener || window.opener.closed) {
-                panelStart.textContent = "スタート";
-                panelStart.disabled = false;
+                setButton("スタート", false);
                 return;
             }
             window.opener.postMessage({ source: "motion-control-panel", action }, targetOrigin);
         }
 
-        function setReady() {
-            panelStart.disabled = false;
-            panelStart.textContent = "スタート";
+        function setButton(label, disabled) {
+            panelStart.textContent = label;
+            panelStart.disabled = disabled;
         }
 
         panelStart.onclick = () => {
-            panelStart.disabled = true;
-            panelStart.textContent = "体験中...";
+            setButton("体験中...", true);
             send("camera");
         };
 
@@ -94,9 +96,11 @@
             if (location.origin !== "null" && event.origin !== location.origin) return;
 
             if (event.data.type === "ready") {
-                setReady();
+                setButton("スタート", false);
             } else if (event.data.type === "camera-started") {
                 panelStart.textContent = "体験中...";
+            } else if (event.data.type === "error") {
+                setButton("スタート", false);
             }
         });
 
