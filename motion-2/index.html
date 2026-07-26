@@ -383,7 +383,7 @@
             }
 
             50% {
-                transform: scale(1.24);
+                transform: scale(1.46);
             }
         }
 
@@ -395,8 +395,8 @@
             }
 
             50% {
-                transform: scale(1.22);
-                text-shadow: 0 0 16px rgb(198 46 66 / 42%);
+                transform: scale(1.42);
+                text-shadow: 0 0 22px rgb(198 46 66 / 52%);
             }
         }
 
@@ -692,11 +692,11 @@
 
 <body>
     <main id="stage">
-        <img id="experienceBackground" src="./background.png" alt="" aria-hidden="true">
+        <img id="experienceBackground" src="./assets/images/background.png" alt="" aria-hidden="true">
         <div id="startScreen">
             <div id="startThumbnail" aria-label="Suitopiaぷちフェス 顔あそび 体験その1">
-                <img class="startThumbnailLayer startThumbnailTitle" src="./title_block.png" alt="Suitopiaぷちフェス！ 顔あそび">
-                <img class="startThumbnailLayer startThumbnailDetail" src="./detail_block.png" alt="体験その① 顔をたくさん動かして、いろんな形を作ってみよう！">
+                <img class="startThumbnailLayer startThumbnailTitle" src="./assets/images/title_block.png" alt="Suitopiaぷちフェス！ 顔あそび">
+                <img class="startThumbnailLayer startThumbnailDetail" src="./assets/images/detail_block.png" alt="体験その① 顔をたくさん動かして、いろんな形を作ってみよう！">
             </div>
         </div>
         <video id="video" autoplay playsinline muted></video>
@@ -764,7 +764,7 @@
             <div id="shapesPanel" hidden></div>
         </div>
     </main>
-    <audio id="pointGetSound" src="./point-get.mp3" preload="auto"></audio>
+    <audio id="pointGetSound" src="./assets/audio/point-get.mp3" preload="auto"></audio>
 <script>
     window.motionControlPanel = window.open(
         "./control-panel.html",
@@ -845,13 +845,18 @@
     ];
     const CALIBRATION_OUTLINE_STAGES = new Set(["positioning", "intro", "waiting", "recording"]);
     const CALIBRATION_INTRO_MS = 2000;
+    const EXPERIENCE_DURATION_SECONDS = 60;
+    const EXPERIENCE_DURATION_MS = EXPERIENCE_DURATION_SECONDS * 1000;
+    const EXPERIENCE_INTRO_STEP_MS = 3000;
     const EXPERIENCE_INTRO_STEPS = [
-        { message: "顔を動かすとスコアが増えるよ！", guide: "score", duration: 3000 },
-        { message: "違う形を作ると高得点！", guide: "score", duration: 3000 },
-        { message: "制限時間は60秒！", guide: "timer", duration: 3000 },
-        { message: "さぁ！顔を大きく動かしてみましょう！", startsExperience: true, duration: 3000 }
+        { message: "顔を動かすとスコアが増えるよ！", guide: "score" },
+        { message: "違う形を作ると高得点！", guide: "score" },
+        { message: `制限時間は${EXPERIENCE_DURATION_SECONDS}秒！`, guide: "timer" },
+        { message: "さぁ！顔を大きく動かしてみましょう！", startsExperienceAfter: true }
     ];
-    const EXPERIENCE_DURATION_MS = 60000;
+    const WORK_MUSIC_RATE_NORMAL = 1;
+    const WORK_MUSIC_RATE_WARNING = 1.2;
+    const WORK_MUSIC_RATE_URGENT = 2;
     const SCORE_TRIGGER_THRESHOLD = 1.80;
     const SCORE_EVENT_COOLDOWN_MS = 220;
     const SCORE_MEDIUM_THRESHOLD = 2.8;
@@ -885,6 +890,8 @@
     let experienceScore = 0;
     let lastScoreEventAt = 0;
     let experienceSessionId = 0;
+    let experienceFinished = false;
+    let workMusicPlaybackRate = WORK_MUSIC_RATE_NORMAL;
     const previousMotionScores = new Map();
     const discoveredScoreShapes = new Set(["circle"]);
     let lastScoredShapeName = "circle";
@@ -1064,6 +1071,7 @@
         const shouldAnimate = !startScreen.hidden;
         startTransitionActive = shouldAnimate;
         if (shouldAnimate) {
+            sendControlPanelMessage({ type: "thumbnail-fade-out" });
             stage.classList.add("is-preparing");
         }
         try {
@@ -1179,6 +1187,7 @@
 
     function startExperienceIntro() {
         hideExperienceAnnouncement();
+        stopWorkMusic();
         visualizeStartedAt = 0;
         startExperienceHud();
         const sequenceId = ++experienceIntroSequenceId;
@@ -1193,13 +1202,16 @@
                 return;
             }
 
-            if (step.startsExperience) {
-                visualizeStartedAt = performance.now();
-                resetMotionTracking();
-            }
-
             showExperienceAnnouncement(step.message, step.guide);
-            experienceAnnouncementTimer = window.setTimeout(showNextStep, step.duration);
+            experienceAnnouncementTimer = window.setTimeout(() => {
+                if (sequenceId !== experienceIntroSequenceId) return;
+                if (step.startsExperienceAfter) {
+                    visualizeStartedAt = performance.now();
+                    resetMotionTracking();
+                    startWorkMusic();
+                }
+                showNextStep();
+            }, EXPERIENCE_INTRO_STEP_MS);
         };
 
         showNextStep();
@@ -1209,14 +1221,15 @@
         experienceSessionId++;
         resetScoreState();
         experienceScoreValue.textContent = "0";
-        experienceTimerValue.textContent = String(EXPERIENCE_DURATION_MS / 1000);
+        experienceTimerValue.textContent = String(EXPERIENCE_DURATION_SECONDS);
         experienceTimerValue.classList.remove("is-warning", "is-urgent");
-        experienceTimer.setAttribute("aria-label", `残り${EXPERIENCE_DURATION_MS / 1000}秒`);
+        experienceTimer.setAttribute("aria-label", `残り${EXPERIENCE_DURATION_SECONDS}秒`);
         experienceHud.hidden = false;
     }
 
     function hideExperienceHud() {
         hideExperienceAnnouncement();
+        stopWorkMusic();
         experienceSessionId++;
         experienceHud.hidden = true;
         resetScoreState();
@@ -1225,6 +1238,8 @@
     function resetScoreState() {
         experienceScore = 0;
         lastScoreEventAt = 0;
+        experienceFinished = false;
+        workMusicPlaybackRate = WORK_MUSIC_RATE_NORMAL;
         lastScoredShapeName = "circle";
         discoveredScoreShapes.clear();
         discoveredScoreShapes.add("circle");
@@ -1247,8 +1262,15 @@
         experienceTimerValue.classList.toggle("is-warning", remainingSeconds === 30);
         experienceTimerValue.classList.toggle("is-urgent", remainingSeconds <= 10);
         experienceTimer.setAttribute("aria-label", `残り${remainingSeconds}秒`);
+        updateWorkMusicPlaybackRate(remainingSeconds);
 
-        if (!remaining) return;
+        if (!remaining) {
+            if (!experienceFinished) {
+                experienceFinished = true;
+                stopWorkMusic();
+            }
+            return;
+        }
         const motionAmount = measureMotionAmount(categories, now);
 
         if (
@@ -1258,6 +1280,30 @@
             lastScoreEventAt = now;
             launchScoreEffect(scoreForMotion(motionAmount));
         }
+    }
+
+    function updateWorkMusicPlaybackRate(remainingSeconds) {
+        const playbackRate = remainingSeconds <= 10
+            ? WORK_MUSIC_RATE_URGENT
+            : remainingSeconds <= 30
+                ? WORK_MUSIC_RATE_WARNING
+                : WORK_MUSIC_RATE_NORMAL;
+        setWorkMusicPlaybackRate(playbackRate);
+    }
+
+    function setWorkMusicPlaybackRate(playbackRate, force = false) {
+        if (!force && playbackRate === workMusicPlaybackRate) return;
+        workMusicPlaybackRate = playbackRate;
+        sendControlPanelMessage({ type: "work-music-rate", playbackRate });
+    }
+
+    function startWorkMusic() {
+        setWorkMusicPlaybackRate(WORK_MUSIC_RATE_NORMAL, true);
+        sendControlPanelMessage({ type: "work-music-start" });
+    }
+
+    function stopWorkMusic() {
+        sendControlPanelMessage({ type: "work-music-stop" });
     }
 
     function measureMotionAmount(categories, now) {
@@ -2193,6 +2239,7 @@
         calibrationStage = "complete";
         resetMotionVisualState();
         hideCalibrationGuide();
+        sendControlPanelMessage({ type: "calibration-complete" });
         startExperienceIntro();
         status.textContent = `キャリブ済み (${calibration.samples} frames)`;
     }
@@ -2784,7 +2831,7 @@
 
     function currentMaterial(now) {
         const startedAt = visualizeStartedAt || now;
-        const elapsed = clamp((now - startedAt) / 1000, 0, EXPERIENCE_DURATION_MS / 1000);
+        const elapsed = clamp((now - startedAt) / 1000, 0, EXPERIENCE_DURATION_SECONDS);
         let phaseIndex = 0;
 
         while (phaseIndex + 1 < MATERIAL_PHASES.length && elapsed >= MATERIAL_PHASES[phaseIndex + 1].start) {
