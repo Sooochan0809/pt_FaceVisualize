@@ -72,6 +72,7 @@
     <audio id="workMusic" src="./assets/audio/work.mp3" preload="auto" loop></audio>
     <audio id="startSound" src="./assets/audio/start.mp3" preload="auto"></audio>
     <audio id="calibrationSound" src="./assets/audio/calibration.mp3" preload="auto"></audio>
+    <audio id="finishSound" src="./assets/audio/finish.mp3" preload="auto"></audio>
 
     <script>
         const panelStart = document.getElementById("panelStart");
@@ -79,6 +80,7 @@
         const workMusic = document.getElementById("workMusic");
         const startSound = document.getElementById("startSound");
         const calibrationSound = document.getElementById("calibrationSound");
+        const finishSound = document.getElementById("finishSound");
         const targetOrigin = location.origin === "null" ? "*" : location.origin;
         const THUMBNAIL_MUSIC_VOLUME = 0.55;
         const WORK_MUSIC_VOLUME = 0.7;
@@ -157,7 +159,6 @@
             setButton("体験中...", true);
             playEffectSound(startSound);
             unlockWorkMusic();
-            fadeOutAudio(thumbnailMusic, THUMBNAIL_MUSIC_VOLUME);
             send("camera");
         };
 
@@ -165,27 +166,37 @@
             if (event.source !== window.opener || event.data?.source !== "motion-main") return;
             if (location.origin !== "null" && event.origin !== location.origin) return;
 
-            if (event.data.type === "ready") {
-                setButton("スタート", false);
-            } else if (event.data.type === "camera-started") {
-                panelStart.textContent = "体験中...";
-            } else if (event.data.type === "error") {
-                playLoopMusic(thumbnailMusic, THUMBNAIL_MUSIC_VOLUME);
-                setButton("スタート", false);
-            } else if (event.data.type === "thumbnail-fade-out") {
-                fadeOutAudio(thumbnailMusic, THUMBNAIL_MUSIC_VOLUME);
-            } else if (event.data.type === "work-music-start") {
-                playLoopMusic(workMusic, WORK_MUSIC_VOLUME);
-            } else if (event.data.type === "work-music-stop") {
-                fadeOutAudio(workMusic, WORK_MUSIC_VOLUME);
-                workMusic.playbackRate = 1;
-            } else if (event.data.type === "work-music-rate") {
-                const playbackRate = Number(event.data.playbackRate);
-                if (Number.isFinite(playbackRate) && playbackRate >= 0.5 && playbackRate <= 2) {
-                    workMusic.playbackRate = playbackRate;
+            switch (event.data.type) {
+                case "ready":
+                    setButton("スタート", false);
+                    break;
+                case "error":
+                    playLoopMusic(thumbnailMusic, THUMBNAIL_MUSIC_VOLUME);
+                    setButton("スタート", false);
+                    break;
+                case "thumbnail-fade-out":
+                    fadeOutAudio(thumbnailMusic, THUMBNAIL_MUSIC_VOLUME);
+                    break;
+                case "work-music-start":
+                    playLoopMusic(workMusic, WORK_MUSIC_VOLUME);
+                    break;
+                case "work-music-stop":
+                    fadeOutAudio(workMusic, WORK_MUSIC_VOLUME);
+                    workMusic.playbackRate = 1;
+                    break;
+                case "work-music-rate": {
+                    const playbackRate = Number(event.data.playbackRate);
+                    if (Number.isFinite(playbackRate) && playbackRate >= 0.5 && playbackRate <= 2) {
+                        workMusic.playbackRate = playbackRate;
+                    }
+                    break;
                 }
-            } else if (event.data.type === "calibration-complete") {
-                playEffectSound(calibrationSound);
+                case "calibration-complete":
+                    playEffectSound(calibrationSound);
+                    break;
+                case "finish":
+                    playEffectSound(finishSound);
+                    break;
             }
         });
 

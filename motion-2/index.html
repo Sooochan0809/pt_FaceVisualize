@@ -406,13 +406,6 @@
             right: 0;
             width: clamp(280px, 34vw, 380px);
             height: clamp(280px, 34vw, 380px);
-            display: block;
-            padding: 0;
-            border: 0;
-            border-radius: 0;
-            background: none;
-            box-shadow: none;
-            backdrop-filter: none;
             font-size: clamp(1.4rem, 3.8vw, 2.1rem);
             text-align: center;
         }
@@ -467,6 +460,148 @@
             position: absolute;
             inset: 0;
             overflow: hidden;
+        }
+
+        #experienceResults {
+            position: absolute;
+            inset: 0;
+            z-index: 20;
+            display: grid;
+            place-items: center;
+            padding: 6%;
+            background: rgb(255 250 242 / 72%);
+            backdrop-filter: blur(12px);
+            color: #2f2250;
+            pointer-events: none;
+        }
+
+        #experienceResults[hidden] {
+            display: none;
+        }
+
+        #experienceResultsCard {
+            width: min(82%, 700px);
+            padding: clamp(32px, 5vw, 58px);
+            border: 6px solid #fff;
+            border-radius: clamp(34px, 5vw, 58px);
+            background: rgb(255 255 255 / 94%);
+            box-shadow:
+                0 14px 0 rgb(98 81 214 / 16%),
+                0 30px 70px rgb(47 34 80 / 24%);
+            text-align: center;
+            animation: experienceResultsPop 0.65s cubic-bezier(0.2, 1.45, 0.45, 1) both;
+        }
+
+        #experienceResultsTitle {
+            margin: 0;
+            color: #6251d6;
+            font-size: clamp(1.6rem, 4.5vw, 2.5rem);
+        }
+
+        #experienceResultScore {
+            margin: 0.12em 0 0.5em;
+            color: #111;
+            font-size: clamp(3rem, 9vw, 5.4rem);
+            font-variant-numeric: tabular-nums;
+            line-height: 1.15;
+        }
+
+        #experienceResultScoreUnit {
+            margin-left: 0.12em;
+            font-size: 0.42em;
+        }
+
+        #experienceRankingTitle {
+            margin: 0 0 0.45em;
+            font-size: clamp(1.25rem, 3.5vw, 2rem);
+        }
+
+        #experienceRankingList {
+            margin: 0;
+            display: grid;
+            gap: 0.3em;
+            padding: 0;
+            list-style: none;
+            font-size: clamp(1.35rem, 4vw, 2.3rem);
+        }
+
+        .experienceRankingRow {
+            display: grid;
+            grid-template-columns: 3.6em 1fr;
+            align-items: center;
+            padding: 0.28em 0.7em 0.36em;
+            border-radius: 999px;
+            background: #f3f0ff;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .experienceRankingRow.is-player {
+            background: #2fcf83;
+            box-shadow: 0 7px 0 rgb(20 123 78 / 20%);
+            color: #fff;
+            transform: scale(1.06);
+            animation:
+                experiencePlayerRankReveal 0.85s cubic-bezier(0.2, 1.55, 0.45, 1) both,
+                experiencePlayerRankGlow 1s ease-in-out 0.85s infinite alternate;
+        }
+
+        .experienceRankingPosition {
+            text-align: left;
+        }
+
+        .experienceRankingScore {
+            text-align: right;
+        }
+
+        .experienceRankingEllipsis {
+            margin-bottom: 0.22em;
+            color: #8b829e;
+            font-size: 1.6em;
+            line-height: 0.75;
+            text-align: center;
+        }
+
+        @keyframes experienceResultsPop {
+            from {
+                opacity: 0;
+                transform: translateY(30px) scale(0.82);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0) scale(1);
+            }
+        }
+
+        @keyframes experiencePlayerRankReveal {
+            from {
+                opacity: 0;
+                transform: scale(0.68) rotate(-3deg);
+            }
+
+            68% {
+                opacity: 1;
+                transform: scale(1.12) rotate(1deg);
+            }
+
+            to {
+                opacity: 1;
+                transform: scale(1.06) rotate(0);
+            }
+        }
+
+        @keyframes experiencePlayerRankGlow {
+            from {
+                box-shadow:
+                    0 7px 0 rgb(20 123 78 / 20%),
+                    0 0 0 rgb(47 207 131 / 0%);
+            }
+
+            to {
+                box-shadow:
+                    0 7px 0 rgb(20 123 78 / 20%),
+                    0 0 26px rgb(47 207 131 / 72%);
+            }
         }
 
         .scoreToken {
@@ -569,13 +704,6 @@
             align-items: center;
         }
 
-        #shuffleSpectrum {
-            width: 100%;
-            padding: 0.25em 0.4em;
-            border-color: #777;
-            font-size: 0.85em;
-        }
-
         #sourceControls {
             position: absolute;
             top: 1rem;
@@ -665,7 +793,6 @@
             display: none;
         }
 
-        .bar.raw .fill,
         .bar.positive .fill {
             left: 50%;
         }
@@ -726,12 +853,21 @@
                 </span>
             </div>
         </div>
+        <section id="experienceResults" aria-labelledby="experienceResultsTitle" hidden>
+            <div id="experienceResultsCard">
+                <h2 id="experienceResultsTitle">あなたのスコア</h2>
+                <p id="experienceResultScore">
+                    <span id="experienceResultScoreValue">0</span><span id="experienceResultScoreUnit">点</span>
+                </p>
+                <h3 id="experienceRankingTitle">ランキング</h3>
+                <ol id="experienceRankingList"></ol>
+            </div>
+        </section>
         <div id="layerControls" hidden>
             <label>
                 <input id="visualizeToggle" type="checkbox">
                 <span>visualize_01</span>
             </label>
-            <button id="shuffleSpectrum" type="button" hidden>シャッフル</button>
         </div>
         <div id="sourceControls" hidden>
             <button id="cameraButton" type="button">WebCam</button>
@@ -780,12 +916,12 @@
     const ids = [
         "stage", "startScreen", "video", "sourceImage", "canvas", "vizCanvas", "cameraButton", "fileInput", "neutralImageInput", "expressionImageInput",
         "calibrate", "measureMotionGain", "clearBaseline", "toggleShapes", "status", "paramSetSelect", "saveParamSet", "motionGainSetSelect", "saveMotionGainSet", "shapesPanel", "layerControls", "sourceControls", "out",
-        "visualizeToggle", "visualize_01", "calibrationGuide", "calibrationGuideText", "calibrationPoint", "experienceAnnouncement", "experienceHud", "experienceTimer", "experienceTimerValue", "experienceScore", "experienceScoreNumber", "experienceScoreValue", "scoreEffectLayer", "pointGetSound", "shuffleSpectrum"
+        "visualizeToggle", "visualize_01", "calibrationGuide", "calibrationGuideText", "calibrationPoint", "experienceAnnouncement", "experienceHud", "experienceTimer", "experienceTimerValue", "experienceScore", "experienceScoreNumber", "experienceScoreValue", "scoreEffectLayer", "experienceResults", "experienceResultScoreValue", "experienceRankingList", "pointGetSound"
     ];
     const {
         stage, startScreen, video, sourceImage, canvas, vizCanvas, cameraButton, fileInput, neutralImageInput, expressionImageInput,
         calibrate, measureMotionGain, clearBaseline, toggleShapes, status, paramSetSelect, saveParamSet, motionGainSetSelect, saveMotionGainSet, shapesPanel, layerControls, sourceControls, out,
-        visualizeToggle, visualize_01: visualize, calibrationGuide, calibrationGuideText, calibrationPoint, experienceAnnouncement, experienceHud, experienceTimer, experienceTimerValue, experienceScore: experienceScorePanel, experienceScoreNumber, experienceScoreValue, scoreEffectLayer, pointGetSound, shuffleSpectrum
+        visualizeToggle, visualize_01: visualize, calibrationGuide, calibrationGuideText, calibrationPoint, experienceAnnouncement, experienceHud, experienceTimer, experienceTimerValue, experienceScore: experienceScorePanel, experienceScoreNumber, experienceScoreValue, scoreEffectLayer, experienceResults, experienceResultScoreValue, experienceRankingList, pointGetSound
     } = Object.fromEntries(ids.map(id => [id, $(id)]));
     const debugPanels = [layerControls, sourceControls, out];
     const panelTargetOrigin = location.origin === "null" ? "*" : location.origin;
@@ -866,6 +1002,9 @@
     const SCORE_LAUNCH_RADIUS_RATIO = 0.39;
     const SCORE_FLIGHT_MS = 1000;
     const SCORE_ARRIVAL_DELAY_MS = 940;
+    const EXPERIENCE_RESULT_DELAY_MS = SCORE_ARRIVAL_DELAY_MS + 200;
+    const SCORE_RANKING_STORAGE_KEY = "motion2ScoreRanking";
+    const SCORE_RANKING_LIMIT = 30;
     const calibration = createCalibrationState();
     const poseCalibration = createPoseCalibrationState();
     const motionGainCalibration = { active: false, startedAt: 0, duration: MOTION_GAIN_SAMPLE_MS, setIndex: 0, stats: new Map(), sets: [] };
@@ -891,6 +1030,7 @@
     let lastScoreEventAt = 0;
     let experienceSessionId = 0;
     let experienceFinished = false;
+    let experienceResultTimer = 0;
     let workMusicPlaybackRate = WORK_MUSIC_RATE_NORMAL;
     const previousMotionScores = new Map();
     const discoveredScoreShapes = new Set(["circle"]);
@@ -907,7 +1047,6 @@
 
     Object.assign(canvas, { width: 720, height: 960 });
     Object.assign(vizCanvas, { width: canvas.width, height: canvas.height });
-    resizeLandmarkCanvas();
 
     const faceLandmarker = await FaceLandmarker.createFromOptions(
         await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.34/wasm"),
@@ -937,7 +1076,6 @@
         syncCalibrationGuideVisibility();
     });
 
-    window.addEventListener("resize", resizeLandmarkCanvas);
     window.addEventListener("beforeunload", () => {
         if (controlPanelWindow && !controlPanelWindow.closed) controlPanelWindow.close();
     });
@@ -980,14 +1118,14 @@
         measureMotionGain.disabled = false;
     };
 
-    shuffleSpectrum.onclick = () => {
-        spectrumOrder = shuffle(spectrumOrder);
-    };
-
     cameraButton.onclick = () => startCameraExperience().catch(report("カメラを開始できません"));
 
     fileInput.onchange = event => {
-        importVideoExperience(event.target.files[0]).catch(report("ファイルを読み込めません"));
+        const file = event.target.files[0];
+        if (!file) return;
+        importFile(file)
+            .then(enterExperience)
+            .catch(report("ファイルを読み込めません"));
     };
     neutralImageInput.onchange = event => {
         selectImagePairFile("neutral", event.target.files[0])?.catch(report("画像を解析できません"));
@@ -1088,12 +1226,6 @@
         }
     }
 
-    async function importVideoExperience(file) {
-        if (!file) return;
-        await importFile(file);
-        enterExperience();
-    }
-
     function sendControlPanelMessage(message) {
         if (!controlPanelWindow || controlPanelWindow.closed) return;
         controlPanelWindow.postMessage({ source: "motion-main", ...message }, panelTargetOrigin);
@@ -1107,16 +1239,13 @@
         if (action === "panel-ready") {
             sendControlPanelMessage({ type: "ready" });
         } else if (action === "camera") {
-            startCameraExperience()
-                .then(() => sendControlPanelMessage({ type: "camera-started" }))
-                .catch(report("カメラを開始できません"));
+            startCameraExperience().catch(report("カメラを開始できません"));
         }
     }
 
     function toggleVisualize() {
         const active = visualizeToggle.checked;
         visualize.hidden = !active;
-        shuffleSpectrum.hidden = !active;
         if (!active) {
             visualizeStartedAt = 0;
             resetMotionVisualState();
@@ -1128,15 +1257,7 @@
         visualizeStartedAt = activeMode === "camera" ? 0 : performance.now();
         resetMotionVisualState();
         setShapesExpanded(false);
-        waitForFaceCalibration();
-    }
-
-    function resizeLandmarkCanvas() {
-        const targetWidth = 720;
-        const targetHeight = 960;
-
-        if (canvas.width === targetWidth && canvas.height === targetHeight) return;
-        Object.assign(canvas, { width: targetWidth, height: targetHeight });
+        if (activeMode === "camera") beginFacePositioning();
     }
 
     function startGuidedCalibration() {
@@ -1236,6 +1357,8 @@
     }
 
     function resetScoreState() {
+        window.clearTimeout(experienceResultTimer);
+        experienceResultTimer = 0;
         experienceScore = 0;
         lastScoreEventAt = 0;
         experienceFinished = false;
@@ -1245,6 +1368,8 @@
         discoveredScoreShapes.add("circle");
         resetMotionTracking();
         scoreEffectLayer.replaceChildren();
+        experienceRankingList.replaceChildren();
+        experienceResults.hidden = true;
     }
 
     function resetMotionTracking() {
@@ -1265,10 +1390,7 @@
         updateWorkMusicPlaybackRate(remainingSeconds);
 
         if (!remaining) {
-            if (!experienceFinished) {
-                experienceFinished = true;
-                stopWorkMusic();
-            }
+            if (!experienceFinished) finishExperience();
             return;
         }
         const motionAmount = measureMotionAmount(categories, now);
@@ -1280,6 +1402,102 @@
             lastScoreEventAt = now;
             launchScoreEffect(scoreForMotion(motionAmount));
         }
+    }
+
+    function finishExperience() {
+        experienceFinished = true;
+        stopWorkMusic();
+        sendControlPanelMessage({ type: "finish" });
+        const sessionId = experienceSessionId;
+
+        experienceResultTimer = window.setTimeout(() => {
+            if (sessionId !== experienceSessionId || !experienceFinished) return;
+            showExperienceResults(sessionId);
+        }, EXPERIENCE_RESULT_DELAY_MS);
+    }
+
+    function showExperienceResults(sessionId) {
+        const finalScore = experienceScore;
+        const result = saveScoreRanking(finalScore);
+        if (sessionId !== experienceSessionId || !experienceFinished) return;
+
+        experienceHud.hidden = true;
+        experienceResultScoreValue.textContent = String(finalScore);
+        experienceRankingList.replaceChildren();
+
+        result.topThree.forEach(entry => {
+            experienceRankingList.append(createRankingRow(entry.rank, entry.score, entry.id === result.player.id));
+        });
+
+        if (result.playerRank > 3) {
+            const ellipsis = document.createElement("li");
+            ellipsis.className = "experienceRankingEllipsis";
+            ellipsis.textContent = "⋮";
+            experienceRankingList.append(
+                ellipsis,
+                createRankingRow(result.playerRank, result.player.score, true)
+            );
+        }
+
+        experienceResults.hidden = false;
+    }
+
+    function saveScoreRanking(score) {
+        const player = {
+            id: globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`,
+            score,
+            completedAt: Date.now()
+        };
+        const ranking = [...loadScoreRanking(), player]
+            .sort((a, b) => b.score - a.score || a.completedAt - b.completedAt);
+        const playerRank = ranking.findIndex(entry => entry.id === player.id) + 1;
+        writeScoreRanking(ranking.slice(0, SCORE_RANKING_LIMIT));
+
+        return {
+            player,
+            playerRank,
+            topThree: ranking.slice(0, 3).map((entry, index) => ({ ...entry, rank: index + 1 }))
+        };
+    }
+
+    function loadScoreRanking() {
+        try {
+            return normalizeScoreRanking(
+                JSON.parse(localStorage.getItem(SCORE_RANKING_STORAGE_KEY) ?? "[]")
+            );
+        } catch {
+            return [];
+        }
+    }
+
+    function writeScoreRanking(ranking) {
+        try {
+            localStorage.setItem(SCORE_RANKING_STORAGE_KEY, JSON.stringify(ranking));
+        } catch {}
+    }
+
+    function normalizeScoreRanking(value) {
+        if (!Array.isArray(value)) return [];
+        return value.filter(entry =>
+            entry
+            && typeof entry.id === "string"
+            && Number.isFinite(entry.score)
+            && Number.isFinite(entry.completedAt)
+        );
+    }
+
+    function createRankingRow(rank, score, isPlayer) {
+        const row = document.createElement("li");
+        const position = document.createElement("span");
+        const scoreText = document.createElement("span");
+
+        row.className = `experienceRankingRow${isPlayer ? " is-player" : ""}`;
+        position.className = "experienceRankingPosition";
+        scoreText.className = "experienceRankingScore";
+        position.textContent = `${rank}位`;
+        scoreText.textContent = `${score}点`;
+        row.append(position, scoreText);
+        return row;
     }
 
     function updateWorkMusicPlaybackRate(remainingSeconds) {
@@ -1491,11 +1709,6 @@
         return activeMode === "camera" && CALIBRATION_OUTLINE_STAGES.has(calibrationStage);
     }
 
-    function waitForFaceCalibration() {
-        if (activeMode !== "camera") return;
-        beginFacePositioning();
-    }
-
     function resetCalibration({ warmup = 0, frames = 0, clearGains = false } = {}) {
         base.clear();
         if (clearGains) {
@@ -1513,10 +1726,7 @@
     }
 
     async function startCamera() {
-        stopLoop();
-        stopCameraStream();
-        clearImportedFile();
-        clearImagePairMedia();
+        resetMediaSource();
         await setLandmarkerMode("VIDEO");
         video.srcObject = await navigator.mediaDevices.getUserMedia({
             video: { width: { ideal: VW }, height: { ideal: VH }, aspectRatio: { ideal: 16 / 9 } }
@@ -1528,10 +1738,7 @@
 
     async function importFile(file) {
         if (!file) return;
-        stopLoop();
-        stopCameraStream();
-        clearImportedFile();
-        clearImagePairMedia();
+        resetMediaSource();
         activeObjectUrl = URL.createObjectURL(file);
 
         if (file.type.startsWith("video/")) {
@@ -1577,10 +1784,7 @@
         const { neutral, expression } = imagePairFiles;
         if (!neutral || !expression) return;
 
-        stopLoop();
-        stopCameraStream();
-        clearImportedFile();
-        clearImagePairMedia({ resetInputs: false });
+        resetMediaSource({ resetImageInputs: false });
         imagePairObjectUrls = [URL.createObjectURL(neutral), URL.createObjectURL(expression)];
         const neutralImage = new Image();
 
@@ -1856,6 +2060,13 @@
         video.srcObject = null;
     }
 
+    function resetMediaSource({ resetImageInputs = true } = {}) {
+        stopLoop();
+        stopCameraStream();
+        clearImportedFile();
+        clearImagePairMedia({ resetInputs: resetImageInputs });
+    }
+
     function clearImportedFile() {
         if (activeObjectUrl) URL.revokeObjectURL(activeObjectUrl);
         activeObjectUrl = "";
@@ -1997,26 +2208,37 @@
     }
 
     async function loadParamSets() {
+        return loadSequentialSets({
+            nameForIndex: datasetName,
+            pathForName: name => `${PARAM_SET_DIR}/${name}`,
+            parse: (stored, name) => {
+                const paramSet = stored?.[name] ?? stored;
+                return validParamSet(paramSet) ? paramSet : null;
+            },
+            errorMessage: "parameterを読み込めません"
+        });
+    }
+
+    async function loadSequentialSets({ nameForIndex, pathForName, parse, errorMessage }) {
         try {
             const sets = {};
 
             for (let index = 1; index <= 99; index++) {
-                const name = datasetName(index);
-                const response = await fetch(`${PARAM_SET_DIR}/${name}`, { cache: "no-store" });
+                const name = nameForIndex(index);
+                const response = await fetch(pathForName(name), { cache: "no-store" });
                 if (response.status === 404) break;
                 if (!response.ok) throw new Error(`${name}: HTTP ${response.status}`);
 
                 const text = await response.text();
                 if (!text.trim()) continue;
 
-                const stored = JSON.parse(text);
-                const paramSet = stored?.[name] ?? stored;
-                if (validParamSet(paramSet)) sets[name] = paramSet;
+                const value = parse(JSON.parse(text), name);
+                if (value) sets[name] = value;
             }
 
             return sets;
         } catch (error) {
-            status.textContent = `parameterを読み込めません: ${error.message}`;
+            status.textContent = `${errorMessage}: ${error.message}`;
             return {};
         }
     }
@@ -2025,16 +2247,23 @@
         return value && typeof value === "object" && !Array.isArray(value);
     }
 
+    function renderNamedOptions(select, collection, selectedName, emptyLabel) {
+        const names = Object.keys(collection).sort((a, b) => a.localeCompare(b, "ja", { numeric: true }));
+        select.replaceChildren(
+            new Option(emptyLabel, ""),
+            ...names.map(name => new Option(name, name))
+        );
+        select.value = names.includes(selectedName) ? selectedName : "";
+        return select.value;
+    }
+
     function renderParamSetOptions(selectedName = activeParamSetName) {
-        const names = Object.keys(paramSets).sort((a, b) => a.localeCompare(b, "ja", { numeric: true }));
-        paramSetSelect.replaceChildren(new Option("セットなし", ""));
-
-        for (const name of names) {
-            paramSetSelect.appendChild(new Option(name, name));
-        }
-
-        activeParamSetName = names.includes(selectedName) ? selectedName : "";
-        paramSetSelect.value = activeParamSetName;
+        activeParamSetName = renderNamedOptions(
+            paramSetSelect,
+            paramSets,
+            selectedName,
+            "セットなし"
+        );
     }
 
     async function saveCurrentParamSet() {
@@ -2048,7 +2277,7 @@
         paramSets[name] = paramSet;
 
         try {
-            await writeParamSetFile(JSON.stringify(paramSet, null, 2), name);
+            await writeJsonFile(JSON.stringify(paramSet, null, 2), name);
             renderParamSetOptions(name);
             status.textContent = `${name} を書き出しました`;
         } catch (error) {
@@ -2057,7 +2286,7 @@
         }
     }
 
-    async function writeParamSetFile(json, name) {
+    async function writeJsonFile(json, name) {
         const blob = new Blob([json], { type: "application/json" });
 
         if ("showSaveFilePicker" in window) {
@@ -2077,18 +2306,22 @@
     }
 
     function nextParamSetName() {
-        let index = Object.keys(paramSets).length + 1;
-        let name = "";
-
-        do {
-            name = datasetName(index++);
-        } while (name in paramSets);
-
-        return name;
+        return nextAvailableName(paramSets, datasetName);
     }
 
     function datasetName(index) {
         return `dataset${String(index).padStart(2, "0")}`;
+    }
+
+    function nextAvailableName(collection, nameForIndex) {
+        let index = Object.keys(collection).length + 1;
+        let name;
+
+        do {
+            name = nameForIndex(index++);
+        } while (name in collection);
+
+        return name;
     }
 
     function applyParamSet(name) {
@@ -2104,27 +2337,15 @@
     }
 
     async function loadMotionGainSets() {
-        try {
-            const sets = {};
-
-            for (let index = 1; index <= 99; index++) {
-                const name = motionGainSetName(index);
-                const response = await fetch(`${PARAM_SET_DIR}/${name}.json`, { cache: "no-store" });
-                if (response.status === 404) break;
-                if (!response.ok) throw new Error(`${name}.json: HTTP ${response.status}`);
-
-                const text = await response.text();
-                if (!text.trim()) continue;
-
-                const gainSet = normalizeMotionGainSet(JSON.parse(text));
-                if (validMotionGainSet(gainSet)) sets[name] = gainSet;
-            }
-
-            return sets;
-        } catch (error) {
-            status.textContent = `係数セットを読み込めません: ${error.message}`;
-            return {};
-        }
+        return loadSequentialSets({
+            nameForIndex: motionGainSetName,
+            pathForName: name => `${PARAM_SET_DIR}/${name}.json`,
+            parse: stored => {
+                const gainSet = normalizeMotionGainSet(stored);
+                return validMotionGainSet(gainSet) ? gainSet : null;
+            },
+            errorMessage: "係数セットを読み込めません"
+        });
     }
 
     function validMotionGainSet(value) {
@@ -2134,15 +2355,12 @@
     }
 
     function renderMotionGainSetOptions(selectedName = activeMotionGainSetName) {
-        const names = Object.keys(motionGainSets).sort((a, b) => a.localeCompare(b, "ja", { numeric: true }));
-        motionGainSetSelect.replaceChildren(new Option("係数なし", ""));
-
-        for (const name of names) {
-            motionGainSetSelect.appendChild(new Option(name, name));
-        }
-
-        activeMotionGainSetName = names.includes(selectedName) ? selectedName : "";
-        motionGainSetSelect.value = activeMotionGainSetName;
+        activeMotionGainSetName = renderNamedOptions(
+            motionGainSetSelect,
+            motionGainSets,
+            selectedName,
+            "係数なし"
+        );
     }
 
     function applyMotionGainSet(name) {
@@ -2180,7 +2398,7 @@
         motionGainSets[name] = gainSet;
 
         try {
-            await writeParamSetFile(JSON.stringify(payload, null, 2), `${name}.json`);
+            await writeJsonFile(JSON.stringify(payload, null, 2), `${name}.json`);
             renderMotionGainSetOptions(name);
             status.textContent = `${name}.json を書き出しました`;
         } catch (error) {
@@ -2200,14 +2418,7 @@
     }
 
     function nextMotionGainSetName() {
-        let index = Object.keys(motionGainSets).length + 1;
-        let name = "";
-
-        do {
-            name = motionGainSetName(index++);
-        } while (name in motionGainSets);
-
-        return name;
+        return nextAvailableName(motionGainSets, motionGainSetName);
     }
 
     function motionGainSetName(index) {
