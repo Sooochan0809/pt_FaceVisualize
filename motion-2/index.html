@@ -106,20 +106,13 @@
         #stage.is-starting #video,
         #stage.is-starting .visualize {
             animation:
-                revealExperienceScene
-                var(--start-reveal-duration)
-                cubic-bezier(0.5, 0, 0.18, 1)
-                var(--start-reveal-delay)
-                both;
+                revealExperienceScene var(--start-reveal-duration) cubic-bezier(0.5, 0, 0.18, 1) var(--start-reveal-delay) both;
         }
 
         #startScreen.is-transitioning .startThumbnailTitle,
         #startScreen.is-transitioning .startThumbnailDetail {
             animation:
-                exitThumbnailLayer
-                var(--thumbnail-exit-duration)
-                cubic-bezier(0.55, 0, 0.3, 1)
-                forwards;
+                exitThumbnailLayer var(--thumbnail-exit-duration) cubic-bezier(0.55, 0, 0.3, 1) forwards;
         }
 
         @keyframes revealExperienceScene {
@@ -213,8 +206,7 @@
             height: 64px;
             transform: translate(-50%, -50%) rotate(-90deg);
             filter:
-                drop-shadow(0 0 5px rgb(255 255 255 / 100%))
-                drop-shadow(0 0 14px rgb(47 207 131 / 58%));
+                drop-shadow(0 0 5px rgb(255 255 255 / 100%)) drop-shadow(0 0 14px rgb(47 207 131 / 58%));
             animation: calibrationPointPulse 1.4s ease-in-out infinite;
         }
 
@@ -242,6 +234,7 @@
         }
 
         @keyframes calibrationPointPulse {
+
             0%,
             100% {
                 transform: translate(-50%, -50%) rotate(-90deg) scale(1);
@@ -377,6 +370,7 @@
         }
 
         @keyframes timerWarning {
+
             0%,
             100% {
                 transform: scale(1);
@@ -388,6 +382,7 @@
         }
 
         @keyframes timerUrgent {
+
             0%,
             100% {
                 transform: scale(1);
@@ -822,8 +817,10 @@
         <img id="experienceBackground" src="./assets/images/background.png" alt="" aria-hidden="true">
         <div id="startScreen">
             <div id="startThumbnail" aria-label="Suitopiaぷちフェス 顔あそび 体験その1">
-                <img class="startThumbnailLayer startThumbnailTitle" src="./assets/images/title_block.png" alt="Suitopiaぷちフェス！ 顔あそび">
-                <img class="startThumbnailLayer startThumbnailDetail" src="./assets/images/detail_block.png" alt="体験その① 顔をたくさん動かして、いろんな形を作ってみよう！">
+                <img class="startThumbnailLayer startThumbnailTitle" src="./assets/images/title_block.png"
+                    alt="Suitopiaぷちフェス！ 顔あそび">
+                <img class="startThumbnailLayer startThumbnailDetail" src="./assets/images/detail_block.png"
+                    alt="体験その① 顔をたくさん動かして、いろんな形を作ってみよう！">
             </div>
         </div>
         <video id="video" autoplay playsinline muted></video>
@@ -835,7 +832,8 @@
         <div id="calibrationGuide" hidden>
             <div id="calibrationCard">
                 <span id="calibrationGuideText"></span>
-                <svg id="calibrationPoint" viewBox="0 0 42 42" role="progressbar" aria-label="顔の記録状況" aria-valuemin="0" aria-valuemax="100">
+                <svg id="calibrationPoint" viewBox="0 0 42 42" role="progressbar" aria-label="顔の記録状況" aria-valuemin="0"
+                    aria-valuemax="100">
                     <circle id="calibrationPointBase" cx="21" cy="21" r="14" pathLength="100"></circle>
                     <circle id="calibrationPointProgress" cx="21" cy="21" r="14" pathLength="100"></circle>
                     <circle id="calibrationPointCenter" cx="21" cy="21" r="9.5"></circle>
@@ -901,2296 +899,2297 @@
         </div>
     </main>
     <audio id="pointGetSound" src="./assets/audio/point-get.mp3" preload="auto"></audio>
-<script>
-    window.motionControlPanel = window.open(
-        "./control-panel.html",
-        "motion2-control-panel",
-        "popup=yes,width=420,height=720,resizable=yes,scrollbars=yes"
-    );
-</script>
+    <script>
+        window.motionControlPanel = window.open(
+            "./control-panel.html",
+            "motion2-control-panel",
+            "popup=yes,width=420,height=720,resizable=yes,scrollbars=yes"
+        );
+    </script>
 
-<script type="module">
-    import { FaceLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.34";
+    <script type="module">
+        import { FaceLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.34";
 
-    const $ = id => document.getElementById(id);
-    const ids = [
-        "stage", "startScreen", "video", "sourceImage", "canvas", "vizCanvas", "cameraButton", "fileInput", "neutralImageInput", "expressionImageInput",
-        "calibrate", "measureMotionGain", "clearBaseline", "toggleShapes", "status", "paramSetSelect", "saveParamSet", "motionGainSetSelect", "saveMotionGainSet", "shapesPanel", "layerControls", "sourceControls", "out",
-        "visualizeToggle", "visualize_01", "calibrationGuide", "calibrationGuideText", "calibrationPoint", "experienceAnnouncement", "experienceHud", "experienceTimer", "experienceTimerValue", "experienceScore", "experienceScoreNumber", "experienceScoreValue", "scoreEffectLayer", "experienceResults", "experienceResultScoreValue", "experienceRankingList", "pointGetSound"
-    ];
-    const {
-        stage, startScreen, video, sourceImage, canvas, vizCanvas, cameraButton, fileInput, neutralImageInput, expressionImageInput,
-        calibrate, measureMotionGain, clearBaseline, toggleShapes, status, paramSetSelect, saveParamSet, motionGainSetSelect, saveMotionGainSet, shapesPanel, layerControls, sourceControls, out,
-        visualizeToggle, visualize_01: visualize, calibrationGuide, calibrationGuideText, calibrationPoint, experienceAnnouncement, experienceHud, experienceTimer, experienceTimerValue, experienceScore: experienceScorePanel, experienceScoreNumber, experienceScoreValue, scoreEffectLayer, experienceResults, experienceResultScoreValue, experienceRankingList, pointGetSound
-    } = Object.fromEntries(ids.map(id => [id, $(id)]));
-    const debugPanels = [layerControls, sourceControls, out];
-    const panelTargetOrigin = location.origin === "null" ? "*" : location.origin;
-    const ctx = canvas.getContext("2d");
-    const vizCtx = vizCanvas.getContext("2d");
-    const shapes = new Map();
-    const enabledParams = new Set();
-    const spectrum = new Map();
-    const spectrumVelocity = new Map();
-    const spectrumPhase = new Map();
-    const shapeWeights = new Map();
-    let spectrumOrder = [];
-    let visualizeStartedAt = 0;
-    let dominantShapeName = "circle";
-    const PARAM_SET_DIR = "../parameter";
-    const MATERIAL_TRANSITION_SECONDS = 2.5;
-    const SHAPE_POINT_COUNT = 48;
-    const SHAPE_CENTER_Y_RATIO = 0.4;
-    const SHAPE_BASE_RADIUS_RATIO = 0.33;
-    const SHAPE_MORPH_AMOUNT = 0.55;
-    const VERTEX_RESPONSE_GAIN = 24;
-    const MAX_VERTEX_DISPLACEMENT_RATIO = 0.2;
-    const MATERIAL_PHASES = [
-        { start: 0, name: "breathing", spring: 0.035, damping: 0.91, diffusion: 0.16, response: 0.42, breathing: 0.018, noise: 0.008, noiseSpeed: 0.35, ripple: 0.08, tension: 0.94, fill: 0.032, glow: 7, lineWidth: 2.4, stroke: [125, 140, 136], fillColor: [155, 185, 174], background: [240, 240, 240] },
-        { start: 8, name: "gel", spring: 0.055, damping: 0.86, diffusion: 0.1, response: 1, breathing: 0.012, noise: 0.019, noiseSpeed: 0.75, ripple: 0.22, tension: 0.82, fill: 0.09, glow: 12, lineWidth: 4, stroke: [59, 158, 111], fillColor: [66, 211, 146], background: [232, 245, 238] },
-        { start: 20, name: "water", spring: 0.04, damping: 0.94, diffusion: 0.24, response: 0.84, breathing: 0.007, noise: 0.012, noiseSpeed: 0.55, ripple: 0.45, tension: 0.92, fill: 0.045, glow: 16, lineWidth: 2.1, stroke: [56, 142, 184], fillColor: [86, 190, 222], background: [230, 241, 247] },
-        { start: 32, name: "elastic", spring: 0.11, damping: 0.77, diffusion: 0.055, response: 1.08, breathing: 0.005, noise: 0.008, noiseSpeed: 1.1, ripple: 0.3, tension: 0.68, fill: 0.04, glow: 9, lineWidth: 3, stroke: [222, 103, 76], fillColor: [244, 141, 105], background: [248, 237, 231] },
-        { start: 44, name: "viscous", spring: 0.022, damping: 0.955, diffusion: 0.13, response: 0.9, breathing: 0.014, noise: 0.016, noiseSpeed: 0.25, ripple: 0.1, tension: 0.98, fill: 0.12, glow: 8, lineWidth: 5.2, stroke: [105, 76, 128], fillColor: [145, 102, 166], background: [235, 229, 239] },
-        { start: 55, name: "fusion", spring: 0.06, damping: 0.88, diffusion: 0.18, response: 1, breathing: 0.012, noise: 0.015, noiseSpeed: 0.72, ripple: 0.32, tension: 0.84, fill: 0.1, glow: 18, lineWidth: 3.6, stroke: [123, 94, 163], fillColor: [82, 185, 163], background: [237, 233, 245] }
-    ];
-    const SHAPE_GESTURES = [
-        { name: "star", categories: ["cheekPuff"], strength: 9 },
-        { name: "triangle", categories: ["jawOpen"], strength: 8 },
-        { name: "trapezoid", categories: ["mouthSmileLeft", "mouthSmileRight"], strength: 11 },
-        { name: "diamond", categories: ["browInnerUp", "browOuterUpLeft", "browOuterUpRight"], strength: 11 },
-        { name: "ellipse", categories: ["eyeBlinkLeft", "eyeBlinkRight"], strength: 9 },
-        { name: "pentagon", categories: ["mouthPucker"], strength: 10 },
-        { name: "square", categories: ["mouthPressLeft", "mouthPressRight"], strength: 11 }
-    ];
-    const SHAPE_TEMPLATES = createShapeTemplates(SHAPE_POINT_COUNT);
-    const base = new Map();
-    const motionGains = new Map();
-    const [WARMUP_FRAMES, CALIBRATION_FRAMES, DEADZONE, SPECTRUM_ZERO_THRESHOLD, VIDEO_BASELINE_SECONDS, VIDEO_BASELINE_PASSES] = [20, 120, 0.005, 0.012, 0.2, 5];
-    const [MOTION_GAIN_SAMPLE_MS, MOTION_GAIN_SET_COUNT, MOTION_GAIN_MIN, MOTION_GAIN_MAX, MOTION_GAIN_EPSILON, MOTION_GAIN_POWER] = [20000, 3, 0, 2, 0.004, 1.5];
-    const [POSE_THRESHOLD, ROLL_THRESHOLD] = [0.38, 0.28];
-    const [LANDMARK_SMOOTHING, PRIMARY_FACE_MAX_DISTANCE] = [0.78, 0.22];
-    const [
-        POSITION_MESSAGE,
-        INTRO_MESSAGE,
-        GUIDE_MESSAGE,
-        MOTION_GAIN_MESSAGE
-    ] = [
-        "円の中に顔を入れてください",
-        "顔を動かさずに点を見つめてください",
-        "動かしていない顔を記録しています...",
-        "自由に表情を動かしてください."
-    ];
-    const CALIBRATION_OUTLINE_STAGES = new Set(["positioning", "intro", "waiting", "recording"]);
-    const CALIBRATION_INTRO_MS = 2000;
-    const EXPERIENCE_DURATION_SECONDS = 60;
-    const EXPERIENCE_DURATION_MS = EXPERIENCE_DURATION_SECONDS * 1000;
-    const EXPERIENCE_INTRO_STEP_MS = 3000;
-    const EXPERIENCE_INTRO_STEPS = [
-        { message: "顔を動かすとスコアが増えるよ！", guide: "score" },
-        { message: "違う形を作ると高得点！", guide: "score" },
-        { message: `制限時間は${EXPERIENCE_DURATION_SECONDS}秒！`, guide: "timer" },
-        { message: "さぁ！顔を大きく動かしてみましょう！", startsExperienceAfter: true }
-    ];
-    const WORK_MUSIC_RATE_NORMAL = 1;
-    const WORK_MUSIC_RATE_WARNING = 1.2;
-    const WORK_MUSIC_RATE_URGENT = 2;
-    const SCORE_TRIGGER_THRESHOLD = 1.80;
-    const SCORE_EVENT_COOLDOWN_MS = 220;
-    const SCORE_MEDIUM_THRESHOLD = 2.8;
-    const SCORE_LARGE_THRESHOLD = 4.5;
-    const SCORE_SHAPE_CHANGE_BONUS = 10;
-    const SCORE_NEW_SHAPE_BONUS = 20;
-    const SCORE_LAUNCH_RADIUS_RATIO = 0.39;
-    const SCORE_FLIGHT_MS = 1000;
-    const SCORE_ARRIVAL_DELAY_MS = 940;
-    const EXPERIENCE_RESULT_DELAY_MS = SCORE_ARRIVAL_DELAY_MS + 200;
-    const SCORE_RANKING_STORAGE_KEY = "motion2ScoreRanking";
-    const SCORE_RANKING_LIMIT = 30;
-    const calibration = createCalibrationState();
-    const poseCalibration = createPoseCalibrationState();
-    const motionGainCalibration = { active: false, startedAt: 0, duration: MOTION_GAIN_SAMPLE_MS, setIndex: 0, stats: new Map(), sets: [] };
-    const [VW, VH] = [1280, 720];
-    let activeMode = "camera";
-    let activeObjectUrl = "";
-    let imagePairObjectUrls = [];
-    let imagePairResults = null;
-    let landmarkerRunningMode = "VIDEO";
-    let controlPanelWindow = window.motionControlPanel;
-    const imagePairFiles = { neutral: null, expression: null };
-    let running = false;
-    let loopToken = 0;
-    let calibratingVideoFile = false;
-    let startTransitionActive = false;
-    let uiHidden = true;
-    let calibrationGuideActive = false;
-    let calibrationIntroUntil = 0;
-    let calibrationStage = "idle";
-    let experienceAnnouncementTimer = 0;
-    let experienceIntroSequenceId = 0;
-    let experienceScore = 0;
-    let lastScoreEventAt = 0;
-    let experienceSessionId = 0;
-    let experienceFinished = false;
-    let experienceResultTimer = 0;
-    let workMusicPlaybackRate = WORK_MUSIC_RATE_NORMAL;
-    const previousMotionScores = new Map();
-    const discoveredScoreShapes = new Set(["circle"]);
-    let lastScoredShapeName = "circle";
-    let previousMotionSampleAt = 0;
-    let paramSets = await loadParamSets();
-    let activeParamSetName = "";
-    let motionGainSets = await loadMotionGainSets();
-    let activeMotionGainSetName = "";
-    let neutralPose = null;
-    let currentPoseStable = true;
-    let primaryFaceCenter = null;
-    let smoothedLandmarks = null;
+        const $ = id => document.getElementById(id);
+        const ids = [
+            "stage", "startScreen", "video", "sourceImage", "canvas", "vizCanvas", "cameraButton", "fileInput", "neutralImageInput", "expressionImageInput",
+            "calibrate", "measureMotionGain", "clearBaseline", "toggleShapes", "status", "paramSetSelect", "saveParamSet", "motionGainSetSelect", "saveMotionGainSet", "shapesPanel", "layerControls", "sourceControls", "out",
+            "visualizeToggle", "visualize_01", "calibrationGuide", "calibrationGuideText", "calibrationPoint", "experienceAnnouncement", "experienceHud", "experienceTimer", "experienceTimerValue", "experienceScore", "experienceScoreNumber", "experienceScoreValue", "scoreEffectLayer", "experienceResults", "experienceResultScoreValue", "experienceRankingList", "pointGetSound"
+        ];
+        const {
+            stage, startScreen, video, sourceImage, canvas, vizCanvas, cameraButton, fileInput, neutralImageInput, expressionImageInput,
+            calibrate, measureMotionGain, clearBaseline, toggleShapes, status, paramSetSelect, saveParamSet, motionGainSetSelect, saveMotionGainSet, shapesPanel, layerControls, sourceControls, out,
+            visualizeToggle, visualize_01: visualize, calibrationGuide, calibrationGuideText, calibrationPoint, experienceAnnouncement, experienceHud, experienceTimer, experienceTimerValue, experienceScore: experienceScorePanel, experienceScoreNumber, experienceScoreValue, scoreEffectLayer, experienceResults, experienceResultScoreValue, experienceRankingList, pointGetSound
+        } = Object.fromEntries(ids.map(id => [id, $(id)]));
+        const debugPanels = [layerControls, sourceControls, out];
+        const panelTargetOrigin = location.origin === "null" ? "*" : location.origin;
+        const ctx = canvas.getContext("2d");
+        const vizCtx = vizCanvas.getContext("2d");
+        const shapes = new Map();
+        const enabledParams = new Set();
+        const spectrum = new Map();
+        const spectrumVelocity = new Map();
+        const spectrumPhase = new Map();
+        const shapeWeights = new Map();
+        let spectrumOrder = [];
+        let visualizeStartedAt = 0;
+        let dominantShapeName = "circle";
+        const PARAM_SET_DIR = "../parameter";
+        const MATERIAL_TRANSITION_SECONDS = 2.5;
+        const SHAPE_POINT_COUNT = 48;
+        const SHAPE_CENTER_Y_RATIO = 0.4;
+        const SHAPE_BASE_RADIUS_RATIO = 0.33;
+        const SHAPE_MORPH_AMOUNT = 0.55;
+        const VERTEX_RESPONSE_GAIN = 24;
+        const MAX_VERTEX_DISPLACEMENT_RATIO = 0.2;
+        const MATERIAL_PHASES = [
+            { start: 0, name: "breathing", spring: 0.035, damping: 0.91, diffusion: 0.16, response: 0.42, breathing: 0.018, noise: 0.008, noiseSpeed: 0.35, ripple: 0.08, tension: 0.94, fill: 0.032, glow: 7, lineWidth: 2.4, stroke: [125, 140, 136], fillColor: [155, 185, 174], background: [240, 240, 240] },
+            { start: 8, name: "gel", spring: 0.055, damping: 0.86, diffusion: 0.1, response: 1, breathing: 0.012, noise: 0.019, noiseSpeed: 0.75, ripple: 0.22, tension: 0.82, fill: 0.09, glow: 12, lineWidth: 4, stroke: [59, 158, 111], fillColor: [66, 211, 146], background: [232, 245, 238] },
+            { start: 20, name: "water", spring: 0.04, damping: 0.94, diffusion: 0.24, response: 0.84, breathing: 0.007, noise: 0.012, noiseSpeed: 0.55, ripple: 0.45, tension: 0.92, fill: 0.045, glow: 16, lineWidth: 2.1, stroke: [56, 142, 184], fillColor: [86, 190, 222], background: [230, 241, 247] },
+            { start: 32, name: "elastic", spring: 0.11, damping: 0.77, diffusion: 0.055, response: 1.08, breathing: 0.005, noise: 0.008, noiseSpeed: 1.1, ripple: 0.3, tension: 0.68, fill: 0.04, glow: 9, lineWidth: 3, stroke: [222, 103, 76], fillColor: [244, 141, 105], background: [248, 237, 231] },
+            { start: 44, name: "viscous", spring: 0.022, damping: 0.955, diffusion: 0.13, response: 0.9, breathing: 0.014, noise: 0.016, noiseSpeed: 0.25, ripple: 0.1, tension: 0.98, fill: 0.12, glow: 8, lineWidth: 5.2, stroke: [105, 76, 128], fillColor: [145, 102, 166], background: [235, 229, 239] },
+            { start: 55, name: "fusion", spring: 0.06, damping: 0.88, diffusion: 0.18, response: 1, breathing: 0.012, noise: 0.015, noiseSpeed: 0.72, ripple: 0.32, tension: 0.84, fill: 0.1, glow: 18, lineWidth: 3.6, stroke: [123, 94, 163], fillColor: [82, 185, 163], background: [237, 233, 245] }
+        ];
+        const SHAPE_GESTURES = [
+            { name: "star", categories: ["cheekPuff"], strength: 9 },
+            { name: "triangle", categories: ["jawOpen"], strength: 8 },
+            { name: "trapezoid", categories: ["mouthSmileLeft", "mouthSmileRight"], strength: 11 },
+            { name: "diamond", categories: ["browInnerUp", "browOuterUpLeft", "browOuterUpRight"], strength: 11 },
+            { name: "ellipse", categories: ["eyeBlinkLeft", "eyeBlinkRight"], strength: 9 },
+            { name: "pentagon", categories: ["mouthPucker"], strength: 10 },
+            { name: "square", categories: ["mouthPressLeft", "mouthPressRight"], strength: 11 }
+        ];
+        const SHAPE_TEMPLATES = createShapeTemplates(SHAPE_POINT_COUNT);
+        const base = new Map();
+        const motionGains = new Map();
+        const [WARMUP_FRAMES, CALIBRATION_FRAMES, DEADZONE, SPECTRUM_ZERO_THRESHOLD, VIDEO_BASELINE_SECONDS, VIDEO_BASELINE_PASSES] = [20, 120, 0.005, 0.012, 0.2, 5];
+        const [MOTION_GAIN_SAMPLE_MS, MOTION_GAIN_SET_COUNT, MOTION_GAIN_MIN, MOTION_GAIN_MAX, MOTION_GAIN_EPSILON, MOTION_GAIN_POWER] = [20000, 3, 0, 2, 0.004, 1.5];
+        const [POSE_THRESHOLD, ROLL_THRESHOLD] = [0.38, 0.28];
+        const [LANDMARK_SMOOTHING, PRIMARY_FACE_MAX_DISTANCE] = [0.78, 0.22];
+        const [
+            POSITION_MESSAGE,
+            INTRO_MESSAGE,
+            GUIDE_MESSAGE,
+            MOTION_GAIN_MESSAGE
+        ] = [
+                "円の中に顔を入れてください",
+                "顔を動かさずに点を見つめてください",
+                "動かしていない顔を記録しています...",
+                "自由に表情を動かしてください."
+            ];
+        const CALIBRATION_OUTLINE_STAGES = new Set(["positioning", "intro", "waiting", "recording"]);
+        const CALIBRATION_INTRO_MS = 2000;
+        const EXPERIENCE_DURATION_SECONDS = 60;
+        const EXPERIENCE_DURATION_MS = EXPERIENCE_DURATION_SECONDS * 1000;
+        const EXPERIENCE_INTRO_STEP_MS = 3000;
+        const EXPERIENCE_INTRO_STEPS = [
+            { message: "顔を動かすとスコアが増えるよ！", guide: "score" },
+            { message: "違う形を作ると高得点！", guide: "score" },
+            { message: `制限時間は${EXPERIENCE_DURATION_SECONDS}秒！`, guide: "timer" },
+            { message: "さぁ！顔を大きく動かしてみましょう！", startsExperienceAfter: true }
+        ];
+        const WORK_MUSIC_RATE_NORMAL = 1;
+        const WORK_MUSIC_RATE_WARNING = 1.2;
+        const WORK_MUSIC_RATE_URGENT = 2;
+        const SCORE_TRIGGER_THRESHOLD = 1.80;
+        const SCORE_EVENT_COOLDOWN_MS = 220;
+        const SCORE_MEDIUM_THRESHOLD = 2.8;
+        const SCORE_LARGE_THRESHOLD = 4.5;
+        const SCORE_SHAPE_CHANGE_BONUS = 10;
+        const SCORE_NEW_SHAPE_BONUS = 20;
+        const SCORE_LAUNCH_RADIUS_RATIO = 0.39;
+        const SCORE_FLIGHT_MS = 1000;
+        const SCORE_ARRIVAL_DELAY_MS = 940;
+        const EXPERIENCE_RESULT_DELAY_MS = SCORE_ARRIVAL_DELAY_MS + 200;
+        const SCORE_RANKING_STORAGE_KEY = "motion2ScoreRanking";
+        const SCORE_RANKING_LIMIT = 30;
+        const calibration = createCalibrationState();
+        const poseCalibration = createPoseCalibrationState();
+        const motionGainCalibration = { active: false, startedAt: 0, duration: MOTION_GAIN_SAMPLE_MS, setIndex: 0, stats: new Map(), sets: [] };
+        const [VW, VH] = [1280, 720];
+        let activeMode = "camera";
+        let activeObjectUrl = "";
+        let imagePairObjectUrls = [];
+        let imagePairResults = null;
+        let landmarkerRunningMode = "VIDEO";
+        let controlPanelWindow = window.motionControlPanel;
+        const imagePairFiles = { neutral: null, expression: null };
+        let running = false;
+        let loopToken = 0;
+        let calibratingVideoFile = false;
+        let startTransitionActive = false;
+        let uiHidden = true;
+        let calibrationGuideActive = false;
+        let calibrationIntroUntil = 0;
+        let calibrationStage = "idle";
+        let experienceAnnouncementTimer = 0;
+        let experienceIntroSequenceId = 0;
+        let experienceScore = 0;
+        let lastScoreEventAt = 0;
+        let experienceSessionId = 0;
+        let experienceFinished = false;
+        let experienceResultTimer = 0;
+        let workMusicPlaybackRate = WORK_MUSIC_RATE_NORMAL;
+        const previousMotionScores = new Map();
+        const discoveredScoreShapes = new Set(["circle"]);
+        let lastScoredShapeName = "circle";
+        let previousMotionSampleAt = 0;
+        let paramSets = await loadParamSets();
+        let activeParamSetName = "";
+        let motionGainSets = await loadMotionGainSets();
+        let activeMotionGainSetName = "";
+        let neutralPose = null;
+        let currentPoseStable = true;
+        let primaryFaceCenter = null;
+        let smoothedLandmarks = null;
 
-    Object.assign(canvas, { width: 720, height: 960 });
-    Object.assign(vizCanvas, { width: canvas.width, height: canvas.height });
+        Object.assign(canvas, { width: 720, height: 960 });
+        Object.assign(vizCanvas, { width: canvas.width, height: canvas.height });
 
-    const faceLandmarker = await FaceLandmarker.createFromOptions(
-        await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.34/wasm"),
-        {
-            baseOptions: {
-                modelAssetPath: "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/latest/face_landmarker.task"
-            },
-            runningMode: "VIDEO",
-            numFaces: 1,
-            outputFaceBlendshapes: true
-        }
-    );
+        const faceLandmarker = await FaceLandmarker.createFromOptions(
+            await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.34/wasm"),
+            {
+                baseOptions: {
+                    modelAssetPath: "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/latest/face_landmarker.task"
+                },
+                runningMode: "VIDEO",
+                numFaces: 1,
+                outputFaceBlendshapes: true
+            }
+        );
 
-    const report = message => error => {
-        status.textContent = `${message}: ${error.message}`;
-        sendControlPanelMessage({ type: "error" });
-    };
+        const report = message => error => {
+            status.textContent = `${message}: ${error.message}`;
+            sendControlPanelMessage({ type: "error" });
+        };
 
-    window.addEventListener("message", handleControlPanelMessage);
-    sendControlPanelMessage({ type: "ready" });
-    renderParamSetOptions();
-    renderMotionGainSetOptions();
+        window.addEventListener("message", handleControlPanelMessage);
+        sendControlPanelMessage({ type: "ready" });
+        renderParamSetOptions();
+        renderMotionGainSetOptions();
 
-    document.addEventListener("keydown", event => {
-        if (event.key !== " " || event.repeat) return;
-        setDebugUiHidden(!uiHidden);
-        syncCalibrationGuideVisibility();
-    });
+        document.addEventListener("keydown", event => {
+            if (event.key !== " " || event.repeat) return;
+            setDebugUiHidden(!uiHidden);
+            syncCalibrationGuideVisibility();
+        });
 
-    window.addEventListener("beforeunload", () => {
-        if (controlPanelWindow && !controlPanelWindow.closed) controlPanelWindow.close();
-    });
+        window.addEventListener("beforeunload", () => {
+            if (controlPanelWindow && !controlPanelWindow.closed) controlPanelWindow.close();
+        });
 
-    visualizeToggle.onchange = toggleVisualize;
+        visualizeToggle.onchange = toggleVisualize;
 
-    calibrate.onclick = async () => {
-        if (activeMode === "image-pair") return;
-        if (activeMode === "video-file") {
-            stopLoop();
+        calibrate.onclick = async () => {
+            if (activeMode === "image-pair") return;
+            if (activeMode === "video-file") {
+                stopLoop();
+                calibrate.disabled = true;
+                measureMotionGain.disabled = true;
+                try {
+                    await calibrateFromVideoStart();
+                    await seekVideo(0);
+                    processResults(detectCurrentFrame());
+                    await video.play();
+                    startLoop();
+                } catch (error) {
+                    calibrate.disabled = false;
+                    measureMotionGain.disabled = false;
+                    status.textContent = `動画キャリブレーション失敗: ${error.message}`;
+                }
+                return;
+            }
+            resetCalibration({ warmup: WARMUP_FRAMES, frames: CALIBRATION_FRAMES });
+            showCalibrationGuide(GUIDE_MESSAGE);
             calibrate.disabled = true;
             measureMotionGain.disabled = true;
+        };
+
+        measureMotionGain.onclick = () => {
+            startMotionGainCalibration();
+        };
+
+        clearBaseline.onclick = () => {
+            resetCalibration({ clearGains: true });
+            hideCalibrationGuide();
+            calibrate.disabled = false;
+            measureMotionGain.disabled = false;
+        };
+
+        cameraButton.onclick = () => startCameraExperience().catch(report("カメラを開始できません"));
+
+        fileInput.onchange = event => {
+            const file = event.target.files[0];
+            if (!file) return;
+            importFile(file)
+                .then(enterExperience)
+                .catch(report("ファイルを読み込めません"));
+        };
+        neutralImageInput.onchange = event => {
+            selectImagePairFile("neutral", event.target.files[0])?.catch(report("画像を解析できません"));
+        };
+        expressionImageInput.onchange = event => {
+            selectImagePairFile("expression", event.target.files[0])?.catch(report("画像を解析できません"));
+        };
+
+        video.onplay = () => {
+            if (activeMode === "video-file" && !calibratingVideoFile && !running) startLoop();
+        };
+
+        video.onpause = () => {
+            if (activeMode === "video-file" && !calibratingVideoFile) stopLoop();
+        };
+
+        toggleShapes.onclick = () => {
+            setShapesExpanded(shapesPanel.hidden);
+        };
+
+        paramSetSelect.onchange = () => {
+            applyParamSet(paramSetSelect.value);
+        };
+
+        saveParamSet.onclick = async () => {
+            await saveCurrentParamSet();
+        };
+
+        motionGainSetSelect.onchange = () => {
+            applyMotionGainSet(motionGainSetSelect.value);
+        };
+
+        saveMotionGainSet.onclick = async () => {
+            await saveCurrentMotionGainSet();
+        };
+
+        function setShapesExpanded(expanded) {
+            shapesPanel.hidden = !expanded;
+            toggleShapes.setAttribute("aria-expanded", expanded);
+            toggleShapes.textContent = `${expanded ? "▲" : "▼"}`;
+        }
+
+        function setDebugUiHidden(hidden) {
+            uiHidden = hidden;
+            for (const panel of debugPanels) {
+                panel.hidden = hidden;
+            }
+        }
+
+        function syncCalibrationGuideVisibility() {
+            calibrationGuide.hidden = startTransitionActive || !calibrationGuideActive;
+        }
+
+        function activateExperience() {
+            if (!visualizeToggle.checked) {
+                visualizeToggle.checked = true;
+                toggleVisualize();
+            }
+            canvas.hidden = true;
+            setDebugUiHidden(true);
+            syncCalibrationGuideVisibility();
+        }
+
+        function enterExperience() {
+            activateExperience();
+            startScreen.hidden = true;
+        }
+
+        async function playStartTransition() {
+            stage.classList.remove("is-preparing");
+            stage.classList.add("is-starting");
+            startScreen.classList.add("is-transitioning");
+            activateExperience();
+            await new Promise(resolve => video.addEventListener("animationend", resolve, { once: true }));
+            startScreen.hidden = true;
+            startScreen.classList.remove("is-transitioning");
+            stage.classList.remove("is-starting");
+        }
+
+        async function startCameraExperience() {
+            const shouldAnimate = !startScreen.hidden;
+            startTransitionActive = shouldAnimate;
+            if (shouldAnimate) {
+                sendControlPanelMessage({ type: "thumbnail-fade-out" });
+                stage.classList.add("is-preparing");
+            }
             try {
+                await startCamera();
+                if (shouldAnimate) {
+                    await playStartTransition();
+                } else {
+                    enterExperience();
+                }
+            } finally {
+                stage.classList.remove("is-preparing");
+                startTransitionActive = false;
+                syncCalibrationGuideVisibility();
+            }
+        }
+
+        function sendControlPanelMessage(message) {
+            if (!controlPanelWindow || controlPanelWindow.closed) return;
+            controlPanelWindow.postMessage({ source: "motion-main", ...message }, panelTargetOrigin);
+        }
+
+        function handleControlPanelMessage(event) {
+            if (event.source !== controlPanelWindow || event.data?.source !== "motion-control-panel") return;
+            if (location.origin !== "null" && event.origin !== location.origin) return;
+
+            const { action } = event.data;
+            if (action === "panel-ready") {
+                sendControlPanelMessage({ type: "ready" });
+            } else if (action === "camera") {
+                startCameraExperience().catch(report("カメラを開始できません"));
+            }
+        }
+
+        function toggleVisualize() {
+            const active = visualizeToggle.checked;
+            visualize.hidden = !active;
+            if (!active) {
+                visualizeStartedAt = 0;
+                resetMotionVisualState();
+                hideExperienceHud();
+                if (!visualizing()) hideCalibrationGuide();
+                return;
+            }
+
+            visualizeStartedAt = activeMode === "camera" ? 0 : performance.now();
+            resetMotionVisualState();
+            setShapesExpanded(false);
+            if (activeMode === "camera") beginFacePositioning();
+        }
+
+        function startGuidedCalibration() {
+            if (activeMode !== "camera") return;
+            calibrationStage = "recording";
+            resetCalibration({ warmup: WARMUP_FRAMES, frames: CALIBRATION_FRAMES });
+            showCalibrationGuide(GUIDE_MESSAGE, "recording");
+            updateCalibrationPoint();
+            calibrate.disabled = true;
+            measureMotionGain.disabled = true;
+        }
+
+        function beginCalibrationIntro() {
+            if (activeMode !== "camera") return;
+            resetCalibration();
+            calibrationStage = "intro";
+            calibrationIntroUntil = performance.now() + CALIBRATION_INTRO_MS;
+            showCalibrationGuide(INTRO_MESSAGE, "intro");
+            updateCalibrationPoint(0);
+        }
+
+        function beginFacePositioning() {
+            if (activeMode !== "camera") return;
+            hideExperienceHud();
+            resetCalibration();
+            calibrationStage = "positioning";
+            calibrationIntroUntil = 0;
+            showCalibrationGuide(POSITION_MESSAGE, "positioning");
+            updateCalibrationPoint(0);
+        }
+
+        function showExperienceAnnouncement(message, guide = "") {
+            window.clearTimeout(experienceAnnouncementTimer);
+            experienceAnnouncement.hidden = true;
+            experienceAnnouncement.textContent = message;
+            experienceHud.dataset.guide = guide;
+            void experienceAnnouncement.offsetWidth;
+            experienceAnnouncement.hidden = false;
+        }
+
+        function hideExperienceAnnouncement() {
+            experienceIntroSequenceId++;
+            window.clearTimeout(experienceAnnouncementTimer);
+            experienceAnnouncementTimer = 0;
+            experienceAnnouncement.hidden = true;
+            experienceHud.dataset.guide = "";
+        }
+
+        function startExperienceIntro() {
+            hideExperienceAnnouncement();
+            stopWorkMusic();
+            visualizeStartedAt = 0;
+            startExperienceHud();
+            const sequenceId = ++experienceIntroSequenceId;
+            let stepIndex = 0;
+
+            const showNextStep = () => {
+                if (sequenceId !== experienceIntroSequenceId) return;
+                const step = EXPERIENCE_INTRO_STEPS[stepIndex++];
+
+                if (!step) {
+                    hideExperienceAnnouncement();
+                    return;
+                }
+
+                showExperienceAnnouncement(step.message, step.guide);
+                experienceAnnouncementTimer = window.setTimeout(() => {
+                    if (sequenceId !== experienceIntroSequenceId) return;
+                    if (step.startsExperienceAfter) {
+                        visualizeStartedAt = performance.now();
+                        resetMotionTracking();
+                        startWorkMusic();
+                    }
+                    showNextStep();
+                }, EXPERIENCE_INTRO_STEP_MS);
+            };
+
+            showNextStep();
+        }
+
+        function startExperienceHud() {
+            experienceSessionId++;
+            resetScoreState();
+            experienceScoreValue.textContent = "0";
+            experienceTimerValue.textContent = String(EXPERIENCE_DURATION_SECONDS);
+            experienceTimerValue.classList.remove("is-warning", "is-urgent");
+            experienceTimer.setAttribute("aria-label", `残り${EXPERIENCE_DURATION_SECONDS}秒`);
+            experienceHud.hidden = false;
+        }
+
+        function hideExperienceHud() {
+            hideExperienceAnnouncement();
+            stopWorkMusic();
+            experienceSessionId++;
+            experienceHud.hidden = true;
+            resetScoreState();
+        }
+
+        function resetScoreState() {
+            window.clearTimeout(experienceResultTimer);
+            experienceResultTimer = 0;
+            experienceScore = 0;
+            lastScoreEventAt = 0;
+            experienceFinished = false;
+            workMusicPlaybackRate = WORK_MUSIC_RATE_NORMAL;
+            lastScoredShapeName = "circle";
+            discoveredScoreShapes.clear();
+            discoveredScoreShapes.add("circle");
+            resetMotionTracking();
+            scoreEffectLayer.replaceChildren();
+            experienceRankingList.replaceChildren();
+            experienceResults.hidden = true;
+        }
+
+        function resetMotionTracking() {
+            previousMotionScores.clear();
+            previousMotionSampleAt = 0;
+        }
+
+        function updateExperienceHud(categories, now = performance.now()) {
+            if (experienceHud.hidden || !visualizeStartedAt) return;
+
+            const elapsed = now - visualizeStartedAt;
+            const remaining = Math.max(0, EXPERIENCE_DURATION_MS - elapsed);
+            const remainingSeconds = Math.ceil(remaining / 1000);
+            experienceTimerValue.textContent = String(remainingSeconds);
+            experienceTimerValue.classList.toggle("is-warning", remainingSeconds === 30);
+            experienceTimerValue.classList.toggle("is-urgent", remainingSeconds <= 10);
+            experienceTimer.setAttribute("aria-label", `残り${remainingSeconds}秒`);
+            updateWorkMusicPlaybackRate(remainingSeconds);
+
+            if (!remaining) {
+                if (!experienceFinished) finishExperience();
+                return;
+            }
+            const motionAmount = measureMotionAmount(categories, now);
+
+            if (
+                motionAmount >= SCORE_TRIGGER_THRESHOLD
+                && now - lastScoreEventAt >= SCORE_EVENT_COOLDOWN_MS
+            ) {
+                lastScoreEventAt = now;
+                launchScoreEffect(scoreForMotion(motionAmount));
+            }
+        }
+
+        function finishExperience() {
+            experienceFinished = true;
+            stopWorkMusic();
+            sendControlPanelMessage({ type: "finish" });
+            const sessionId = experienceSessionId;
+
+            experienceResultTimer = window.setTimeout(() => {
+                if (sessionId !== experienceSessionId || !experienceFinished) return;
+                showExperienceResults(sessionId);
+            }, EXPERIENCE_RESULT_DELAY_MS);
+        }
+
+        function showExperienceResults(sessionId) {
+            const finalScore = experienceScore;
+            const result = saveScoreRanking(finalScore);
+            if (sessionId !== experienceSessionId || !experienceFinished) return;
+
+            experienceHud.hidden = true;
+            experienceResultScoreValue.textContent = String(finalScore);
+            experienceRankingList.replaceChildren();
+
+            result.topThree.forEach(entry => {
+                experienceRankingList.append(createRankingRow(entry.rank, entry.score, entry.id === result.player.id));
+            });
+
+            if (result.playerRank > 3) {
+                const ellipsis = document.createElement("li");
+                ellipsis.className = "experienceRankingEllipsis";
+                ellipsis.textContent = "⋮";
+                experienceRankingList.append(
+                    ellipsis,
+                    createRankingRow(result.playerRank, result.player.score, true)
+                );
+            }
+
+            experienceResults.hidden = false;
+        }
+
+        function saveScoreRanking(score) {
+            const player = {
+                id: globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`,
+                score,
+                completedAt: Date.now()
+            };
+            const ranking = [...loadScoreRanking(), player]
+                .sort((a, b) => b.score - a.score || a.completedAt - b.completedAt);
+            const playerRank = ranking.findIndex(entry => entry.id === player.id) + 1;
+            writeScoreRanking(ranking.slice(0, SCORE_RANKING_LIMIT));
+
+            return {
+                player,
+                playerRank,
+                topThree: ranking.slice(0, 3).map((entry, index) => ({ ...entry, rank: index + 1 }))
+            };
+        }
+
+        function loadScoreRanking() {
+            try {
+                return normalizeScoreRanking(
+                    JSON.parse(localStorage.getItem(SCORE_RANKING_STORAGE_KEY) ?? "[]")
+                );
+            } catch {
+                return [];
+            }
+        }
+
+        function writeScoreRanking(ranking) {
+            try {
+                localStorage.setItem(SCORE_RANKING_STORAGE_KEY, JSON.stringify(ranking));
+            } catch { }
+        }
+
+        function normalizeScoreRanking(value) {
+            if (!Array.isArray(value)) return [];
+            return value.filter(entry =>
+                entry
+                && typeof entry.id === "string"
+                && Number.isFinite(entry.score)
+                && Number.isFinite(entry.completedAt)
+            );
+        }
+
+        function createRankingRow(rank, score, isPlayer) {
+            const row = document.createElement("li");
+            const position = document.createElement("span");
+            const scoreText = document.createElement("span");
+
+            row.className = `experienceRankingRow${isPlayer ? " is-player" : ""}`;
+            position.className = "experienceRankingPosition";
+            scoreText.className = "experienceRankingScore";
+            position.textContent = `${rank}位`;
+            scoreText.textContent = `${score}点`;
+            row.append(position, scoreText);
+            return row;
+        }
+
+        function updateWorkMusicPlaybackRate(remainingSeconds) {
+            const playbackRate = remainingSeconds <= 10
+                ? WORK_MUSIC_RATE_URGENT
+                : remainingSeconds <= 30
+                    ? WORK_MUSIC_RATE_WARNING
+                    : WORK_MUSIC_RATE_NORMAL;
+            setWorkMusicPlaybackRate(playbackRate);
+        }
+
+        function setWorkMusicPlaybackRate(playbackRate, force = false) {
+            if (!force && playbackRate === workMusicPlaybackRate) return;
+            workMusicPlaybackRate = playbackRate;
+            sendControlPanelMessage({ type: "work-music-rate", playbackRate });
+        }
+
+        function startWorkMusic() {
+            setWorkMusicPlaybackRate(WORK_MUSIC_RATE_NORMAL, true);
+            sendControlPanelMessage({ type: "work-music-start" });
+        }
+
+        function stopWorkMusic() {
+            sendControlPanelMessage({ type: "work-music-stop" });
+        }
+
+        function measureMotionAmount(categories, now) {
+            if (!categories.length) {
+                previousMotionScores.clear();
+                previousMotionSampleAt = 0;
+                return 0;
+            }
+
+            const currentScores = new Map(categories.map(({ categoryName, score }) => [categoryName, score]));
+            if (!previousMotionSampleAt || !previousMotionScores.size) {
+                saveMotionSample(currentScores, now);
+                return 0;
+            }
+
+            const deltaSeconds = clamp((now - previousMotionSampleAt) / 1000, 1 / 120, 0.1);
+            const strongestMovements = [...currentScores]
+                .map(([categoryName, score]) => Math.abs(score - (previousMotionScores.get(categoryName) ?? score)) / deltaSeconds)
+                .sort((a, b) => b - a)
+                .slice(0, 8);
+            saveMotionSample(currentScores, now);
+
+            return strongestMovements.length
+                ? strongestMovements.reduce((sum, value) => sum + value, 0) / strongestMovements.length
+                : 0;
+        }
+
+        function saveMotionSample(scores, now) {
+            previousMotionScores.clear();
+            for (const [categoryName, score] of scores) previousMotionScores.set(categoryName, score);
+            previousMotionSampleAt = now;
+        }
+
+        function scoreForMotion(motionAmount) {
+            let points = 10;
+            if (motionAmount >= SCORE_LARGE_THRESHOLD) {
+                points = 30;
+            } else if (motionAmount >= SCORE_MEDIUM_THRESHOLD) {
+                points = 20;
+            }
+
+            const shapeName = dominantShapeName;
+            const changedShape = shapeName !== lastScoredShapeName;
+            const discoveredShape = shapeName !== "circle" && !discoveredScoreShapes.has(shapeName);
+
+            if (changedShape) points += SCORE_SHAPE_CHANGE_BONUS;
+            if (discoveredShape) points += SCORE_NEW_SHAPE_BONUS;
+
+            lastScoredShapeName = shapeName;
+            discoveredScoreShapes.add(shapeName);
+            return points;
+        }
+
+        function launchScoreEffect(points) {
+            const token = document.createElement("div");
+            const layerRect = scoreEffectLayer.getBoundingClientRect();
+            const stageRect = stage.getBoundingClientRect();
+            const scoreRect = experienceScoreNumber.getBoundingClientRect();
+            const centerX = stageRect.left + stageRect.width / 2 - layerRect.left;
+            const centerY = stageRect.top + stageRect.height * SHAPE_CENTER_Y_RATIO - layerRect.top;
+            const targetX = scoreRect.left + scoreRect.width / 2 - layerRect.left;
+            const targetY = scoreRect.top + scoreRect.height / 2 - layerRect.top;
+            const centerToTargetX = targetX - centerX;
+            const centerToTargetY = targetY - centerY;
+            const centerToTargetLength = Math.hypot(centerToTargetX, centerToTargetY) || 1;
+            const outlineRadius = Math.min(stageRect.width, stageRect.height) * SCORE_LAUNCH_RADIUS_RATIO;
+            const startX = centerX + centerToTargetX / centerToTargetLength * outlineRadius;
+            const startY = centerY + centerToTargetY / centerToTargetLength * outlineRadius;
+            const deltaX = targetX - startX;
+            const deltaY = targetY - startY;
+            const flightDistance = Math.hypot(deltaX, deltaY) || 1;
+            let perpendicularX = -deltaY / flightDistance;
+            let perpendicularY = deltaX / flightDistance;
+            if (perpendicularY < 0) {
+                perpendicularX *= -1;
+                perpendicularY *= -1;
+            }
+            const arcHeight = Math.min(150, flightDistance * 0.36);
+            const controlX = (startX + targetX) / 2 + perpendicularX * arcHeight;
+            const controlY = (startY + targetY) / 2 + perpendicularY * arcHeight;
+            const sessionId = experienceSessionId;
+            const scoreColor = rgba(currentMaterial(performance.now()).stroke, 1);
+            const arcPoint = amount => {
+                const inverse = 1 - amount;
+                return {
+                    x: inverse * inverse * startX + 2 * inverse * amount * controlX + amount * amount * targetX,
+                    y: inverse * inverse * startY + 2 * inverse * amount * controlY + amount * amount * targetY
+                };
+            };
+            const flightKeyframes = [
+                { offset: 0, amount: 0, opacity: 0, scale: 0.55 },
+                { offset: 0.28, amount: 0.04, opacity: 1, scale: 0.9 },
+                { offset: 0.5, amount: 0.16, opacity: 1, scale: 1.08 },
+                { offset: 0.72, amount: 0.42, opacity: 1, scale: 0.95 },
+                { offset: 1, amount: 1, opacity: 1, scale: 0.62 }
+            ].map(({ offset, amount, opacity, scale }) => {
+                const point = arcPoint(amount);
+                return {
+                    offset,
+                    opacity,
+                    transform: `translate(-50%, -50%) translate(${point.x - startX}px, ${point.y - startY}px) scale(${scale})`
+                };
+            });
+
+            token.className = "scoreToken";
+            token.style.setProperty("--score-color", scoreColor);
+            token.style.left = `${startX}px`;
+            token.style.top = `${startY}px`;
+            scoreEffectLayer.append(token);
+
+            token.animate(flightKeyframes, {
+                duration: SCORE_FLIGHT_MS,
+                easing: "linear",
+                fill: "forwards"
+            }).finished
+                .catch(() => { })
+                .finally(() => token.remove());
+
+            window.setTimeout(() => {
+                if (sessionId !== experienceSessionId || experienceHud.hidden) return;
+                const arrival = document.createElement("div");
+                arrival.className = "scoreArrival";
+                arrival.textContent = `+${points}`;
+                arrival.style.setProperty("--score-color", scoreColor);
+                arrival.style.left = `${targetX}px`;
+                arrival.style.top = `${targetY}px`;
+                scoreEffectLayer.append(arrival);
+                arrival.animate([
+                    { opacity: 0, transform: "translate(-50%, -35%) scale(0.65)" },
+                    { opacity: 1, transform: "translate(-50%, -80%) scale(1.15)", offset: 0.25 },
+                    { opacity: 0, transform: "translate(-50%, -180%) scale(1)" }
+                ], {
+                    duration: 720,
+                    easing: "ease-out"
+                }).finished
+                    .catch(() => { })
+                    .finally(() => arrival.remove());
+
+                playPointGetSound();
+                experienceScore += points;
+                experienceScoreValue.textContent = String(experienceScore);
+                experienceScoreNumber.animate([
+                    { transform: "translateX(-50%) scale(1)" },
+                    { transform: "translateX(-50%) scale(1.16)", offset: 0.45 },
+                    { transform: "translateX(-50%) scale(1)" }
+                ], { duration: 360, easing: "ease-out" });
+            }, SCORE_ARRIVAL_DELAY_MS);
+        }
+
+        function playPointGetSound() {
+            const sound = pointGetSound.cloneNode();
+            const removeSound = () => sound.remove();
+
+            sound.volume = 0.7;
+            sound.addEventListener("ended", removeSound, { once: true });
+            sound.addEventListener("error", removeSound, { once: true });
+            document.body.append(sound);
+            sound.play().catch(removeSound);
+        }
+
+        function showCalibrationGuide(message, phase = "recording") {
+            calibrationGuideActive = true;
+            calibrationGuide.dataset.phase = phase;
+            calibrationGuideText.textContent = message;
+            calibrationGuide.hidden = false;
+        }
+
+        function hideCalibrationGuide() {
+            calibrationGuideActive = false;
+            calibrationGuide.hidden = true;
+            calibrationGuide.dataset.phase = "";
+            calibrationGuide.style.setProperty("--progress", 0);
+            calibrationPoint.setAttribute("aria-valuenow", "0");
+        }
+
+        function visualizing() {
+            return !visualize.hidden;
+        }
+
+        function calibrationActive() {
+            return calibration.warmup || calibration.remaining;
+        }
+
+        function calibrationOutlineVisible() {
+            return activeMode === "camera" && CALIBRATION_OUTLINE_STAGES.has(calibrationStage);
+        }
+
+        function resetCalibration({ warmup = 0, frames = 0, clearGains = false } = {}) {
+            base.clear();
+            if (clearGains) {
+                motionGains.clear();
+                activeMotionGainSetName = "";
+                renderMotionGainSetOptions();
+            }
+            resetMotionVisualState();
+            Object.assign(calibration, { warmup, remaining: frames, samples: 0 });
+            calibration.stats.clear();
+            resetPoseCalibration();
+            resetMotionGainCalibration();
+            status.textContent = "";
+            updateCalibrationPoint();
+        }
+
+        async function startCamera() {
+            resetMediaSource();
+            await setLandmarkerMode("VIDEO");
+            video.srcObject = await navigator.mediaDevices.getUserMedia({
+                video: { width: { ideal: VW }, height: { ideal: VH }, aspectRatio: { ideal: 16 / 9 } }
+            });
+            await video.play();
+            setActiveMode("camera");
+            startLoop();
+        }
+
+        async function importFile(file) {
+            if (!file) return;
+            resetMediaSource();
+            activeObjectUrl = URL.createObjectURL(file);
+
+            if (file.type.startsWith("video/")) {
+                await setLandmarkerMode("VIDEO");
+                await loadMedia(video, activeObjectUrl, "loadeddata");
+                setActiveMode("video-file");
+                video.pause();
+                await seekVideo(0);
                 await calibrateFromVideoStart();
                 await seekVideo(0);
                 processResults(detectCurrentFrame());
                 await video.play();
                 startLoop();
-            } catch (error) {
-                calibrate.disabled = false;
-                measureMotionGain.disabled = false;
-                status.textContent = `動画キャリブレーション失敗: ${error.message}`;
-            }
-            return;
-        }
-        resetCalibration({ warmup: WARMUP_FRAMES, frames: CALIBRATION_FRAMES });
-        showCalibrationGuide(GUIDE_MESSAGE);
-        calibrate.disabled = true;
-        measureMotionGain.disabled = true;
-    };
-
-    measureMotionGain.onclick = () => {
-        startMotionGainCalibration();
-    };
-
-    clearBaseline.onclick = () => {
-        resetCalibration({ clearGains: true });
-        hideCalibrationGuide();
-        calibrate.disabled = false;
-        measureMotionGain.disabled = false;
-    };
-
-    cameraButton.onclick = () => startCameraExperience().catch(report("カメラを開始できません"));
-
-    fileInput.onchange = event => {
-        const file = event.target.files[0];
-        if (!file) return;
-        importFile(file)
-            .then(enterExperience)
-            .catch(report("ファイルを読み込めません"));
-    };
-    neutralImageInput.onchange = event => {
-        selectImagePairFile("neutral", event.target.files[0])?.catch(report("画像を解析できません"));
-    };
-    expressionImageInput.onchange = event => {
-        selectImagePairFile("expression", event.target.files[0])?.catch(report("画像を解析できません"));
-    };
-
-    video.onplay = () => {
-        if (activeMode === "video-file" && !calibratingVideoFile && !running) startLoop();
-    };
-
-    video.onpause = () => {
-        if (activeMode === "video-file" && !calibratingVideoFile) stopLoop();
-    };
-
-    toggleShapes.onclick = () => {
-        setShapesExpanded(shapesPanel.hidden);
-    };
-
-    paramSetSelect.onchange = () => {
-        applyParamSet(paramSetSelect.value);
-    };
-
-    saveParamSet.onclick = async () => {
-        await saveCurrentParamSet();
-    };
-
-    motionGainSetSelect.onchange = () => {
-        applyMotionGainSet(motionGainSetSelect.value);
-    };
-
-    saveMotionGainSet.onclick = async () => {
-        await saveCurrentMotionGainSet();
-    };
-
-    function setShapesExpanded(expanded) {
-        shapesPanel.hidden = !expanded;
-        toggleShapes.setAttribute("aria-expanded", expanded);
-        toggleShapes.textContent = `${expanded ? "▲" : "▼"}`;
-    }
-
-    function setDebugUiHidden(hidden) {
-        uiHidden = hidden;
-        for (const panel of debugPanels) {
-            panel.hidden = hidden;
-        }
-    }
-
-    function syncCalibrationGuideVisibility() {
-        calibrationGuide.hidden = startTransitionActive || !calibrationGuideActive;
-    }
-
-    function activateExperience() {
-        if (!visualizeToggle.checked) {
-            visualizeToggle.checked = true;
-            toggleVisualize();
-        }
-        canvas.hidden = true;
-        setDebugUiHidden(true);
-        syncCalibrationGuideVisibility();
-    }
-
-    function enterExperience() {
-        activateExperience();
-        startScreen.hidden = true;
-    }
-
-    async function playStartTransition() {
-        stage.classList.remove("is-preparing");
-        stage.classList.add("is-starting");
-        startScreen.classList.add("is-transitioning");
-        activateExperience();
-        await new Promise(resolve => video.addEventListener("animationend", resolve, { once: true }));
-        startScreen.hidden = true;
-        startScreen.classList.remove("is-transitioning");
-        stage.classList.remove("is-starting");
-    }
-
-    async function startCameraExperience() {
-        const shouldAnimate = !startScreen.hidden;
-        startTransitionActive = shouldAnimate;
-        if (shouldAnimate) {
-            sendControlPanelMessage({ type: "thumbnail-fade-out" });
-            stage.classList.add("is-preparing");
-        }
-        try {
-            await startCamera();
-            if (shouldAnimate) {
-                await playStartTransition();
-            } else {
-                enterExperience();
-            }
-        } finally {
-            stage.classList.remove("is-preparing");
-            startTransitionActive = false;
-            syncCalibrationGuideVisibility();
-        }
-    }
-
-    function sendControlPanelMessage(message) {
-        if (!controlPanelWindow || controlPanelWindow.closed) return;
-        controlPanelWindow.postMessage({ source: "motion-main", ...message }, panelTargetOrigin);
-    }
-
-    function handleControlPanelMessage(event) {
-        if (event.source !== controlPanelWindow || event.data?.source !== "motion-control-panel") return;
-        if (location.origin !== "null" && event.origin !== location.origin) return;
-
-        const { action } = event.data;
-        if (action === "panel-ready") {
-            sendControlPanelMessage({ type: "ready" });
-        } else if (action === "camera") {
-            startCameraExperience().catch(report("カメラを開始できません"));
-        }
-    }
-
-    function toggleVisualize() {
-        const active = visualizeToggle.checked;
-        visualize.hidden = !active;
-        if (!active) {
-            visualizeStartedAt = 0;
-            resetMotionVisualState();
-            hideExperienceHud();
-            if (!visualizing()) hideCalibrationGuide();
-            return;
-        }
-
-        visualizeStartedAt = activeMode === "camera" ? 0 : performance.now();
-        resetMotionVisualState();
-        setShapesExpanded(false);
-        if (activeMode === "camera") beginFacePositioning();
-    }
-
-    function startGuidedCalibration() {
-        if (activeMode !== "camera") return;
-        calibrationStage = "recording";
-        resetCalibration({ warmup: WARMUP_FRAMES, frames: CALIBRATION_FRAMES });
-        showCalibrationGuide(GUIDE_MESSAGE, "recording");
-        updateCalibrationPoint();
-        calibrate.disabled = true;
-        measureMotionGain.disabled = true;
-    }
-
-    function beginCalibrationIntro() {
-        if (activeMode !== "camera") return;
-        resetCalibration();
-        calibrationStage = "intro";
-        calibrationIntroUntil = performance.now() + CALIBRATION_INTRO_MS;
-        showCalibrationGuide(INTRO_MESSAGE, "intro");
-        updateCalibrationPoint(0);
-    }
-
-    function beginFacePositioning() {
-        if (activeMode !== "camera") return;
-        hideExperienceHud();
-        resetCalibration();
-        calibrationStage = "positioning";
-        calibrationIntroUntil = 0;
-        showCalibrationGuide(POSITION_MESSAGE, "positioning");
-        updateCalibrationPoint(0);
-    }
-
-    function showExperienceAnnouncement(message, guide = "") {
-        window.clearTimeout(experienceAnnouncementTimer);
-        experienceAnnouncement.hidden = true;
-        experienceAnnouncement.textContent = message;
-        experienceHud.dataset.guide = guide;
-        void experienceAnnouncement.offsetWidth;
-        experienceAnnouncement.hidden = false;
-    }
-
-    function hideExperienceAnnouncement() {
-        experienceIntroSequenceId++;
-        window.clearTimeout(experienceAnnouncementTimer);
-        experienceAnnouncementTimer = 0;
-        experienceAnnouncement.hidden = true;
-        experienceHud.dataset.guide = "";
-    }
-
-    function startExperienceIntro() {
-        hideExperienceAnnouncement();
-        stopWorkMusic();
-        visualizeStartedAt = 0;
-        startExperienceHud();
-        const sequenceId = ++experienceIntroSequenceId;
-        let stepIndex = 0;
-
-        const showNextStep = () => {
-            if (sequenceId !== experienceIntroSequenceId) return;
-            const step = EXPERIENCE_INTRO_STEPS[stepIndex++];
-
-            if (!step) {
-                hideExperienceAnnouncement();
                 return;
             }
 
-            showExperienceAnnouncement(step.message, step.guide);
-            experienceAnnouncementTimer = window.setTimeout(() => {
-                if (sequenceId !== experienceIntroSequenceId) return;
-                if (step.startsExperienceAfter) {
-                    visualizeStartedAt = performance.now();
-                    resetMotionTracking();
-                    startWorkMusic();
-                }
-                showNextStep();
-            }, EXPERIENCE_INTRO_STEP_MS);
-        };
-
-        showNextStep();
-    }
-
-    function startExperienceHud() {
-        experienceSessionId++;
-        resetScoreState();
-        experienceScoreValue.textContent = "0";
-        experienceTimerValue.textContent = String(EXPERIENCE_DURATION_SECONDS);
-        experienceTimerValue.classList.remove("is-warning", "is-urgent");
-        experienceTimer.setAttribute("aria-label", `残り${EXPERIENCE_DURATION_SECONDS}秒`);
-        experienceHud.hidden = false;
-    }
-
-    function hideExperienceHud() {
-        hideExperienceAnnouncement();
-        stopWorkMusic();
-        experienceSessionId++;
-        experienceHud.hidden = true;
-        resetScoreState();
-    }
-
-    function resetScoreState() {
-        window.clearTimeout(experienceResultTimer);
-        experienceResultTimer = 0;
-        experienceScore = 0;
-        lastScoreEventAt = 0;
-        experienceFinished = false;
-        workMusicPlaybackRate = WORK_MUSIC_RATE_NORMAL;
-        lastScoredShapeName = "circle";
-        discoveredScoreShapes.clear();
-        discoveredScoreShapes.add("circle");
-        resetMotionTracking();
-        scoreEffectLayer.replaceChildren();
-        experienceRankingList.replaceChildren();
-        experienceResults.hidden = true;
-    }
-
-    function resetMotionTracking() {
-        previousMotionScores.clear();
-        previousMotionSampleAt = 0;
-    }
-
-    function updateExperienceHud(categories, now = performance.now()) {
-        if (experienceHud.hidden || !visualizeStartedAt) return;
-
-        const elapsed = now - visualizeStartedAt;
-        const remaining = Math.max(0, EXPERIENCE_DURATION_MS - elapsed);
-        const remainingSeconds = Math.ceil(remaining / 1000);
-        experienceTimerValue.textContent = String(remainingSeconds);
-        experienceTimerValue.classList.toggle("is-warning", remainingSeconds === 30);
-        experienceTimerValue.classList.toggle("is-urgent", remainingSeconds <= 10);
-        experienceTimer.setAttribute("aria-label", `残り${remainingSeconds}秒`);
-        updateWorkMusicPlaybackRate(remainingSeconds);
-
-        if (!remaining) {
-            if (!experienceFinished) finishExperience();
-            return;
-        }
-        const motionAmount = measureMotionAmount(categories, now);
-
-        if (
-            motionAmount >= SCORE_TRIGGER_THRESHOLD
-            && now - lastScoreEventAt >= SCORE_EVENT_COOLDOWN_MS
-        ) {
-            lastScoreEventAt = now;
-            launchScoreEffect(scoreForMotion(motionAmount));
-        }
-    }
-
-    function finishExperience() {
-        experienceFinished = true;
-        stopWorkMusic();
-        sendControlPanelMessage({ type: "finish" });
-        const sessionId = experienceSessionId;
-
-        experienceResultTimer = window.setTimeout(() => {
-            if (sessionId !== experienceSessionId || !experienceFinished) return;
-            showExperienceResults(sessionId);
-        }, EXPERIENCE_RESULT_DELAY_MS);
-    }
-
-    function showExperienceResults(sessionId) {
-        const finalScore = experienceScore;
-        const result = saveScoreRanking(finalScore);
-        if (sessionId !== experienceSessionId || !experienceFinished) return;
-
-        experienceHud.hidden = true;
-        experienceResultScoreValue.textContent = String(finalScore);
-        experienceRankingList.replaceChildren();
-
-        result.topThree.forEach(entry => {
-            experienceRankingList.append(createRankingRow(entry.rank, entry.score, entry.id === result.player.id));
-        });
-
-        if (result.playerRank > 3) {
-            const ellipsis = document.createElement("li");
-            ellipsis.className = "experienceRankingEllipsis";
-            ellipsis.textContent = "⋮";
-            experienceRankingList.append(
-                ellipsis,
-                createRankingRow(result.playerRank, result.player.score, true)
-            );
+            clearImportedFile();
+            status.textContent = "動画ファイルを選択してください";
         }
 
-        experienceResults.hidden = false;
-    }
-
-    function saveScoreRanking(score) {
-        const player = {
-            id: globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`,
-            score,
-            completedAt: Date.now()
-        };
-        const ranking = [...loadScoreRanking(), player]
-            .sort((a, b) => b.score - a.score || a.completedAt - b.completedAt);
-        const playerRank = ranking.findIndex(entry => entry.id === player.id) + 1;
-        writeScoreRanking(ranking.slice(0, SCORE_RANKING_LIMIT));
-
-        return {
-            player,
-            playerRank,
-            topThree: ranking.slice(0, 3).map((entry, index) => ({ ...entry, rank: index + 1 }))
-        };
-    }
-
-    function loadScoreRanking() {
-        try {
-            return normalizeScoreRanking(
-                JSON.parse(localStorage.getItem(SCORE_RANKING_STORAGE_KEY) ?? "[]")
-            );
-        } catch {
-            return [];
-        }
-    }
-
-    function writeScoreRanking(ranking) {
-        try {
-            localStorage.setItem(SCORE_RANKING_STORAGE_KEY, JSON.stringify(ranking));
-        } catch {}
-    }
-
-    function normalizeScoreRanking(value) {
-        if (!Array.isArray(value)) return [];
-        return value.filter(entry =>
-            entry
-            && typeof entry.id === "string"
-            && Number.isFinite(entry.score)
-            && Number.isFinite(entry.completedAt)
-        );
-    }
-
-    function createRankingRow(rank, score, isPlayer) {
-        const row = document.createElement("li");
-        const position = document.createElement("span");
-        const scoreText = document.createElement("span");
-
-        row.className = `experienceRankingRow${isPlayer ? " is-player" : ""}`;
-        position.className = "experienceRankingPosition";
-        scoreText.className = "experienceRankingScore";
-        position.textContent = `${rank}位`;
-        scoreText.textContent = `${score}点`;
-        row.append(position, scoreText);
-        return row;
-    }
-
-    function updateWorkMusicPlaybackRate(remainingSeconds) {
-        const playbackRate = remainingSeconds <= 10
-            ? WORK_MUSIC_RATE_URGENT
-            : remainingSeconds <= 30
-                ? WORK_MUSIC_RATE_WARNING
-                : WORK_MUSIC_RATE_NORMAL;
-        setWorkMusicPlaybackRate(playbackRate);
-    }
-
-    function setWorkMusicPlaybackRate(playbackRate, force = false) {
-        if (!force && playbackRate === workMusicPlaybackRate) return;
-        workMusicPlaybackRate = playbackRate;
-        sendControlPanelMessage({ type: "work-music-rate", playbackRate });
-    }
-
-    function startWorkMusic() {
-        setWorkMusicPlaybackRate(WORK_MUSIC_RATE_NORMAL, true);
-        sendControlPanelMessage({ type: "work-music-start" });
-    }
-
-    function stopWorkMusic() {
-        sendControlPanelMessage({ type: "work-music-stop" });
-    }
-
-    function measureMotionAmount(categories, now) {
-        if (!categories.length) {
-            previousMotionScores.clear();
-            previousMotionSampleAt = 0;
-            return 0;
-        }
-
-        const currentScores = new Map(categories.map(({ categoryName, score }) => [categoryName, score]));
-        if (!previousMotionSampleAt || !previousMotionScores.size) {
-            saveMotionSample(currentScores, now);
-            return 0;
-        }
-
-        const deltaSeconds = clamp((now - previousMotionSampleAt) / 1000, 1 / 120, 0.1);
-        const strongestMovements = [...currentScores]
-            .map(([categoryName, score]) => Math.abs(score - (previousMotionScores.get(categoryName) ?? score)) / deltaSeconds)
-            .sort((a, b) => b - a)
-            .slice(0, 8);
-        saveMotionSample(currentScores, now);
-
-        return strongestMovements.length
-            ? strongestMovements.reduce((sum, value) => sum + value, 0) / strongestMovements.length
-            : 0;
-    }
-
-    function saveMotionSample(scores, now) {
-        previousMotionScores.clear();
-        for (const [categoryName, score] of scores) previousMotionScores.set(categoryName, score);
-        previousMotionSampleAt = now;
-    }
-
-    function scoreForMotion(motionAmount) {
-        let points = 10;
-        if (motionAmount >= SCORE_LARGE_THRESHOLD) {
-            points = 30;
-        } else if (motionAmount >= SCORE_MEDIUM_THRESHOLD) {
-            points = 20;
-        }
-
-        const shapeName = dominantShapeName;
-        const changedShape = shapeName !== lastScoredShapeName;
-        const discoveredShape = shapeName !== "circle" && !discoveredScoreShapes.has(shapeName);
-
-        if (changedShape) points += SCORE_SHAPE_CHANGE_BONUS;
-        if (discoveredShape) points += SCORE_NEW_SHAPE_BONUS;
-
-        lastScoredShapeName = shapeName;
-        discoveredScoreShapes.add(shapeName);
-        return points;
-    }
-
-    function launchScoreEffect(points) {
-        const token = document.createElement("div");
-        const layerRect = scoreEffectLayer.getBoundingClientRect();
-        const stageRect = stage.getBoundingClientRect();
-        const scoreRect = experienceScoreNumber.getBoundingClientRect();
-        const centerX = stageRect.left + stageRect.width / 2 - layerRect.left;
-        const centerY = stageRect.top + stageRect.height * SHAPE_CENTER_Y_RATIO - layerRect.top;
-        const targetX = scoreRect.left + scoreRect.width / 2 - layerRect.left;
-        const targetY = scoreRect.top + scoreRect.height / 2 - layerRect.top;
-        const centerToTargetX = targetX - centerX;
-        const centerToTargetY = targetY - centerY;
-        const centerToTargetLength = Math.hypot(centerToTargetX, centerToTargetY) || 1;
-        const outlineRadius = Math.min(stageRect.width, stageRect.height) * SCORE_LAUNCH_RADIUS_RATIO;
-        const startX = centerX + centerToTargetX / centerToTargetLength * outlineRadius;
-        const startY = centerY + centerToTargetY / centerToTargetLength * outlineRadius;
-        const deltaX = targetX - startX;
-        const deltaY = targetY - startY;
-        const flightDistance = Math.hypot(deltaX, deltaY) || 1;
-        let perpendicularX = -deltaY / flightDistance;
-        let perpendicularY = deltaX / flightDistance;
-        if (perpendicularY < 0) {
-            perpendicularX *= -1;
-            perpendicularY *= -1;
-        }
-        const arcHeight = Math.min(150, flightDistance * 0.36);
-        const controlX = (startX + targetX) / 2 + perpendicularX * arcHeight;
-        const controlY = (startY + targetY) / 2 + perpendicularY * arcHeight;
-        const sessionId = experienceSessionId;
-        const scoreColor = rgba(currentMaterial(performance.now()).stroke, 1);
-        const arcPoint = amount => {
-            const inverse = 1 - amount;
-            return {
-                x: inverse * inverse * startX + 2 * inverse * amount * controlX + amount * amount * targetX,
-                y: inverse * inverse * startY + 2 * inverse * amount * controlY + amount * amount * targetY
-            };
-        };
-        const flightKeyframes = [
-            { offset: 0, amount: 0, opacity: 0, scale: 0.55 },
-            { offset: 0.28, amount: 0.04, opacity: 1, scale: 0.9 },
-            { offset: 0.5, amount: 0.16, opacity: 1, scale: 1.08 },
-            { offset: 0.72, amount: 0.42, opacity: 1, scale: 0.95 },
-            { offset: 1, amount: 1, opacity: 1, scale: 0.62 }
-        ].map(({ offset, amount, opacity, scale }) => {
-            const point = arcPoint(amount);
-            return {
-                offset,
-                opacity,
-                transform: `translate(-50%, -50%) translate(${point.x - startX}px, ${point.y - startY}px) scale(${scale})`
-            };
-        });
-
-        token.className = "scoreToken";
-        token.style.setProperty("--score-color", scoreColor);
-        token.style.left = `${startX}px`;
-        token.style.top = `${startY}px`;
-        scoreEffectLayer.append(token);
-
-        token.animate(flightKeyframes, {
-            duration: SCORE_FLIGHT_MS,
-            easing: "linear",
-            fill: "forwards"
-        }).finished
-            .catch(() => {})
-            .finally(() => token.remove());
-
-        window.setTimeout(() => {
-            if (sessionId !== experienceSessionId || experienceHud.hidden) return;
-            const arrival = document.createElement("div");
-            arrival.className = "scoreArrival";
-            arrival.textContent = `+${points}`;
-            arrival.style.setProperty("--score-color", scoreColor);
-            arrival.style.left = `${targetX}px`;
-            arrival.style.top = `${targetY}px`;
-            scoreEffectLayer.append(arrival);
-            arrival.animate([
-                { opacity: 0, transform: "translate(-50%, -35%) scale(0.65)" },
-                { opacity: 1, transform: "translate(-50%, -80%) scale(1.15)", offset: 0.25 },
-                { opacity: 0, transform: "translate(-50%, -180%) scale(1)" }
-            ], {
-                duration: 720,
-                easing: "ease-out"
-            }).finished
-                .catch(() => {})
-                .finally(() => arrival.remove());
-
-            playPointGetSound();
-            experienceScore += points;
-            experienceScoreValue.textContent = String(experienceScore);
-            experienceScoreNumber.animate([
-                { transform: "translateX(-50%) scale(1)" },
-                { transform: "translateX(-50%) scale(1.16)", offset: 0.45 },
-                { transform: "translateX(-50%) scale(1)" }
-            ], { duration: 360, easing: "ease-out" });
-        }, SCORE_ARRIVAL_DELAY_MS);
-    }
-
-    function playPointGetSound() {
-        const sound = pointGetSound.cloneNode();
-        const removeSound = () => sound.remove();
-
-        sound.volume = 0.7;
-        sound.addEventListener("ended", removeSound, { once: true });
-        sound.addEventListener("error", removeSound, { once: true });
-        document.body.append(sound);
-        sound.play().catch(removeSound);
-    }
-
-    function showCalibrationGuide(message, phase = "recording") {
-        calibrationGuideActive = true;
-        calibrationGuide.dataset.phase = phase;
-        calibrationGuideText.textContent = message;
-        calibrationGuide.hidden = false;
-    }
-
-    function hideCalibrationGuide() {
-        calibrationGuideActive = false;
-        calibrationGuide.hidden = true;
-        calibrationGuide.dataset.phase = "";
-        calibrationGuide.style.setProperty("--progress", 0);
-        calibrationPoint.setAttribute("aria-valuenow", "0");
-    }
-
-    function visualizing() {
-        return !visualize.hidden;
-    }
-
-    function calibrationActive() {
-        return calibration.warmup || calibration.remaining;
-    }
-
-    function calibrationOutlineVisible() {
-        return activeMode === "camera" && CALIBRATION_OUTLINE_STAGES.has(calibrationStage);
-    }
-
-    function resetCalibration({ warmup = 0, frames = 0, clearGains = false } = {}) {
-        base.clear();
-        if (clearGains) {
-            motionGains.clear();
-            activeMotionGainSetName = "";
-            renderMotionGainSetOptions();
-        }
-        resetMotionVisualState();
-        Object.assign(calibration, { warmup, remaining: frames, samples: 0 });
-        calibration.stats.clear();
-        resetPoseCalibration();
-        resetMotionGainCalibration();
-        status.textContent = "";
-        updateCalibrationPoint();
-    }
-
-    async function startCamera() {
-        resetMediaSource();
-        await setLandmarkerMode("VIDEO");
-        video.srcObject = await navigator.mediaDevices.getUserMedia({
-            video: { width: { ideal: VW }, height: { ideal: VH }, aspectRatio: { ideal: 16 / 9 } }
-        });
-        await video.play();
-        setActiveMode("camera");
-        startLoop();
-    }
-
-    async function importFile(file) {
-        if (!file) return;
-        resetMediaSource();
-        activeObjectUrl = URL.createObjectURL(file);
-
-        if (file.type.startsWith("video/")) {
-            await setLandmarkerMode("VIDEO");
-            await loadMedia(video, activeObjectUrl, "loadeddata");
-            setActiveMode("video-file");
-            video.pause();
-            await seekVideo(0);
-            await calibrateFromVideoStart();
-            await seekVideo(0);
-            processResults(detectCurrentFrame());
-            await video.play();
-            startLoop();
-            return;
-        }
-
-        clearImportedFile();
-        status.textContent = "動画ファイルを選択してください";
-    }
-
-    function selectImagePairFile(kind, file) {
-        if (!file) return;
-        if (!file.type.startsWith("image/")) {
-            status.textContent = "JPEG・PNG・WebP画像を選択してください";
-            return;
-        }
-
-        imagePairFiles[kind] = file;
-        const missing = [
-            imagePairFiles.neutral ? "" : "無表情画像",
-            imagePairFiles.expression ? "" : "表情画像"
-        ].filter(Boolean);
-
-        if (missing.length) {
-            status.textContent = `${missing.join("と")}を選択してください`;
-            return;
-        }
-
-        return importImagePair();
-    }
-
-    async function importImagePair() {
-        const { neutral, expression } = imagePairFiles;
-        if (!neutral || !expression) return;
-
-        resetMediaSource({ resetImageInputs: false });
-        imagePairObjectUrls = [URL.createObjectURL(neutral), URL.createObjectURL(expression)];
-        const neutralImage = new Image();
-
-        await Promise.all([
-            loadMedia(neutralImage, imagePairObjectUrls[0], "load"),
-            loadMedia(sourceImage, imagePairObjectUrls[1], "load")
-        ]);
-        await setLandmarkerMode("IMAGE");
-
-        const neutralResults = faceLandmarker.detect(neutralImage);
-        const expressionResults = faceLandmarker.detect(sourceImage);
-        const neutralCategories = neutralResults.faceBlendshapes[0]?.categories ?? [];
-        const neutralLandmarks = neutralResults.faceLandmarks[0] ?? [];
-
-        if (!neutralCategories.length) throw new Error("無表情画像から顔を検出できません");
-        if (!expressionResults.faceBlendshapes[0]?.categories?.length) {
-            throw new Error("表情画像から顔を検出できません");
-        }
-
-        applyImagePairBaseline(neutralCategories, neutralLandmarks);
-        imagePairResults = expressionResults;
-        setActiveMode("image-pair");
-        resetPrimaryFaceTracking();
-        processResults(imagePairResults);
-        startLoop();
-        status.textContent = "2枚の画像を解析しました";
-        enterExperience();
-    }
-
-    function applyImagePairBaseline(categories, landmarks) {
-        base.clear();
-        for (const { categoryName, score } of categories) {
-            base.set(categoryName, {
-                mean: score,
-                dead: DEADZONE,
-                min: score - DEADZONE,
-                max: score + DEADZONE
-            });
-        }
-
-        neutralPose = getPose(landmarks);
-        Object.assign(calibration, { warmup: 0, remaining: 0, samples: 0 });
-        calibration.stats.clear();
-        resetMotionVisualState();
-        hideCalibrationGuide();
-    }
-
-    async function setLandmarkerMode(mode) {
-        if (landmarkerRunningMode === mode) return;
-        await faceLandmarker.setOptions({ runningMode: mode });
-        landmarkerRunningMode = mode;
-    }
-
-    function startLoop() {
-        if (running) return;
-        running = true;
-        requestAnimationFrame(() => loop(++loopToken));
-    }
-
-    function stopLoop() {
-        running = false;
-        loopToken++;
-        resetPrimaryFaceTracking();
-    }
-
-    function loop(token) {
-        if (!running || token !== loopToken) return;
-        processResults(detectCurrentFrame());
-        requestAnimationFrame(() => loop(token));
-    }
-
-    function detectCurrentFrame() {
-        if (activeMode === "image-pair") return imagePairResults;
-        return faceLandmarker.detectForVideo(video, performance.now());
-    }
-
-    function processResults({ faceLandmarks, faceBlendshapes }) {
-        const primaryFaceIndex = selectPrimaryFaceIndex(faceLandmarks);
-        const rawLandmarks = primaryFaceIndex >= 0 ? faceLandmarks[primaryFaceIndex] : undefined;
-        const landmarks = smoothLandmarks(rawLandmarks);
-        const categories = primaryFaceIndex >= 0 ? faceBlendshapes[primaryFaceIndex]?.categories ?? [] : [];
-        currentPoseStable = isPoseStable(landmarks);
-        updateAutoCalibration(categories.length > 0, landmarks);
-        drawLandmarks(landmarks);
-        updateShapes(categories, landmarks);
-        updateMotionGainCalibration(categories);
-
-        const displayCategories = categories.length ? categories : zeroDisplayCategories();
-        const activeCategories = selectedCategories(displayCategories);
-        updateExperienceHud(categories);
-        if (!visualize.hidden) drawSpectrum(updateSpectrumFrame(activeCategories, displayCategories));
-    }
-
-    function selectPrimaryFaceIndex(faceLandmarks = []) {
-        if (!faceLandmarks.length) {
-            resetPrimaryFaceTracking();
-            return -1;
-        }
-
-        const centers = faceLandmarks.map(getLandmarkCenter);
-        let selectedIndex = 0;
-
-        if (primaryFaceCenter) {
-            let selectedDistance = Infinity;
-            centers.forEach((center, index) => {
-                const distance = Math.hypot(center.x - primaryFaceCenter.x, center.y - primaryFaceCenter.y);
-                if (distance < selectedDistance) {
-                    selectedDistance = distance;
-                    selectedIndex = index;
-                }
-            });
-
-            if (selectedDistance > PRIMARY_FACE_MAX_DISTANCE) {
-                selectedIndex = largestFaceIndex(faceLandmarks);
-                smoothedLandmarks = null;
+        function selectImagePairFile(kind, file) {
+            if (!file) return;
+            if (!file.type.startsWith("image/")) {
+                status.textContent = "JPEG・PNG・WebP画像を選択してください";
+                return;
             }
-        } else {
-            selectedIndex = largestFaceIndex(faceLandmarks);
+
+            imagePairFiles[kind] = file;
+            const missing = [
+                imagePairFiles.neutral ? "" : "無表情画像",
+                imagePairFiles.expression ? "" : "表情画像"
+            ].filter(Boolean);
+
+            if (missing.length) {
+                status.textContent = `${missing.join("と")}を選択してください`;
+                return;
+            }
+
+            return importImagePair();
         }
 
-        primaryFaceCenter = centers[selectedIndex];
-        return selectedIndex;
-    }
+        async function importImagePair() {
+            const { neutral, expression } = imagePairFiles;
+            if (!neutral || !expression) return;
 
-    function largestFaceIndex(faceLandmarks = []) {
-        return faceLandmarks.reduce((bestIndex, landmarks, index) => {
-            const currentArea = landmarkBoundsArea(landmarks);
-            const bestArea = landmarkBoundsArea(faceLandmarks[bestIndex]);
-            return currentArea > bestArea ? index : bestIndex;
-        }, 0);
-    }
+            resetMediaSource({ resetImageInputs: false });
+            imagePairObjectUrls = [URL.createObjectURL(neutral), URL.createObjectURL(expression)];
+            const neutralImage = new Image();
 
-    function landmarkBoundsArea(landmarks = []) {
-        const bounds = landmarkBounds(landmarks);
-        return bounds ? (bounds.maxX - bounds.minX) * (bounds.maxY - bounds.minY) : 0;
-    }
+            await Promise.all([
+                loadMedia(neutralImage, imagePairObjectUrls[0], "load"),
+                loadMedia(sourceImage, imagePairObjectUrls[1], "load")
+            ]);
+            await setLandmarkerMode("IMAGE");
 
-    function landmarkBounds(landmarks = []) {
-        if (!landmarks.length) return null;
-        const bounds = landmarks.reduce((box, point) => ({
-            minX: Math.min(box.minX, point.x),
-            minY: Math.min(box.minY, point.y),
-            maxX: Math.max(box.maxX, point.x),
-            maxY: Math.max(box.maxY, point.y)
-        }), { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity });
+            const neutralResults = faceLandmarker.detect(neutralImage);
+            const expressionResults = faceLandmarker.detect(sourceImage);
+            const neutralCategories = neutralResults.faceBlendshapes[0]?.categories ?? [];
+            const neutralLandmarks = neutralResults.faceLandmarks[0] ?? [];
 
-        return Number.isFinite(bounds.minX) && bounds.maxX > bounds.minX && bounds.maxY > bounds.minY
-            ? bounds
-            : null;
-    }
+            if (!neutralCategories.length) throw new Error("無表情画像から顔を検出できません");
+            if (!expressionResults.faceBlendshapes[0]?.categories?.length) {
+                throw new Error("表情画像から顔を検出できません");
+            }
 
-    function getLandmarkCenter(landmarks = []) {
-        if (!landmarks.length) return { x: 0, y: 0 };
-        const sum = landmarks.reduce((total, point) => ({
-            x: total.x + point.x,
-            y: total.y + point.y
-        }), { x: 0, y: 0 });
-
-        return {
-            x: sum.x / landmarks.length,
-            y: sum.y / landmarks.length
-        };
-    }
-
-    function smoothLandmarks(landmarks = []) {
-        if (!landmarks.length) {
+            applyImagePairBaseline(neutralCategories, neutralLandmarks);
+            imagePairResults = expressionResults;
+            setActiveMode("image-pair");
             resetPrimaryFaceTracking();
-            return [];
+            processResults(imagePairResults);
+            startLoop();
+            status.textContent = "2枚の画像を解析しました";
+            enterExperience();
         }
 
-        if (!smoothedLandmarks || smoothedLandmarks.length !== landmarks.length) {
-            smoothedLandmarks = landmarks.map(point => ({ ...point }));
+        function applyImagePairBaseline(categories, landmarks) {
+            base.clear();
+            for (const { categoryName, score } of categories) {
+                base.set(categoryName, {
+                    mean: score,
+                    dead: DEADZONE,
+                    min: score - DEADZONE,
+                    max: score + DEADZONE
+                });
+            }
+
+            neutralPose = getPose(landmarks);
+            Object.assign(calibration, { warmup: 0, remaining: 0, samples: 0 });
+            calibration.stats.clear();
+            resetMotionVisualState();
+            hideCalibrationGuide();
+        }
+
+        async function setLandmarkerMode(mode) {
+            if (landmarkerRunningMode === mode) return;
+            await faceLandmarker.setOptions({ runningMode: mode });
+            landmarkerRunningMode = mode;
+        }
+
+        function startLoop() {
+            if (running) return;
+            running = true;
+            requestAnimationFrame(() => loop(++loopToken));
+        }
+
+        function stopLoop() {
+            running = false;
+            loopToken++;
+            resetPrimaryFaceTracking();
+        }
+
+        function loop(token) {
+            if (!running || token !== loopToken) return;
+            processResults(detectCurrentFrame());
+            requestAnimationFrame(() => loop(token));
+        }
+
+        function detectCurrentFrame() {
+            if (activeMode === "image-pair") return imagePairResults;
+            return faceLandmarker.detectForVideo(video, performance.now());
+        }
+
+        function processResults({ faceLandmarks, faceBlendshapes }) {
+            const primaryFaceIndex = selectPrimaryFaceIndex(faceLandmarks);
+            const rawLandmarks = primaryFaceIndex >= 0 ? faceLandmarks[primaryFaceIndex] : undefined;
+            const landmarks = smoothLandmarks(rawLandmarks);
+            const categories = primaryFaceIndex >= 0 ? faceBlendshapes[primaryFaceIndex]?.categories ?? [] : [];
+            currentPoseStable = isPoseStable(landmarks);
+            updateAutoCalibration(categories.length > 0, landmarks);
+            drawLandmarks(landmarks);
+            updateShapes(categories, landmarks);
+            updateMotionGainCalibration(categories);
+
+            const displayCategories = categories.length ? categories : zeroDisplayCategories();
+            const activeCategories = selectedCategories(displayCategories);
+            updateExperienceHud(categories);
+            if (!visualize.hidden) drawSpectrum(updateSpectrumFrame(activeCategories, displayCategories));
+        }
+
+        function selectPrimaryFaceIndex(faceLandmarks = []) {
+            if (!faceLandmarks.length) {
+                resetPrimaryFaceTracking();
+                return -1;
+            }
+
+            const centers = faceLandmarks.map(getLandmarkCenter);
+            let selectedIndex = 0;
+
+            if (primaryFaceCenter) {
+                let selectedDistance = Infinity;
+                centers.forEach((center, index) => {
+                    const distance = Math.hypot(center.x - primaryFaceCenter.x, center.y - primaryFaceCenter.y);
+                    if (distance < selectedDistance) {
+                        selectedDistance = distance;
+                        selectedIndex = index;
+                    }
+                });
+
+                if (selectedDistance > PRIMARY_FACE_MAX_DISTANCE) {
+                    selectedIndex = largestFaceIndex(faceLandmarks);
+                    smoothedLandmarks = null;
+                }
+            } else {
+                selectedIndex = largestFaceIndex(faceLandmarks);
+            }
+
+            primaryFaceCenter = centers[selectedIndex];
+            return selectedIndex;
+        }
+
+        function largestFaceIndex(faceLandmarks = []) {
+            return faceLandmarks.reduce((bestIndex, landmarks, index) => {
+                const currentArea = landmarkBoundsArea(landmarks);
+                const bestArea = landmarkBoundsArea(faceLandmarks[bestIndex]);
+                return currentArea > bestArea ? index : bestIndex;
+            }, 0);
+        }
+
+        function landmarkBoundsArea(landmarks = []) {
+            const bounds = landmarkBounds(landmarks);
+            return bounds ? (bounds.maxX - bounds.minX) * (bounds.maxY - bounds.minY) : 0;
+        }
+
+        function landmarkBounds(landmarks = []) {
+            if (!landmarks.length) return null;
+            const bounds = landmarks.reduce((box, point) => ({
+                minX: Math.min(box.minX, point.x),
+                minY: Math.min(box.minY, point.y),
+                maxX: Math.max(box.maxX, point.x),
+                maxY: Math.max(box.maxY, point.y)
+            }), { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity });
+
+            return Number.isFinite(bounds.minX) && bounds.maxX > bounds.minX && bounds.maxY > bounds.minY
+                ? bounds
+                : null;
+        }
+
+        function getLandmarkCenter(landmarks = []) {
+            if (!landmarks.length) return { x: 0, y: 0 };
+            const sum = landmarks.reduce((total, point) => ({
+                x: total.x + point.x,
+                y: total.y + point.y
+            }), { x: 0, y: 0 });
+
+            return {
+                x: sum.x / landmarks.length,
+                y: sum.y / landmarks.length
+            };
+        }
+
+        function smoothLandmarks(landmarks = []) {
+            if (!landmarks.length) {
+                resetPrimaryFaceTracking();
+                return [];
+            }
+
+            if (!smoothedLandmarks || smoothedLandmarks.length !== landmarks.length) {
+                smoothedLandmarks = landmarks.map(point => ({ ...point }));
+                return smoothedLandmarks;
+            }
+
+            const currentWeight = 1 - LANDMARK_SMOOTHING;
+            smoothedLandmarks = landmarks.map((point, index) => {
+                const previous = smoothedLandmarks[index];
+                return {
+                    x: previous.x * LANDMARK_SMOOTHING + point.x * currentWeight,
+                    y: previous.y * LANDMARK_SMOOTHING + point.y * currentWeight,
+                    z: (previous.z ?? point.z ?? 0) * LANDMARK_SMOOTHING + (point.z ?? previous.z ?? 0) * currentWeight,
+                    visibility: point.visibility,
+                    presence: point.presence
+                };
+            });
+
+            primaryFaceCenter = getLandmarkCenter(smoothedLandmarks);
             return smoothedLandmarks;
         }
 
-        const currentWeight = 1 - LANDMARK_SMOOTHING;
-        smoothedLandmarks = landmarks.map((point, index) => {
-            const previous = smoothedLandmarks[index];
-            return {
-                x: previous.x * LANDMARK_SMOOTHING + point.x * currentWeight,
-                y: previous.y * LANDMARK_SMOOTHING + point.y * currentWeight,
-                z: (previous.z ?? point.z ?? 0) * LANDMARK_SMOOTHING + (point.z ?? previous.z ?? 0) * currentWeight,
-                visibility: point.visibility,
-                presence: point.presence
-            };
-        });
-
-        primaryFaceCenter = getLandmarkCenter(smoothedLandmarks);
-        return smoothedLandmarks;
-    }
-
-    function resetPrimaryFaceTracking() {
-        primaryFaceCenter = null;
-        smoothedLandmarks = null;
-    }
-
-    function resetMotionVisualState() {
-        [spectrum, spectrumVelocity, spectrumPhase].forEach(map => map.clear());
-        shapeWeights.clear();
-        dominantShapeName = "circle";
-    }
-
-    function updateAutoCalibration(faceDetected, landmarks) {
-        if (!visualizing() || activeMode !== "camera") return;
-        if (startTransitionActive) return;
-        const facePositioned = faceDetected && faceFitsCalibrationFrame(landmarks);
-
-        if (calibrationStage === "positioning") {
-            if (facePositioned) beginCalibrationIntro();
-            return;
+        function resetPrimaryFaceTracking() {
+            primaryFaceCenter = null;
+            smoothedLandmarks = null;
         }
 
-        if (calibrationStage === "complete") return;
-
-        if (calibrationStage === "intro" && performance.now() >= calibrationIntroUntil) {
-            calibrationStage = "waiting";
-            showCalibrationGuide(GUIDE_MESSAGE, "recording");
+        function resetMotionVisualState() {
+            [spectrum, spectrumVelocity, spectrumPhase].forEach(map => map.clear());
+            shapeWeights.clear();
+            dominantShapeName = "circle";
         }
 
-        if (faceDetected && !base.size && !calibrationActive()) {
-            if (calibrationStage === "intro") return;
-            startGuidedCalibration();
-        }
-    }
+        function updateAutoCalibration(faceDetected, landmarks) {
+            if (!visualizing() || activeMode !== "camera") return;
+            if (startTransitionActive) return;
+            const facePositioned = faceDetected && faceFitsCalibrationFrame(landmarks);
 
-    function faceFitsCalibrationFrame(landmarks = []) {
-        if (!landmarks.length) return false;
-
-        const videoAspect = video.videoWidth && video.videoHeight
-            ? video.videoWidth / video.videoHeight
-            : 16 / 9;
-        const stageAspect = vizCanvas.width / vizCanvas.height;
-        let visibleX = 1;
-        let visibleY = 1;
-        let offsetX = 0;
-        let offsetY = 0;
-
-        if (videoAspect > stageAspect) {
-            visibleX = stageAspect / videoAspect;
-            offsetX = (1 - visibleX) / 2;
-        } else {
-            visibleY = videoAspect / stageAspect;
-            offsetY = (1 - visibleY) / 2;
-        }
-
-        const insideCount = landmarks.reduce((count, point) => {
-            const x = (point.x - offsetX) / visibleX;
-            const y = (point.y - offsetY) / visibleY;
-            const ellipseDistance =
-                ((x - 0.5) / 0.3) ** 2
-                + ((y - SHAPE_CENTER_Y_RATIO) / 0.225) ** 2;
-            return count + Number(ellipseDistance <= 1);
-        }, 0);
-
-        return insideCount / landmarks.length >= 0.97;
-    }
-
-    function setActiveMode(mode) {
-        activeMode = mode;
-        stage.classList.toggle("file-source", mode !== "camera");
-        video.hidden = mode === "image-pair";
-        sourceImage.hidden = mode !== "image-pair";
-        video.controls = video.loop = mode === "video-file";
-        const imageMode = mode === "image-pair";
-        calibrate.disabled = imageMode;
-        measureMotionGain.disabled = imageMode;
-        clearBaseline.disabled = imageMode;
-    }
-
-    function stopCameraStream() {
-        const stream = video.srcObject instanceof MediaStream ? video.srcObject : null;
-        if (stream) stream.getTracks().forEach(track => track.stop());
-        video.srcObject = null;
-    }
-
-    function resetMediaSource({ resetImageInputs = true } = {}) {
-        stopLoop();
-        stopCameraStream();
-        clearImportedFile();
-        clearImagePairMedia({ resetInputs: resetImageInputs });
-    }
-
-    function clearImportedFile() {
-        if (activeObjectUrl) URL.revokeObjectURL(activeObjectUrl);
-        activeObjectUrl = "";
-        video.removeAttribute("src");
-        video.load();
-        fileInput.value = "";
-    }
-
-    function clearImagePairMedia({ resetInputs = true } = {}) {
-        for (const url of imagePairObjectUrls) URL.revokeObjectURL(url);
-        imagePairObjectUrls = [];
-        imagePairResults = null;
-        sourceImage.removeAttribute("src");
-        sourceImage.hidden = true;
-
-        if (!resetInputs) return;
-        imagePairFiles.neutral = null;
-        imagePairFiles.expression = null;
-        neutralImageInput.value = "";
-        expressionImageInput.value = "";
-    }
-
-    function loadMedia(media, src, eventName) {
-        return new Promise((resolve, reject) => {
-            const done = () => {
-                media.removeEventListener(eventName, done);
-                media.removeEventListener("error", fail);
-                resolve();
-            };
-            const fail = () => {
-                media.removeEventListener(eventName, done);
-                media.removeEventListener("error", fail);
-                reject(new Error("メディアを読み込めません"));
-            };
-            media.addEventListener(eventName, done, { once: true });
-            media.addEventListener("error", fail, { once: true });
-            media.src = src;
-        });
-    }
-
-    function seekVideo(time) {
-        return new Promise(resolve => {
-            if (Math.abs(video.currentTime - time) < 0.001) {
-                resolve();
+            if (calibrationStage === "positioning") {
+                if (facePositioned) beginCalibrationIntro();
                 return;
             }
-            video.addEventListener("seeked", resolve, { once: true });
-            video.currentTime = time;
-        });
-    }
 
-    function waitVideoFrame() {
-        return new Promise(resolve => {
-            let done = false;
-            const finish = () => {
-                if (done) return;
-                done = true;
-                resolve();
-            };
-            setTimeout(finish, 80);
-            if ("requestVideoFrameCallback" in video) {
-                video.requestVideoFrameCallback(finish);
-                return;
+            if (calibrationStage === "complete") return;
+
+            if (calibrationStage === "intro" && performance.now() >= calibrationIntroUntil) {
+                calibrationStage = "waiting";
+                showCalibrationGuide(GUIDE_MESSAGE, "recording");
             }
-            requestAnimationFrame(finish);
-        });
-    }
 
-    function updateShapes(categories, landmarks) {
-        updateCalibration(categories, landmarks);
+            if (faceDetected && !base.size && !calibrationActive()) {
+                if (calibrationStage === "intro") return;
+                startGuidedCalibration();
+            }
+        }
 
-        for (const { categoryName, score } of categories) {
-            if (!shapes.has(categoryName)) {
-                const row = document.createElement("div");
-                const label = document.createElement("label");
-                const input = document.createElement("input");
-                const name = document.createElement("span");
-                const bar = document.createElement("span");
-                const fill = document.createElement("span");
-                const value = document.createElement("span");
-                const gain = document.createElement("span");
+        function faceFitsCalibrationFrame(landmarks = []) {
+            if (!landmarks.length) return false;
 
-                row.className = "shape";
-                label.className = "param";
-                label.title = categoryName;
-                input.type = "checkbox";
-                input.checked = savedParamEnabled(categoryName);
-                name.textContent = categoryName;
-                bar.className = "bar raw";
-                fill.className = "fill";
-                value.className = "value";
-                gain.className = "gain";
-                input.onchange = () => {
-                    setParamEnabled(categoryName, input.checked);
+            const videoAspect = video.videoWidth && video.videoHeight
+                ? video.videoWidth / video.videoHeight
+                : 16 / 9;
+            const stageAspect = vizCanvas.width / vizCanvas.height;
+            let visibleX = 1;
+            let visibleY = 1;
+            let offsetX = 0;
+            let offsetY = 0;
+
+            if (videoAspect > stageAspect) {
+                visibleX = stageAspect / videoAspect;
+                offsetX = (1 - visibleX) / 2;
+            } else {
+                visibleY = videoAspect / stageAspect;
+                offsetY = (1 - visibleY) / 2;
+            }
+
+            const insideCount = landmarks.reduce((count, point) => {
+                const x = (point.x - offsetX) / visibleX;
+                const y = (point.y - offsetY) / visibleY;
+                const ellipseDistance =
+                    ((x - 0.5) / 0.3) ** 2
+                    + ((y - SHAPE_CENTER_Y_RATIO) / 0.225) ** 2;
+                return count + Number(ellipseDistance <= 1);
+            }, 0);
+
+            return insideCount / landmarks.length >= 0.97;
+        }
+
+        function setActiveMode(mode) {
+            activeMode = mode;
+            stage.classList.toggle("file-source", mode !== "camera");
+            video.hidden = mode === "image-pair";
+            sourceImage.hidden = mode !== "image-pair";
+            video.controls = video.loop = mode === "video-file";
+            const imageMode = mode === "image-pair";
+            calibrate.disabled = imageMode;
+            measureMotionGain.disabled = imageMode;
+            clearBaseline.disabled = imageMode;
+        }
+
+        function stopCameraStream() {
+            const stream = video.srcObject instanceof MediaStream ? video.srcObject : null;
+            if (stream) stream.getTracks().forEach(track => track.stop());
+            video.srcObject = null;
+        }
+
+        function resetMediaSource({ resetImageInputs = true } = {}) {
+            stopLoop();
+            stopCameraStream();
+            clearImportedFile();
+            clearImagePairMedia({ resetInputs: resetImageInputs });
+        }
+
+        function clearImportedFile() {
+            if (activeObjectUrl) URL.revokeObjectURL(activeObjectUrl);
+            activeObjectUrl = "";
+            video.removeAttribute("src");
+            video.load();
+            fileInput.value = "";
+        }
+
+        function clearImagePairMedia({ resetInputs = true } = {}) {
+            for (const url of imagePairObjectUrls) URL.revokeObjectURL(url);
+            imagePairObjectUrls = [];
+            imagePairResults = null;
+            sourceImage.removeAttribute("src");
+            sourceImage.hidden = true;
+
+            if (!resetInputs) return;
+            imagePairFiles.neutral = null;
+            imagePairFiles.expression = null;
+            neutralImageInput.value = "";
+            expressionImageInput.value = "";
+        }
+
+        function loadMedia(media, src, eventName) {
+            return new Promise((resolve, reject) => {
+                const done = () => {
+                    media.removeEventListener(eventName, done);
+                    media.removeEventListener("error", fail);
+                    resolve();
                 };
-
-                setParamEnabled(categoryName, input.checked);
-                label.append(input, name);
-                bar.append(fill);
-                row.append(label, bar, value, gain);
-                shapesPanel.appendChild(row);
-                shapes.set(categoryName, { input, bar, value, gain });
-            }
-            const { bar, value, gain } = shapes.get(categoryName);
-            const calibrated = base.size > 0;
-            const displayScore = calibrated ? adjustedCalibratedScore(categoryName, score) : score;
-            const width = calibrated
-                ? Math.min(Math.abs(displayScore) * 100, 50)
-                : Math.min(score * 100, 100);
-            bar.className = `bar ${calibrated ? (displayScore < 0 ? "negative" : "positive") : "raw"}`;
-            bar.style.setProperty("--v", `${width}%`);
-            value.textContent = calibrated ? signed(displayScore) : score.toFixed(4);
-            gain.textContent = calibrated ? `x${motionGain(categoryName).toFixed(2)}` : "";
-        }
-    }
-
-    function selectedCategories(categories) {
-        return categories.filter(({ categoryName }) => enabledParams.has(categoryName));
-    }
-
-    function zeroDisplayCategories() {
-        const names = enabledParams.size ? [...enabledParams] : [...base.keys()];
-        return names.map(categoryName => ({ categoryName, score: 0 }));
-    }
-
-    function setParamEnabled(categoryName, enabled) {
-        if (enabled) {
-            enabledParams.add(categoryName);
-            return;
+                const fail = () => {
+                    media.removeEventListener(eventName, done);
+                    media.removeEventListener("error", fail);
+                    reject(new Error("メディアを読み込めません"));
+                };
+                media.addEventListener(eventName, done, { once: true });
+                media.addEventListener("error", fail, { once: true });
+                media.src = src;
+            });
         }
 
-        enabledParams.delete(categoryName);
-        [spectrum, spectrumVelocity, spectrumPhase].forEach(map => map.delete(categoryName));
-    }
-
-    function savedParamEnabled(categoryName) {
-        const paramSet = paramSets[activeParamSetName];
-        return paramSet && categoryName in paramSet ? Boolean(paramSet[categoryName]) : true;
-    }
-
-    async function loadParamSets() {
-        return loadSequentialSets({
-            nameForIndex: datasetName,
-            pathForName: name => `${PARAM_SET_DIR}/${name}`,
-            parse: (stored, name) => {
-                const paramSet = stored?.[name] ?? stored;
-                return validParamSet(paramSet) ? paramSet : null;
-            },
-            errorMessage: "parameterを読み込めません"
-        });
-    }
-
-    async function loadSequentialSets({ nameForIndex, pathForName, parse, errorMessage }) {
-        try {
-            const sets = {};
-
-            for (let index = 1; index <= 99; index++) {
-                const name = nameForIndex(index);
-                const response = await fetch(pathForName(name), { cache: "no-store" });
-                if (response.status === 404) break;
-                if (!response.ok) throw new Error(`${name}: HTTP ${response.status}`);
-
-                const text = await response.text();
-                if (!text.trim()) continue;
-
-                const value = parse(JSON.parse(text), name);
-                if (value) sets[name] = value;
-            }
-
-            return sets;
-        } catch (error) {
-            status.textContent = `${errorMessage}: ${error.message}`;
-            return {};
-        }
-    }
-
-    function validParamSet(value) {
-        return value && typeof value === "object" && !Array.isArray(value);
-    }
-
-    function renderNamedOptions(select, collection, selectedName, emptyLabel) {
-        const names = Object.keys(collection).sort((a, b) => a.localeCompare(b, "ja", { numeric: true }));
-        select.replaceChildren(
-            new Option(emptyLabel, ""),
-            ...names.map(name => new Option(name, name))
-        );
-        select.value = names.includes(selectedName) ? selectedName : "";
-        return select.value;
-    }
-
-    function renderParamSetOptions(selectedName = activeParamSetName) {
-        activeParamSetName = renderNamedOptions(
-            paramSetSelect,
-            paramSets,
-            selectedName,
-            "セットなし"
-        );
-    }
-
-    async function saveCurrentParamSet() {
-        if (!shapes.size) {
-            status.textContent = "保存できるパラメーターがありません";
-            return;
-        }
-
-        const name = nextParamSetName();
-        const paramSet = Object.fromEntries([...shapes].map(([categoryName, { input }]) => [categoryName, input.checked]));
-        paramSets[name] = paramSet;
-
-        try {
-            await writeJsonFile(JSON.stringify(paramSet, null, 2), name);
-            renderParamSetOptions(name);
-            status.textContent = `${name} を書き出しました`;
-        } catch (error) {
-            delete paramSets[name];
-            status.textContent = `保存できません: ${error.message}`;
-        }
-    }
-
-    async function writeJsonFile(json, name) {
-        const blob = new Blob([json], { type: "application/json" });
-
-        if ("showSaveFilePicker" in window) {
-            const handle = await window.showSaveFilePicker({ suggestedName: name });
-            const writable = await handle.createWritable();
-            await writable.write(blob);
-            await writable.close();
-            return;
-        }
-
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement("a");
-        link.href = url;
-        link.download = name;
-        link.click();
-        setTimeout(() => URL.revokeObjectURL(url), 0);
-    }
-
-    function nextParamSetName() {
-        return nextAvailableName(paramSets, datasetName);
-    }
-
-    function datasetName(index) {
-        return `dataset${String(index).padStart(2, "0")}`;
-    }
-
-    function nextAvailableName(collection, nameForIndex) {
-        let index = Object.keys(collection).length + 1;
-        let name;
-
-        do {
-            name = nameForIndex(index++);
-        } while (name in collection);
-
-        return name;
-    }
-
-    function applyParamSet(name) {
-        activeParamSetName = name;
-        const paramSet = paramSets[name];
-
-        for (const [categoryName, { input }] of shapes) {
-            input.checked = paramSet && categoryName in paramSet ? Boolean(paramSet[categoryName]) : true;
-            setParamEnabled(categoryName, input.checked);
-        }
-
-        status.textContent = name ? `${name} を適用しました` : "";
-    }
-
-    async function loadMotionGainSets() {
-        return loadSequentialSets({
-            nameForIndex: motionGainSetName,
-            pathForName: name => `${PARAM_SET_DIR}/${name}.json`,
-            parse: stored => {
-                const gainSet = normalizeMotionGainSet(stored);
-                return validMotionGainSet(gainSet) ? gainSet : null;
-            },
-            errorMessage: "係数セットを読み込めません"
-        });
-    }
-
-    function validMotionGainSet(value) {
-        return value && typeof value === "object" && !Array.isArray(value)
-            && Object.keys(value).length > 0
-            && Object.values(value).every(gain => Number.isFinite(gain));
-    }
-
-    function renderMotionGainSetOptions(selectedName = activeMotionGainSetName) {
-        activeMotionGainSetName = renderNamedOptions(
-            motionGainSetSelect,
-            motionGainSets,
-            selectedName,
-            "係数なし"
-        );
-    }
-
-    function applyMotionGainSet(name) {
-        activeMotionGainSetName = name;
-        motionGains.clear();
-
-        const gainSet = motionGainSets[name];
-        if (gainSet) {
-            for (const [categoryName, gain] of Object.entries(gainSet)) {
-                motionGains.set(categoryName, clamp(gain, MOTION_GAIN_MIN, MOTION_GAIN_MAX));
-            }
-        }
-
-        resetMotionVisualState();
-        status.textContent = name ? `${name} を適用しました` : "係数を解除しました";
-    }
-
-    async function saveCurrentMotionGainSet() {
-        if (!motionGains.size) {
-            status.textContent = "保存できる係数がありません";
-            return;
-        }
-
-        const name = nextMotionGainSetName();
-        const gainSet = Object.fromEntries([...motionGains].map(([categoryName, gain]) => [categoryName, roundGain(gain)]));
-        const payload = {
-            version: 1,
-            type: "motionGainSet",
-            createdAt: new Date().toISOString(),
-            setCount: MOTION_GAIN_SET_COUNT,
-            secondsPerSet: MOTION_GAIN_SAMPLE_MS / 1000,
-            gains: gainSet
-        };
-
-        motionGainSets[name] = gainSet;
-
-        try {
-            await writeJsonFile(JSON.stringify(payload, null, 2), `${name}.json`);
-            renderMotionGainSetOptions(name);
-            status.textContent = `${name}.json を書き出しました`;
-        } catch (error) {
-            delete motionGainSets[name];
-            status.textContent = `係数を保存できません: ${error.message}`;
-        }
-    }
-
-    function normalizeMotionGainSet(stored) {
-        const source = stored?.gains ?? stored;
-        if (!source || typeof source !== "object" || Array.isArray(source)) return null;
-
-        return Object.fromEntries(Object.entries(source)
-            .map(([categoryName, gain]) => [categoryName, Number(gain)])
-            .filter(([, gain]) => Number.isFinite(gain))
-            .map(([categoryName, gain]) => [categoryName, roundGain(gain)]));
-    }
-
-    function nextMotionGainSetName() {
-        return nextAvailableName(motionGainSets, motionGainSetName);
-    }
-
-    function motionGainSetName(index) {
-        return `motionGainSet${String(index).padStart(2, "0")}`;
-    }
-
-    function updateCalibration(categories, landmarks) {
-        if ((!calibration.warmup && !calibration.remaining) || !categories.length) return;
-
-        if (calibration.warmup) {
-            status.textContent = `準備中 ${--calibration.warmup}`;
-            updateCalibrationPoint();
-            return;
-        }
-
-        accumulateCategoryStats(calibration.stats, categories);
-        addPoseCalibrationSample(landmarks);
-        calibration.samples++;
-        status.textContent = `キャリブレーション中 ${--calibration.remaining}`;
-        updateCalibrationPoint();
-
-        if (calibration.remaining) return;
-
-        base.clear();
-        writeCalibrationBase(base, calibration.stats, calibration.samples);
-        finishPoseCalibration();
-        calibrate.disabled = false;
-        measureMotionGain.disabled = false;
-        calibrationStage = "complete";
-        resetMotionVisualState();
-        hideCalibrationGuide();
-        sendControlPanelMessage({ type: "calibration-complete" });
-        startExperienceIntro();
-        status.textContent = `キャリブ済み (${calibration.samples} frames)`;
-    }
-
-    function updateCalibrationPoint(progressValue) {
-        const progress = progressValue ?? (!calibrationActive() || calibration.warmup
-            ? 0
-            : clamp((CALIBRATION_FRAMES - calibration.remaining) / CALIBRATION_FRAMES * 100, 0, 100));
-        calibrationGuide.style.setProperty("--progress", progress);
-        calibrationPoint.setAttribute("aria-valuenow", String(Math.round(progress)));
-    }
-
-    async function calibrateFromVideoStart() {
-        const duration = Math.min(VIDEO_BASELINE_SECONDS, video.duration || VIDEO_BASELINE_SECONDS);
-        const samplesByName = new Map();
-        let sampleCount = 0;
-        resetPoseCalibration();
-
-        calibratingVideoFile = true;
-        try {
-            for (let pass = 0; pass < VIDEO_BASELINE_PASSES; pass++) {
-                status.textContent = `動画キャリブレーション中 ${pass + 1}/${VIDEO_BASELINE_PASSES}`;
-                await seekVideo(0);
-                await video.play();
-                while (video.currentTime < duration) {
-                    await waitVideoFrame();
-                    const result = detectCurrentFrame();
-                    const categories = result.faceBlendshapes[0]?.categories ?? [];
-                    if (!categories.length) continue;
-                    sampleCount++;
-                    addPoseCalibrationSample(result.faceLandmarks[0]);
-                    for (const { categoryName, score } of categories) {
-                        const values = samplesByName.get(categoryName) ?? [];
-                        values.push(score);
-                        samplesByName.set(categoryName, values);
-                    }
+        function seekVideo(time) {
+            return new Promise(resolve => {
+                if (Math.abs(video.currentTime - time) < 0.001) {
+                    resolve();
+                    return;
                 }
-                video.pause();
+                video.addEventListener("seeked", resolve, { once: true });
+                video.currentTime = time;
+            });
+        }
+
+        function waitVideoFrame() {
+            return new Promise(resolve => {
+                let done = false;
+                const finish = () => {
+                    if (done) return;
+                    done = true;
+                    resolve();
+                };
+                setTimeout(finish, 80);
+                if ("requestVideoFrameCallback" in video) {
+                    video.requestVideoFrameCallback(finish);
+                    return;
+                }
+                requestAnimationFrame(finish);
+            });
+        }
+
+        function updateShapes(categories, landmarks) {
+            updateCalibration(categories, landmarks);
+
+            for (const { categoryName, score } of categories) {
+                if (!shapes.has(categoryName)) {
+                    const row = document.createElement("div");
+                    const label = document.createElement("label");
+                    const input = document.createElement("input");
+                    const name = document.createElement("span");
+                    const bar = document.createElement("span");
+                    const fill = document.createElement("span");
+                    const value = document.createElement("span");
+                    const gain = document.createElement("span");
+
+                    row.className = "shape";
+                    label.className = "param";
+                    label.title = categoryName;
+                    input.type = "checkbox";
+                    input.checked = savedParamEnabled(categoryName);
+                    name.textContent = categoryName;
+                    bar.className = "bar raw";
+                    fill.className = "fill";
+                    value.className = "value";
+                    gain.className = "gain";
+                    input.onchange = () => {
+                        setParamEnabled(categoryName, input.checked);
+                    };
+
+                    setParamEnabled(categoryName, input.checked);
+                    label.append(input, name);
+                    bar.append(fill);
+                    row.append(label, bar, value, gain);
+                    shapesPanel.appendChild(row);
+                    shapes.set(categoryName, { input, bar, value, gain });
+                }
+                const { bar, value, gain } = shapes.get(categoryName);
+                const calibrated = base.size > 0;
+                const displayScore = calibrated ? adjustedCalibratedScore(categoryName, score) : score;
+                const width = calibrated
+                    ? Math.min(Math.abs(displayScore) * 100, 50)
+                    : Math.min(score * 100, 100);
+                bar.className = `bar ${calibrated ? (displayScore < 0 ? "negative" : "positive") : "raw"}`;
+                bar.style.setProperty("--v", `${width}%`);
+                value.textContent = calibrated ? signed(displayScore) : score.toFixed(4);
+                gain.textContent = calibrated ? `x${motionGain(categoryName).toFixed(2)}` : "";
             }
-        } finally {
-            video.pause();
-            calibratingVideoFile = false;
         }
 
-        if (!sampleCount) {
-            status.textContent = `最初の${VIDEO_BASELINE_SECONDS}秒x${VIDEO_BASELINE_PASSES}回で顔を検出できません`;
-            return;
+        function selectedCategories(categories) {
+            return categories.filter(({ categoryName }) => enabledParams.has(categoryName));
         }
 
-        base.clear();
-        calibration.stats.clear();
-        Object.assign(calibration, { warmup: 0, remaining: 0, samples: sampleCount });
-        for (const [categoryName, values] of samplesByName) {
-            const mean = values.reduce((sum, value) => sum + value, 0) / values.length;
-            const min = Math.min(...values);
-            const max = Math.max(...values);
-            const dead = Math.max((max - min) * 0.1, DEADZONE);
-            base.set(categoryName, { mean, min, max, dead });
+        function zeroDisplayCategories() {
+            const names = enabledParams.size ? [...enabledParams] : [...base.keys()];
+            return names.map(categoryName => ({ categoryName, score: 0 }));
         }
-        finishPoseCalibration();
-        calibrate.disabled = false;
-        measureMotionGain.disabled = false;
-        hideCalibrationGuide();
-        status.textContent = `キャリブ済み (${VIDEO_BASELINE_SECONDS * VIDEO_BASELINE_PASSES}s)`;
-    }
 
-    function accumulateCategoryStats(stats, categories) {
-        for (const { categoryName, score } of categories) {
-            const stat = stats.get(categoryName) ?? { sum: 0, sq: 0 };
-            stat.sum += score;
-            stat.sq += score * score;
-            stats.set(categoryName, stat);
+        function setParamEnabled(categoryName, enabled) {
+            if (enabled) {
+                enabledParams.add(categoryName);
+                return;
+            }
+
+            enabledParams.delete(categoryName);
+            [spectrum, spectrumVelocity, spectrumPhase].forEach(map => map.delete(categoryName));
         }
-    }
 
-    function writeCalibrationBase(targetBase, stats, sampleCount) {
-        if (!sampleCount) return;
-
-        for (const [categoryName, { sum, sq }] of stats) {
-            const mean = sum / sampleCount;
-            const variance = Math.max(sq / sampleCount - mean * mean, 0);
-            targetBase.set(categoryName, { mean, dead: Math.max(Math.sqrt(variance) * 3, DEADZONE) });
+        function savedParamEnabled(categoryName) {
+            const paramSet = paramSets[activeParamSetName];
+            return paramSet && categoryName in paramSet ? Boolean(paramSet[categoryName]) : true;
         }
-    }
 
-    function calibratedScore(categoryName, score, baseMap = base) {
-        const { mean = 0, dead = 0, min = mean - dead, max = mean + dead } = baseMap.get(categoryName) ?? {};
-        if (score >= min - dead && score <= max + dead) return 0;
-        return score < mean ? score - (min - dead) : score - (max + dead);
-    }
-
-    function poseGatedCalibratedScore(categoryName, score, poseStable = currentPoseStable, baseMap = base) {
-        return poseStable ? calibratedScore(categoryName, score, baseMap) : 0;
-    }
-
-    function adjustedCalibratedScore(categoryName, score, poseStable = currentPoseStable, baseMap = base) {
-        return poseGatedCalibratedScore(categoryName, score, poseStable, baseMap) * motionGain(categoryName);
-    }
-
-    function motionGain(categoryName) {
-        return motionGains.get(categoryName) ?? 1;
-    }
-
-    function resetPoseCalibration() {
-        neutralPose = null;
-        currentPoseStable = true;
-        resetPoseCalibrationState(poseCalibration);
-    }
-
-    function addPoseCalibrationSample(landmarks = []) {
-        addPoseCalibrationSampleToState(poseCalibration, landmarks);
-    }
-
-    function finishPoseCalibration() {
-        neutralPose = finishPoseCalibrationState(poseCalibration);
-    }
-
-    function createCalibrationState(warmup = 0, frames = 0) {
-        return { warmup, remaining: frames, samples: 0, stats: new Map() };
-    }
-
-    function createPoseCalibrationState() {
-        return { samples: 0, sum: null };
-    }
-
-    function resetPoseCalibrationState(state) {
-        Object.assign(state, { samples: 0, sum: null });
-    }
-
-    function addPoseCalibrationSampleToState(state, landmarks = []) {
-        const pose = getPose(landmarks);
-        if (!pose) return;
-
-        state.sum ??= { scale: 0, yaw: 0, pitch: 0, roll: 0 };
-
-        for (const key of Object.keys(state.sum)) {
-            state.sum[key] += pose[key];
+        async function loadParamSets() {
+            return loadSequentialSets({
+                nameForIndex: datasetName,
+                pathForName: name => `${PARAM_SET_DIR}/${name}`,
+                parse: (stored, name) => {
+                    const paramSet = stored?.[name] ?? stored;
+                    return validParamSet(paramSet) ? paramSet : null;
+                },
+                errorMessage: "parameterを読み込めません"
+            });
         }
-        state.samples++;
-    }
 
-    function finishPoseCalibrationState(state) {
-        if (!state.samples || !state.sum) return null;
-        return Object.fromEntries(Object.entries(state.sum)
-            .map(([key, value]) => [key, value / state.samples]));
-    }
+        async function loadSequentialSets({ nameForIndex, pathForName, parse, errorMessage }) {
+            try {
+                const sets = {};
 
-    function isPoseStable(landmarks = [], poseThreshold = POSE_THRESHOLD, rollThreshold = ROLL_THRESHOLD) {
-        return isPoseStableForBase(landmarks, base, neutralPose, poseThreshold, rollThreshold);
-    }
+                for (let index = 1; index <= 99; index++) {
+                    const name = nameForIndex(index);
+                    const response = await fetch(pathForName(name), { cache: "no-store" });
+                    if (response.status === 404) break;
+                    if (!response.ok) throw new Error(`${name}: HTTP ${response.status}`);
 
-    function isPoseStableForBase(landmarks = [], baseMap = base, basePose = neutralPose, poseThreshold = POSE_THRESHOLD, rollThreshold = ROLL_THRESHOLD) {
-        if (!baseMap.size || !basePose) return true;
-        const pose = getPose(landmarks);
-        if (!pose) return false;
+                    const text = await response.text();
+                    if (!text.trim()) continue;
 
-        const dPose = poseDiff(pose, basePose);
-        const dRoll = Math.abs(angleDiff(pose.roll, basePose.roll));
-        return dPose < poseThreshold && dRoll < rollThreshold;
-    }
+                    const value = parse(JSON.parse(text), name);
+                    if (value) sets[name] = value;
+                }
 
-    function getPose(landmarks = []) {
-        const leftEye = averageLandmarks(landmarks, [33, 133]);
-        const rightEye = averageLandmarks(landmarks, [263, 362]);
-        const nose = landmarks[1];
-        if (!leftEye || !rightEye || !nose) return null;
-
-        const eyeCenter = midpoint(leftEye, rightEye);
-        const eyeDistance = Math.hypot(rightEye.x - leftEye.x, rightEye.y - leftEye.y);
-        if (!Number.isFinite(eyeDistance) || eyeDistance <= 0.001) return null;
-
-        const roll = Math.atan2(rightEye.y - leftEye.y, rightEye.x - leftEye.x);
-        const noseVector = rotatePoint({ x: nose.x - eyeCenter.x, y: nose.y - eyeCenter.y }, -roll);
-
-        return {
-            scale: eyeDistance,
-            yaw: noseVector.x / eyeDistance,
-            pitch: noseVector.y / eyeDistance,
-            roll
-        };
-    }
-
-    function poseDiff(pose, basePose) {
-        const scale = Math.max(basePose.scale, 0.001);
-        return (
-            Math.abs(Math.log(Math.max(pose.scale, 0.001) / scale)) +
-            Math.abs(pose.yaw - basePose.yaw) +
-            Math.abs(pose.pitch - basePose.pitch)
-        );
-    }
-
-    function angleDiff(value, baseValue) {
-        return Math.atan2(Math.sin(value - baseValue), Math.cos(value - baseValue));
-    }
-
-    function averageLandmarks(landmarks, indices) {
-        const points = indices.map(index => landmarks[index]).filter(Boolean);
-        if (!points.length) return null;
-        return {
-            x: points.reduce((sum, point) => sum + point.x, 0) / points.length,
-            y: points.reduce((sum, point) => sum + point.y, 0) / points.length
-        };
-    }
-
-    function rotatePoint(point, angle) {
-        const [cos, sin] = [Math.cos(angle), Math.sin(angle)];
-        return {
-            x: point.x * cos - point.y * sin,
-            y: point.x * sin + point.y * cos
-        };
-    }
-
-    function startMotionGainCalibration() {
-        if (!base.size || calibrationActive()) {
-            status.textContent = "先にキャリブレーションしてください";
-            return;
+                return sets;
+            } catch (error) {
+                status.textContent = `${errorMessage}: ${error.message}`;
+                return {};
+            }
         }
-        Object.assign(motionGainCalibration, {
-            active: true,
-            startedAt: performance.now(),
-            duration: MOTION_GAIN_SAMPLE_MS,
-            setIndex: 0
-        });
-        motionGainCalibration.stats.clear();
-        motionGainCalibration.sets = [];
-        motionGains.clear();
-        activeMotionGainSetName = "";
-        renderMotionGainSetOptions();
-        resetMotionVisualState();
-        showCalibrationGuide(`${MOTION_GAIN_MESSAGE}\n1/${MOTION_GAIN_SET_COUNT}`);
-        calibrate.disabled = true;
-        measureMotionGain.disabled = true;
-        updateCalibrationPoint(0);
-    }
 
-    function resetMotionGainCalibration() {
-        Object.assign(motionGainCalibration, {
-            active: false,
-            startedAt: 0,
-            duration: MOTION_GAIN_SAMPLE_MS,
-            setIndex: 0
-        });
-        motionGainCalibration.stats.clear();
-        motionGainCalibration.sets = [];
-    }
+        function validParamSet(value) {
+            return value && typeof value === "object" && !Array.isArray(value);
+        }
 
-    function updateMotionGainCalibration(categories) {
-        if (!motionGainCalibration.active || !base.size) return;
+        function renderNamedOptions(select, collection, selectedName, emptyLabel) {
+            const names = Object.keys(collection).sort((a, b) => a.localeCompare(b, "ja", { numeric: true }));
+            select.replaceChildren(
+                new Option(emptyLabel, ""),
+                ...names.map(name => new Option(name, name))
+            );
+            select.value = names.includes(selectedName) ? selectedName : "";
+            return select.value;
+        }
 
-        const elapsed = performance.now() - motionGainCalibration.startedAt;
-        const remaining = Math.max(Math.ceil((motionGainCalibration.duration - elapsed) / 1000), 0);
+        function renderParamSetOptions(selectedName = activeParamSetName) {
+            activeParamSetName = renderNamedOptions(
+                paramSetSelect,
+                paramSets,
+                selectedName,
+                "セットなし"
+            );
+        }
 
-        if (!categories.length) {
-            status.textContent = `係数測定 ${motionGainCalibration.setIndex + 1}/${MOTION_GAIN_SET_COUNT}: 顔を検出中 ${remaining}s`;
+        async function saveCurrentParamSet() {
+            if (!shapes.size) {
+                status.textContent = "保存できるパラメーターがありません";
+                return;
+            }
+
+            const name = nextParamSetName();
+            const paramSet = Object.fromEntries([...shapes].map(([categoryName, { input }]) => [categoryName, input.checked]));
+            paramSets[name] = paramSet;
+
+            try {
+                await writeJsonFile(JSON.stringify(paramSet, null, 2), name);
+                renderParamSetOptions(name);
+                status.textContent = `${name} を書き出しました`;
+            } catch (error) {
+                delete paramSets[name];
+                status.textContent = `保存できません: ${error.message}`;
+            }
+        }
+
+        async function writeJsonFile(json, name) {
+            const blob = new Blob([json], { type: "application/json" });
+
+            if ("showSaveFilePicker" in window) {
+                const handle = await window.showSaveFilePicker({ suggestedName: name });
+                const writable = await handle.createWritable();
+                await writable.write(blob);
+                await writable.close();
+                return;
+            }
+
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement("a");
+            link.href = url;
+            link.download = name;
+            link.click();
+            setTimeout(() => URL.revokeObjectURL(url), 0);
+        }
+
+        function nextParamSetName() {
+            return nextAvailableName(paramSets, datasetName);
+        }
+
+        function datasetName(index) {
+            return `dataset${String(index).padStart(2, "0")}`;
+        }
+
+        function nextAvailableName(collection, nameForIndex) {
+            let index = Object.keys(collection).length + 1;
+            let name;
+
+            do {
+                name = nameForIndex(index++);
+            } while (name in collection);
+
+            return name;
+        }
+
+        function applyParamSet(name) {
+            activeParamSetName = name;
+            const paramSet = paramSets[name];
+
+            for (const [categoryName, { input }] of shapes) {
+                input.checked = paramSet && categoryName in paramSet ? Boolean(paramSet[categoryName]) : true;
+                setParamEnabled(categoryName, input.checked);
+            }
+
+            status.textContent = name ? `${name} を適用しました` : "";
+        }
+
+        async function loadMotionGainSets() {
+            return loadSequentialSets({
+                nameForIndex: motionGainSetName,
+                pathForName: name => `${PARAM_SET_DIR}/${name}.json`,
+                parse: stored => {
+                    const gainSet = normalizeMotionGainSet(stored);
+                    return validMotionGainSet(gainSet) ? gainSet : null;
+                },
+                errorMessage: "係数セットを読み込めません"
+            });
+        }
+
+        function validMotionGainSet(value) {
+            return value && typeof value === "object" && !Array.isArray(value)
+                && Object.keys(value).length > 0
+                && Object.values(value).every(gain => Number.isFinite(gain));
+        }
+
+        function renderMotionGainSetOptions(selectedName = activeMotionGainSetName) {
+            activeMotionGainSetName = renderNamedOptions(
+                motionGainSetSelect,
+                motionGainSets,
+                selectedName,
+                "係数なし"
+            );
+        }
+
+        function applyMotionGainSet(name) {
+            activeMotionGainSetName = name;
+            motionGains.clear();
+
+            const gainSet = motionGainSets[name];
+            if (gainSet) {
+                for (const [categoryName, gain] of Object.entries(gainSet)) {
+                    motionGains.set(categoryName, clamp(gain, MOTION_GAIN_MIN, MOTION_GAIN_MAX));
+                }
+            }
+
+            resetMotionVisualState();
+            status.textContent = name ? `${name} を適用しました` : "係数を解除しました";
+        }
+
+        async function saveCurrentMotionGainSet() {
+            if (!motionGains.size) {
+                status.textContent = "保存できる係数がありません";
+                return;
+            }
+
+            const name = nextMotionGainSetName();
+            const gainSet = Object.fromEntries([...motionGains].map(([categoryName, gain]) => [categoryName, roundGain(gain)]));
+            const payload = {
+                version: 1,
+                type: "motionGainSet",
+                createdAt: new Date().toISOString(),
+                setCount: MOTION_GAIN_SET_COUNT,
+                secondsPerSet: MOTION_GAIN_SAMPLE_MS / 1000,
+                gains: gainSet
+            };
+
+            motionGainSets[name] = gainSet;
+
+            try {
+                await writeJsonFile(JSON.stringify(payload, null, 2), `${name}.json`);
+                renderMotionGainSetOptions(name);
+                status.textContent = `${name}.json を書き出しました`;
+            } catch (error) {
+                delete motionGainSets[name];
+                status.textContent = `係数を保存できません: ${error.message}`;
+            }
+        }
+
+        function normalizeMotionGainSet(stored) {
+            const source = stored?.gains ?? stored;
+            if (!source || typeof source !== "object" || Array.isArray(source)) return null;
+
+            return Object.fromEntries(Object.entries(source)
+                .map(([categoryName, gain]) => [categoryName, Number(gain)])
+                .filter(([, gain]) => Number.isFinite(gain))
+                .map(([categoryName, gain]) => [categoryName, roundGain(gain)]));
+        }
+
+        function nextMotionGainSetName() {
+            return nextAvailableName(motionGainSets, motionGainSetName);
+        }
+
+        function motionGainSetName(index) {
+            return `motionGainSet${String(index).padStart(2, "0")}`;
+        }
+
+        function updateCalibration(categories, landmarks) {
+            if ((!calibration.warmup && !calibration.remaining) || !categories.length) return;
+
+            if (calibration.warmup) {
+                status.textContent = `準備中 ${--calibration.warmup}`;
+                updateCalibrationPoint();
+                return;
+            }
+
+            accumulateCategoryStats(calibration.stats, categories);
+            addPoseCalibrationSample(landmarks);
+            calibration.samples++;
+            status.textContent = `キャリブレーション中 ${--calibration.remaining}`;
+            updateCalibrationPoint();
+
+            if (calibration.remaining) return;
+
+            base.clear();
+            writeCalibrationBase(base, calibration.stats, calibration.samples);
+            finishPoseCalibration();
+            calibrate.disabled = false;
+            measureMotionGain.disabled = false;
+            calibrationStage = "complete";
+            resetMotionVisualState();
+            hideCalibrationGuide();
+            sendControlPanelMessage({ type: "calibration-complete" });
+            startExperienceIntro();
+            status.textContent = `キャリブ済み (${calibration.samples} frames)`;
+        }
+
+        function updateCalibrationPoint(progressValue) {
+            const progress = progressValue ?? (!calibrationActive() || calibration.warmup
+                ? 0
+                : clamp((CALIBRATION_FRAMES - calibration.remaining) / CALIBRATION_FRAMES * 100, 0, 100));
+            calibrationGuide.style.setProperty("--progress", progress);
+            calibrationPoint.setAttribute("aria-valuenow", String(Math.round(progress)));
+        }
+
+        async function calibrateFromVideoStart() {
+            const duration = Math.min(VIDEO_BASELINE_SECONDS, video.duration || VIDEO_BASELINE_SECONDS);
+            const samplesByName = new Map();
+            let sampleCount = 0;
+            resetPoseCalibration();
+
+            calibratingVideoFile = true;
+            try {
+                for (let pass = 0; pass < VIDEO_BASELINE_PASSES; pass++) {
+                    status.textContent = `動画キャリブレーション中 ${pass + 1}/${VIDEO_BASELINE_PASSES}`;
+                    await seekVideo(0);
+                    await video.play();
+                    while (video.currentTime < duration) {
+                        await waitVideoFrame();
+                        const result = detectCurrentFrame();
+                        const categories = result.faceBlendshapes[0]?.categories ?? [];
+                        if (!categories.length) continue;
+                        sampleCount++;
+                        addPoseCalibrationSample(result.faceLandmarks[0]);
+                        for (const { categoryName, score } of categories) {
+                            const values = samplesByName.get(categoryName) ?? [];
+                            values.push(score);
+                            samplesByName.set(categoryName, values);
+                        }
+                    }
+                    video.pause();
+                }
+            } finally {
+                video.pause();
+                calibratingVideoFile = false;
+            }
+
+            if (!sampleCount) {
+                status.textContent = `最初の${VIDEO_BASELINE_SECONDS}秒x${VIDEO_BASELINE_PASSES}回で顔を検出できません`;
+                return;
+            }
+
+            base.clear();
+            calibration.stats.clear();
+            Object.assign(calibration, { warmup: 0, remaining: 0, samples: sampleCount });
+            for (const [categoryName, values] of samplesByName) {
+                const mean = values.reduce((sum, value) => sum + value, 0) / values.length;
+                const min = Math.min(...values);
+                const max = Math.max(...values);
+                const dead = Math.max((max - min) * 0.1, DEADZONE);
+                base.set(categoryName, { mean, min, max, dead });
+            }
+            finishPoseCalibration();
+            calibrate.disabled = false;
+            measureMotionGain.disabled = false;
+            hideCalibrationGuide();
+            status.textContent = `キャリブ済み (${VIDEO_BASELINE_SECONDS * VIDEO_BASELINE_PASSES}s)`;
+        }
+
+        function accumulateCategoryStats(stats, categories) {
+            for (const { categoryName, score } of categories) {
+                const stat = stats.get(categoryName) ?? { sum: 0, sq: 0 };
+                stat.sum += score;
+                stat.sq += score * score;
+                stats.set(categoryName, stat);
+            }
+        }
+
+        function writeCalibrationBase(targetBase, stats, sampleCount) {
+            if (!sampleCount) return;
+
+            for (const [categoryName, { sum, sq }] of stats) {
+                const mean = sum / sampleCount;
+                const variance = Math.max(sq / sampleCount - mean * mean, 0);
+                targetBase.set(categoryName, { mean, dead: Math.max(Math.sqrt(variance) * 3, DEADZONE) });
+            }
+        }
+
+        function calibratedScore(categoryName, score, baseMap = base) {
+            const { mean = 0, dead = 0, min = mean - dead, max = mean + dead } = baseMap.get(categoryName) ?? {};
+            if (score >= min - dead && score <= max + dead) return 0;
+            return score < mean ? score - (min - dead) : score - (max + dead);
+        }
+
+        function poseGatedCalibratedScore(categoryName, score, poseStable = currentPoseStable, baseMap = base) {
+            return poseStable ? calibratedScore(categoryName, score, baseMap) : 0;
+        }
+
+        function adjustedCalibratedScore(categoryName, score, poseStable = currentPoseStable, baseMap = base) {
+            return poseGatedCalibratedScore(categoryName, score, poseStable, baseMap) * motionGain(categoryName);
+        }
+
+        function motionGain(categoryName) {
+            return motionGains.get(categoryName) ?? 1;
+        }
+
+        function resetPoseCalibration() {
+            neutralPose = null;
+            currentPoseStable = true;
+            resetPoseCalibrationState(poseCalibration);
+        }
+
+        function addPoseCalibrationSample(landmarks = []) {
+            addPoseCalibrationSampleToState(poseCalibration, landmarks);
+        }
+
+        function finishPoseCalibration() {
+            neutralPose = finishPoseCalibrationState(poseCalibration);
+        }
+
+        function createCalibrationState(warmup = 0, frames = 0) {
+            return { warmup, remaining: frames, samples: 0, stats: new Map() };
+        }
+
+        function createPoseCalibrationState() {
+            return { samples: 0, sum: null };
+        }
+
+        function resetPoseCalibrationState(state) {
+            Object.assign(state, { samples: 0, sum: null });
+        }
+
+        function addPoseCalibrationSampleToState(state, landmarks = []) {
+            const pose = getPose(landmarks);
+            if (!pose) return;
+
+            state.sum ??= { scale: 0, yaw: 0, pitch: 0, roll: 0 };
+
+            for (const key of Object.keys(state.sum)) {
+                state.sum[key] += pose[key];
+            }
+            state.samples++;
+        }
+
+        function finishPoseCalibrationState(state) {
+            if (!state.samples || !state.sum) return null;
+            return Object.fromEntries(Object.entries(state.sum)
+                .map(([key, value]) => [key, value / state.samples]));
+        }
+
+        function isPoseStable(landmarks = [], poseThreshold = POSE_THRESHOLD, rollThreshold = ROLL_THRESHOLD) {
+            return isPoseStableForBase(landmarks, base, neutralPose, poseThreshold, rollThreshold);
+        }
+
+        function isPoseStableForBase(landmarks = [], baseMap = base, basePose = neutralPose, poseThreshold = POSE_THRESHOLD, rollThreshold = ROLL_THRESHOLD) {
+            if (!baseMap.size || !basePose) return true;
+            const pose = getPose(landmarks);
+            if (!pose) return false;
+
+            const dPose = poseDiff(pose, basePose);
+            const dRoll = Math.abs(angleDiff(pose.roll, basePose.roll));
+            return dPose < poseThreshold && dRoll < rollThreshold;
+        }
+
+        function getPose(landmarks = []) {
+            const leftEye = averageLandmarks(landmarks, [33, 133]);
+            const rightEye = averageLandmarks(landmarks, [263, 362]);
+            const nose = landmarks[1];
+            if (!leftEye || !rightEye || !nose) return null;
+
+            const eyeCenter = midpoint(leftEye, rightEye);
+            const eyeDistance = Math.hypot(rightEye.x - leftEye.x, rightEye.y - leftEye.y);
+            if (!Number.isFinite(eyeDistance) || eyeDistance <= 0.001) return null;
+
+            const roll = Math.atan2(rightEye.y - leftEye.y, rightEye.x - leftEye.x);
+            const noseVector = rotatePoint({ x: nose.x - eyeCenter.x, y: nose.y - eyeCenter.y }, -roll);
+
+            return {
+                scale: eyeDistance,
+                yaw: noseVector.x / eyeDistance,
+                pitch: noseVector.y / eyeDistance,
+                roll
+            };
+        }
+
+        function poseDiff(pose, basePose) {
+            const scale = Math.max(basePose.scale, 0.001);
+            return (
+                Math.abs(Math.log(Math.max(pose.scale, 0.001) / scale)) +
+                Math.abs(pose.yaw - basePose.yaw) +
+                Math.abs(pose.pitch - basePose.pitch)
+            );
+        }
+
+        function angleDiff(value, baseValue) {
+            return Math.atan2(Math.sin(value - baseValue), Math.cos(value - baseValue));
+        }
+
+        function averageLandmarks(landmarks, indices) {
+            const points = indices.map(index => landmarks[index]).filter(Boolean);
+            if (!points.length) return null;
+            return {
+                x: points.reduce((sum, point) => sum + point.x, 0) / points.length,
+                y: points.reduce((sum, point) => sum + point.y, 0) / points.length
+            };
+        }
+
+        function rotatePoint(point, angle) {
+            const [cos, sin] = [Math.cos(angle), Math.sin(angle)];
+            return {
+                x: point.x * cos - point.y * sin,
+                y: point.x * sin + point.y * cos
+            };
+        }
+
+        function startMotionGainCalibration() {
+            if (!base.size || calibrationActive()) {
+                status.textContent = "先にキャリブレーションしてください";
+                return;
+            }
+            Object.assign(motionGainCalibration, {
+                active: true,
+                startedAt: performance.now(),
+                duration: MOTION_GAIN_SAMPLE_MS,
+                setIndex: 0
+            });
+            motionGainCalibration.stats.clear();
+            motionGainCalibration.sets = [];
+            motionGains.clear();
+            activeMotionGainSetName = "";
+            renderMotionGainSetOptions();
+            resetMotionVisualState();
+            showCalibrationGuide(`${MOTION_GAIN_MESSAGE}\n1/${MOTION_GAIN_SET_COUNT}`);
+            calibrate.disabled = true;
+            measureMotionGain.disabled = true;
+            updateCalibrationPoint(0);
+        }
+
+        function resetMotionGainCalibration() {
+            Object.assign(motionGainCalibration, {
+                active: false,
+                startedAt: 0,
+                duration: MOTION_GAIN_SAMPLE_MS,
+                setIndex: 0
+            });
+            motionGainCalibration.stats.clear();
+            motionGainCalibration.sets = [];
+        }
+
+        function updateMotionGainCalibration(categories) {
+            if (!motionGainCalibration.active || !base.size) return;
+
+            const elapsed = performance.now() - motionGainCalibration.startedAt;
+            const remaining = Math.max(Math.ceil((motionGainCalibration.duration - elapsed) / 1000), 0);
+
+            if (!categories.length) {
+                status.textContent = `係数測定 ${motionGainCalibration.setIndex + 1}/${MOTION_GAIN_SET_COUNT}: 顔を検出中 ${remaining}s`;
+                updateCalibrationPoint(clamp(elapsed / motionGainCalibration.duration * 100, 0, 100));
+                if (elapsed >= motionGainCalibration.duration) finishMotionGainCalibrationSet();
+                return;
+            }
+
+            for (const { categoryName, score } of categories) {
+                const value = Math.abs(poseGatedCalibratedScore(categoryName, score));
+                const stat = motionGainCalibration.stats.get(categoryName) ?? { max: 0 };
+                stat.max = Math.max(stat.max, value);
+                motionGainCalibration.stats.set(categoryName, stat);
+            }
+
+            status.textContent = `係数測定 ${motionGainCalibration.setIndex + 1}/${MOTION_GAIN_SET_COUNT}: ${remaining}s`;
             updateCalibrationPoint(clamp(elapsed / motionGainCalibration.duration * 100, 0, 100));
-            if (elapsed >= motionGainCalibration.duration) finishMotionGainCalibrationSet();
-            return;
+
+            if (elapsed < motionGainCalibration.duration) return;
+            finishMotionGainCalibrationSet();
         }
 
-        for (const { categoryName, score } of categories) {
-            const value = Math.abs(poseGatedCalibratedScore(categoryName, score));
-            const stat = motionGainCalibration.stats.get(categoryName) ?? { max: 0 };
-            stat.max = Math.max(stat.max, value);
-            motionGainCalibration.stats.set(categoryName, stat);
+        function finishMotionGainCalibrationSet() {
+            const amplitudes = [...motionGainCalibration.stats.entries()]
+                .map(([categoryName, stat]) => ({ categoryName, amount: stat.max }))
+                .filter(({ amount }) => amount >= MOTION_GAIN_EPSILON);
+
+            if (!amplitudes.length) {
+                resetMotionGainCalibration();
+                calibrate.disabled = false;
+                measureMotionGain.disabled = false;
+                hideCalibrationGuide();
+                status.textContent = "係数測定: 変動を検出できません";
+                return;
+            }
+
+            const target = median(amplitudes.map(({ amount }) => amount));
+            const setGains = {};
+
+            for (const [categoryName, stat] of motionGainCalibration.stats) {
+                const gain = stat.max < MOTION_GAIN_EPSILON
+                    ? MOTION_GAIN_MAX
+                    : (target / stat.max) ** MOTION_GAIN_POWER;
+                setGains[categoryName] = roundGain(gain);
+            }
+
+            motionGainCalibration.sets.push(setGains);
+            motionGainCalibration.setIndex++;
+
+            if (motionGainCalibration.setIndex < MOTION_GAIN_SET_COUNT) {
+                motionGainCalibration.startedAt = performance.now();
+                motionGainCalibration.stats.clear();
+                showCalibrationGuide(`${MOTION_GAIN_MESSAGE}\n${motionGainCalibration.setIndex + 1}/${MOTION_GAIN_SET_COUNT}`);
+                updateCalibrationPoint(0);
+                return;
+            }
+
+            finishMotionGainCalibration();
         }
 
-        status.textContent = `係数測定 ${motionGainCalibration.setIndex + 1}/${MOTION_GAIN_SET_COUNT}: ${remaining}s`;
-        updateCalibrationPoint(clamp(elapsed / motionGainCalibration.duration * 100, 0, 100));
+        function finishMotionGainCalibration() {
+            const averagedGains = averageMotionGainSets(motionGainCalibration.sets);
+            const classifications = { easy: 0, hard: 0 };
 
-        if (elapsed < motionGainCalibration.duration) return;
-        finishMotionGainCalibrationSet();
-    }
+            motionGains.clear();
+            for (const [categoryName, gain] of Object.entries(averagedGains)) {
+                motionGains.set(categoryName, gain);
+                if (gain < 0.75) classifications.easy++;
+                if (gain > 1.25) classifications.hard++;
+            }
 
-    function finishMotionGainCalibrationSet() {
-        const amplitudes = [...motionGainCalibration.stats.entries()]
-            .map(([categoryName, stat]) => ({ categoryName, amount: stat.max }))
-            .filter(({ amount }) => amount >= MOTION_GAIN_EPSILON);
-
-        if (!amplitudes.length) {
             resetMotionGainCalibration();
             calibrate.disabled = false;
             measureMotionGain.disabled = false;
             hideCalibrationGuide();
-            status.textContent = "係数測定: 変動を検出できません";
-            return;
+            status.textContent = `係数測定済み (${MOTION_GAIN_SET_COUNT}セット平均): 動きやすい ${classifications.easy}, 動きにくい ${classifications.hard}`;
         }
 
-        const target = median(amplitudes.map(({ amount }) => amount));
-        const setGains = {};
+        function averageMotionGainSets(sets) {
+            const valuesByName = new Map();
 
-        for (const [categoryName, stat] of motionGainCalibration.stats) {
-            const gain = stat.max < MOTION_GAIN_EPSILON
-                ? MOTION_GAIN_MAX
-                : (target / stat.max) ** MOTION_GAIN_POWER;
-            setGains[categoryName] = roundGain(gain);
-        }
-
-        motionGainCalibration.sets.push(setGains);
-        motionGainCalibration.setIndex++;
-
-        if (motionGainCalibration.setIndex < MOTION_GAIN_SET_COUNT) {
-            motionGainCalibration.startedAt = performance.now();
-            motionGainCalibration.stats.clear();
-            showCalibrationGuide(`${MOTION_GAIN_MESSAGE}\n${motionGainCalibration.setIndex + 1}/${MOTION_GAIN_SET_COUNT}`);
-            updateCalibrationPoint(0);
-            return;
-        }
-
-        finishMotionGainCalibration();
-    }
-
-    function finishMotionGainCalibration() {
-        const averagedGains = averageMotionGainSets(motionGainCalibration.sets);
-        const classifications = { easy: 0, hard: 0 };
-
-        motionGains.clear();
-        for (const [categoryName, gain] of Object.entries(averagedGains)) {
-            motionGains.set(categoryName, gain);
-            if (gain < 0.75) classifications.easy++;
-            if (gain > 1.25) classifications.hard++;
-        }
-
-        resetMotionGainCalibration();
-        calibrate.disabled = false;
-        measureMotionGain.disabled = false;
-        hideCalibrationGuide();
-        status.textContent = `係数測定済み (${MOTION_GAIN_SET_COUNT}セット平均): 動きやすい ${classifications.easy}, 動きにくい ${classifications.hard}`;
-    }
-
-    function averageMotionGainSets(sets) {
-        const valuesByName = new Map();
-
-        for (const set of sets) {
-            for (const [categoryName, gain] of Object.entries(set)) {
-                if (!Number.isFinite(gain)) continue;
-                const values = valuesByName.get(categoryName) ?? [];
-                values.push(gain);
-                valuesByName.set(categoryName, values);
+            for (const set of sets) {
+                for (const [categoryName, gain] of Object.entries(set)) {
+                    if (!Number.isFinite(gain)) continue;
+                    const values = valuesByName.get(categoryName) ?? [];
+                    values.push(gain);
+                    valuesByName.set(categoryName, values);
+                }
             }
+
+            return Object.fromEntries([...valuesByName].map(([categoryName, values]) => [
+                categoryName,
+                roundGain(values.reduce((sum, value) => sum + value, 0) / values.length)
+            ]));
         }
 
-        return Object.fromEntries([...valuesByName].map(([categoryName, values]) => [
-            categoryName,
-            roundGain(values.reduce((sum, value) => sum + value, 0) / values.length)
-        ]));
-    }
+        function roundGain(value) {
+            return Number(clamp(value, MOTION_GAIN_MIN, MOTION_GAIN_MAX).toFixed(4));
+        }
 
-    function roundGain(value) {
-        return Number(clamp(value, MOTION_GAIN_MIN, MOTION_GAIN_MAX).toFixed(4));
-    }
+        function median(values) {
+            const sorted = [...values].sort((a, b) => a - b);
+            const center = Math.floor(sorted.length / 2);
+            return sorted.length % 2
+                ? sorted[center]
+                : (sorted[center - 1] + sorted[center]) / 2;
+        }
 
-    function median(values) {
-        const sorted = [...values].sort((a, b) => a - b);
-        const center = Math.floor(sorted.length / 2);
-        return sorted.length % 2
-            ? sorted[center]
-            : (sorted[center - 1] + sorted[center]) / 2;
-    }
+        function signed(value) {
+            return `${value >= 0 ? "+" : ""}${value.toFixed(4)}`;
+        }
 
-    function signed(value) {
-        return `${value >= 0 ? "+" : ""}${value.toFixed(4)}`;
-    }
+        function updateSpectrumFrame(categories, shapeCategories = categories) {
+            const { width, height } = vizCanvas;
+            const now = performance.now();
+            const material = currentMaterial(now);
+            const [cx, cy] = [width / 2, height * SHAPE_CENTER_Y_RATIO];
+            const baseRadius = Math.min(width, height) * SHAPE_BASE_RADIUS_RATIO;
+            const showCalibrationOutline = calibrationOutlineVisible();
 
-    function updateSpectrumFrame(categories, shapeCategories = categories) {
-        const { width, height } = vizCanvas;
-        const now = performance.now();
-        const material = currentMaterial(now);
-        const [cx, cy] = [width / 2, height * SHAPE_CENTER_Y_RATIO];
-        const baseRadius = Math.min(width, height) * SHAPE_BASE_RADIUS_RATIO;
-        const showCalibrationOutline = calibrationOutlineVisible();
+            if (!categories.length && !shapeCategories.length) {
+                if (showCalibrationOutline) {
+                    const points = SHAPE_TEMPLATES.circle.map(point => ({
+                        x: cx + point.x * baseRadius,
+                        y: cy + point.y * baseRadius
+                    }));
+                    return { active: false, points, material, shapeName: "circle" };
+                }
+                return { active: false, points: [], material, shapeName: "circle" };
+            }
 
-        if (!categories.length && !shapeCategories.length) {
-            if (showCalibrationOutline) {
-                const points = SHAPE_TEMPLATES.circle.map(point => ({
-                    x: cx + point.x * baseRadius,
-                    y: cy + point.y * baseRadius
+            const maxSpike = Math.min(width, height) * MAX_VERTEX_DISPLACEMENT_RATIO;
+            const calibrated = base.size > 0;
+            const ordered = orderedSpectrumCategories(categories);
+            const time = now * 0.001;
+            const springStates = ordered.map(({ categoryName, score }) => {
+                const rawValue = calibrated ? adjustedCalibratedScore(categoryName, score) : 0;
+                const value = Math.abs(rawValue) < SPECTRUM_ZERO_THRESHOLD ? 0 : rawValue;
+                const target = clamp(value * VERTEX_RESPONSE_GAIN * material.response, -1, 1);
+                const previous = spectrum.get(categoryName) ?? 0;
+                const velocity =
+                    ((spectrumVelocity.get(categoryName) ?? 0) + (target - previous) * material.spring)
+                    * material.damping;
+                const phase = spectrumPhase.get(categoryName) ?? Math.random() * Math.PI * 2;
+
+                spectrumVelocity.set(categoryName, velocity);
+                spectrumPhase.set(categoryName, phase);
+                return { categoryName, position: previous + velocity, velocity, phase };
+            });
+            const diffusedStates = springStates.map(({ categoryName, position, velocity, phase }, i) => {
+                const left = springStates[(i - 1 + springStates.length) % springStates.length].position;
+                const right = springStates[(i + 1) % springStates.length].position;
+                const diffused = position + (left + right - position * 2) * material.diffusion;
+
+                spectrum.set(categoryName, diffused);
+                return { position: diffused, velocity, phase };
+            });
+            const surfaceStates = resampleCyclicStates(diffusedStates, SHAPE_POINT_COUNT);
+            const shape = updateShapeMorph(shapeCategories, calibrated);
+            const points = surfaceStates.map(({ position, velocity, phase }, i) => {
+                const templatePoint = blendedTemplatePoint(i, shape.weights);
+                const length = Math.hypot(templatePoint.x, templatePoint.y) || 1;
+                const normal = { x: templatePoint.x / length, y: templatePoint.y / length };
+                const angle = Math.atan2(templatePoint.y, templatePoint.x);
+                const breathing = Math.sin(time * material.noiseSpeed * 0.75) * material.breathing;
+                const surfaceMotion =
+                    Math.sin(time * material.noiseSpeed + angle * 2 + phase) * material.noise
+                    + Math.sin(time * material.noiseSpeed * 0.43 - angle * 3 + phase * 0.7) * material.noise * 0.58;
+                const ripple =
+                    Math.sin(time * (1.2 + material.noiseSpeed) + phase)
+                    * Math.min(Math.abs(velocity) * material.ripple, 0.055);
+                const deformation = clamp(position + breathing + surfaceMotion + ripple, -1, 1);
+                const displacement = deformation * maxSpike;
+
+                return {
+                    x: cx + templatePoint.x * baseRadius + normal.x * displacement,
+                    y: cy + templatePoint.y * baseRadius + normal.y * displacement
+                };
+            });
+
+            return { active: calibrated, points, material, shapeName: shape.name };
+        }
+
+        function resampleCyclicStates(states, count) {
+            if (!states.length) {
+                return Array.from({ length: count }, (_, index) => ({
+                    position: 0,
+                    velocity: 0,
+                    phase: index / count * Math.PI * 2
                 }));
-                return { active: false, points, material, shapeName: "circle" };
-            }
-            return { active: false, points: [], material, shapeName: "circle" };
-        }
-
-        const maxSpike = Math.min(width, height) * MAX_VERTEX_DISPLACEMENT_RATIO;
-        const calibrated = base.size > 0;
-        const ordered = orderedSpectrumCategories(categories);
-        const time = now * 0.001;
-        const springStates = ordered.map(({ categoryName, score }) => {
-            const rawValue = calibrated ? adjustedCalibratedScore(categoryName, score) : 0;
-            const value = Math.abs(rawValue) < SPECTRUM_ZERO_THRESHOLD ? 0 : rawValue;
-            const target = clamp(value * VERTEX_RESPONSE_GAIN * material.response, -1, 1);
-            const previous = spectrum.get(categoryName) ?? 0;
-            const velocity =
-                ((spectrumVelocity.get(categoryName) ?? 0) + (target - previous) * material.spring)
-                * material.damping;
-            const phase = spectrumPhase.get(categoryName) ?? Math.random() * Math.PI * 2;
-
-            spectrumVelocity.set(categoryName, velocity);
-            spectrumPhase.set(categoryName, phase);
-            return { categoryName, position: previous + velocity, velocity, phase };
-        });
-        const diffusedStates = springStates.map(({ categoryName, position, velocity, phase }, i) => {
-            const left = springStates[(i - 1 + springStates.length) % springStates.length].position;
-            const right = springStates[(i + 1) % springStates.length].position;
-            const diffused = position + (left + right - position * 2) * material.diffusion;
-
-            spectrum.set(categoryName, diffused);
-            return { position: diffused, velocity, phase };
-        });
-        const surfaceStates = resampleCyclicStates(diffusedStates, SHAPE_POINT_COUNT);
-        const shape = updateShapeMorph(shapeCategories, calibrated);
-        const points = surfaceStates.map(({ position, velocity, phase }, i) => {
-            const templatePoint = blendedTemplatePoint(i, shape.weights);
-            const length = Math.hypot(templatePoint.x, templatePoint.y) || 1;
-            const normal = { x: templatePoint.x / length, y: templatePoint.y / length };
-            const angle = Math.atan2(templatePoint.y, templatePoint.x);
-            const breathing = Math.sin(time * material.noiseSpeed * 0.75) * material.breathing;
-            const surfaceMotion =
-                Math.sin(time * material.noiseSpeed + angle * 2 + phase) * material.noise
-                + Math.sin(time * material.noiseSpeed * 0.43 - angle * 3 + phase * 0.7) * material.noise * 0.58;
-            const ripple =
-                Math.sin(time * (1.2 + material.noiseSpeed) + phase)
-                * Math.min(Math.abs(velocity) * material.ripple, 0.055);
-            const deformation = clamp(position + breathing + surfaceMotion + ripple, -1, 1);
-            const displacement = deformation * maxSpike;
-
-            return {
-                x: cx + templatePoint.x * baseRadius + normal.x * displacement,
-                y: cy + templatePoint.y * baseRadius + normal.y * displacement
-            };
-        });
-
-        return { active: calibrated, points, material, shapeName: shape.name };
-    }
-
-    function resampleCyclicStates(states, count) {
-        if (!states.length) {
-            return Array.from({ length: count }, (_, index) => ({
-                position: 0,
-                velocity: 0,
-                phase: index / count * Math.PI * 2
-            }));
-        }
-
-        return Array.from({ length: count }, (_, index) => {
-            const sourcePosition = index / count * states.length;
-            const leftIndex = Math.floor(sourcePosition) % states.length;
-            const rightIndex = (leftIndex + 1) % states.length;
-            const amount = sourcePosition - Math.floor(sourcePosition);
-            const left = states[leftIndex];
-            const right = states[rightIndex];
-
-            return {
-                position: left.position + (right.position - left.position) * amount,
-                velocity: left.velocity + (right.velocity - left.velocity) * amount,
-                phase: left.phase + (right.phase - left.phase) * amount
-            };
-        });
-    }
-
-    function updateShapeMorph(categories, calibrated) {
-        const byName = new Map(categories.map(category => [category.categoryName, category.score]));
-        const targets = new Map();
-
-        for (const gesture of SHAPE_GESTURES) {
-            const available = gesture.categories.filter(categoryName => byName.has(categoryName));
-            const average = available.length
-                ? available.reduce((sum, categoryName) => {
-                    const score = calibrated ? adjustedCalibratedScore(categoryName, byName.get(categoryName)) : 0;
-                    return sum + Math.max(score, 0);
-                }, 0) / available.length
-                : 0;
-            targets.set(
-                gesture.name,
-                smoothstep(clamp(average * gesture.strength, 0, 1)) * SHAPE_MORPH_AMOUNT
-            );
-        }
-
-        const strongest = Math.max(0, ...targets.values());
-        targets.set("circle", Math.max(0.1, 1 - strongest));
-
-        for (const [name, target] of targets) {
-            const previous = shapeWeights.get(name) ?? (name === "circle" ? 1 : 0);
-            shapeWeights.set(name, previous * 0.86 + target * 0.14);
-        }
-
-        const total = [...shapeWeights.values()].reduce((sum, value) => sum + value, 0) || 1;
-        const weights = new Map([...shapeWeights].map(([name, value]) => [name, value / total]));
-        let candidate = { name: "circle", weight: weights.get("circle") ?? 0 };
-
-        for (const gesture of SHAPE_GESTURES) {
-            const weight = weights.get(gesture.name) ?? 0;
-            if (weight > candidate.weight) candidate = { ...gesture, weight };
-        }
-
-        const currentWeight = weights.get(dominantShapeName) ?? 0;
-        if (candidate.name === dominantShapeName || candidate.weight > currentWeight + 0.08) {
-            dominantShapeName = candidate.name;
-        }
-        return { weights, name: dominantShapeName };
-    }
-
-    function blendedTemplatePoint(index, weights) {
-        const point = { x: 0, y: 0 };
-
-        for (const [name, weight] of weights) {
-            const templatePoint = SHAPE_TEMPLATES[name][index];
-            point.x += templatePoint.x * weight;
-            point.y += templatePoint.y * weight;
-        }
-
-        return point;
-    }
-
-    function createShapeTemplates(pointCount) {
-        const circle = Array.from({ length: pointCount }, (_, index) => {
-            const angle = index / pointCount * Math.PI * 2 - Math.PI / 2;
-            return { x: Math.cos(angle), y: Math.sin(angle) };
-        });
-        const starVertices = Array.from({ length: 10 }, (_, index) => {
-            const angle = index / 10 * Math.PI * 2 - Math.PI / 2;
-            const radius = index % 2 ? 0.43 : 1;
-            return { x: Math.cos(angle) * radius, y: Math.sin(angle) * radius };
-        });
-
-        return {
-            circle,
-            star: samplePolygonPerimeter(starVertices, pointCount),
-            triangle: samplePolygonPerimeter([
-                { x: 0, y: -1.05 },
-                { x: 0.96, y: 0.78 },
-                { x: -0.96, y: 0.78 }
-            ], pointCount),
-            trapezoid: samplePolygonPerimeter([
-                { x: 0, y: -0.72 },
-                { x: 0.62, y: -0.72 },
-                { x: 1, y: 0.72 },
-                { x: -1, y: 0.72 },
-                { x: -0.62, y: -0.72 }
-            ], pointCount),
-            diamond: samplePolygonPerimeter([
-                { x: 0, y: -1.08 },
-                { x: 0.9, y: 0 },
-                { x: 0, y: 1.08 },
-                { x: -0.9, y: 0 }
-            ], pointCount),
-            ellipse: circle.map(({ x, y }) => ({ x: x * 1.05, y: y * 0.48 })),
-            pentagon: samplePolygonPerimeter(regularPolygonVertices(5), pointCount),
-            square: samplePolygonPerimeter([
-                { x: 0, y: -0.82 },
-                { x: 0.82, y: -0.82 },
-                { x: 0.82, y: 0.82 },
-                { x: -0.82, y: 0.82 },
-                { x: -0.82, y: -0.82 }
-            ], pointCount)
-        };
-    }
-
-    function regularPolygonVertices(count) {
-        return Array.from({ length: count }, (_, index) => {
-            const angle = index / count * Math.PI * 2 - Math.PI / 2;
-            return { x: Math.cos(angle), y: Math.sin(angle) };
-        });
-    }
-
-    function samplePolygonPerimeter(vertices, pointCount) {
-        const edges = vertices.map((start, index) => {
-            const end = vertices[(index + 1) % vertices.length];
-            return { start, end, length: Math.hypot(end.x - start.x, end.y - start.y) };
-        });
-        const perimeter = edges.reduce((sum, edge) => sum + edge.length, 0);
-
-        return Array.from({ length: pointCount }, (_, pointIndex) => {
-            let distance = pointIndex / pointCount * perimeter;
-            let edge = edges[0];
-
-            for (const candidate of edges) {
-                edge = candidate;
-                if (distance <= edge.length) break;
-                distance -= edge.length;
             }
 
-            const amount = edge.length ? distance / edge.length : 0;
+            return Array.from({ length: count }, (_, index) => {
+                const sourcePosition = index / count * states.length;
+                const leftIndex = Math.floor(sourcePosition) % states.length;
+                const rightIndex = (leftIndex + 1) % states.length;
+                const amount = sourcePosition - Math.floor(sourcePosition);
+                const left = states[leftIndex];
+                const right = states[rightIndex];
+
+                return {
+                    position: left.position + (right.position - left.position) * amount,
+                    velocity: left.velocity + (right.velocity - left.velocity) * amount,
+                    phase: left.phase + (right.phase - left.phase) * amount
+                };
+            });
+        }
+
+        function updateShapeMorph(categories, calibrated) {
+            const byName = new Map(categories.map(category => [category.categoryName, category.score]));
+            const targets = new Map();
+
+            for (const gesture of SHAPE_GESTURES) {
+                const available = gesture.categories.filter(categoryName => byName.has(categoryName));
+                const average = available.length
+                    ? available.reduce((sum, categoryName) => {
+                        const score = calibrated ? adjustedCalibratedScore(categoryName, byName.get(categoryName)) : 0;
+                        return sum + Math.max(score, 0);
+                    }, 0) / available.length
+                    : 0;
+                targets.set(
+                    gesture.name,
+                    smoothstep(clamp(average * gesture.strength, 0, 1)) * SHAPE_MORPH_AMOUNT
+                );
+            }
+
+            const strongest = Math.max(0, ...targets.values());
+            targets.set("circle", Math.max(0.1, 1 - strongest));
+
+            for (const [name, target] of targets) {
+                const previous = shapeWeights.get(name) ?? (name === "circle" ? 1 : 0);
+                shapeWeights.set(name, previous * 0.86 + target * 0.14);
+            }
+
+            const total = [...shapeWeights.values()].reduce((sum, value) => sum + value, 0) || 1;
+            const weights = new Map([...shapeWeights].map(([name, value]) => [name, value / total]));
+            let candidate = { name: "circle", weight: weights.get("circle") ?? 0 };
+
+            for (const gesture of SHAPE_GESTURES) {
+                const weight = weights.get(gesture.name) ?? 0;
+                if (weight > candidate.weight) candidate = { ...gesture, weight };
+            }
+
+            const currentWeight = weights.get(dominantShapeName) ?? 0;
+            if (candidate.name === dominantShapeName || candidate.weight > currentWeight + 0.08) {
+                dominantShapeName = candidate.name;
+            }
+            return { weights, name: dominantShapeName };
+        }
+
+        function blendedTemplatePoint(index, weights) {
+            const point = { x: 0, y: 0 };
+
+            for (const [name, weight] of weights) {
+                const templatePoint = SHAPE_TEMPLATES[name][index];
+                point.x += templatePoint.x * weight;
+                point.y += templatePoint.y * weight;
+            }
+
+            return point;
+        }
+
+        function createShapeTemplates(pointCount) {
+            const circle = Array.from({ length: pointCount }, (_, index) => {
+                const angle = index / pointCount * Math.PI * 2 - Math.PI / 2;
+                return { x: Math.cos(angle), y: Math.sin(angle) };
+            });
+            const starVertices = Array.from({ length: 10 }, (_, index) => {
+                const angle = index / 10 * Math.PI * 2 - Math.PI / 2;
+                const radius = index % 2 ? 0.43 : 1;
+                return { x: Math.cos(angle) * radius, y: Math.sin(angle) * radius };
+            });
+
             return {
-                x: edge.start.x + (edge.end.x - edge.start.x) * amount,
-                y: edge.start.y + (edge.end.y - edge.start.y) * amount
+                circle,
+                star: samplePolygonPerimeter(starVertices, pointCount),
+                triangle: samplePolygonPerimeter([
+                    { x: 0, y: -1.05 },
+                    { x: 0.96, y: 0.78 },
+                    { x: -0.96, y: 0.78 }
+                ], pointCount),
+                trapezoid: samplePolygonPerimeter([
+                    { x: 0, y: -0.72 },
+                    { x: 0.62, y: -0.72 },
+                    { x: 1, y: 0.72 },
+                    { x: -1, y: 0.72 },
+                    { x: -0.62, y: -0.72 }
+                ], pointCount),
+                diamond: samplePolygonPerimeter([
+                    { x: 0, y: -1.08 },
+                    { x: 0.9, y: 0 },
+                    { x: 0, y: 1.08 },
+                    { x: -0.9, y: 0 }
+                ], pointCount),
+                ellipse: circle.map(({ x, y }) => ({ x: x * 1.05, y: y * 0.48 })),
+                pentagon: samplePolygonPerimeter(regularPolygonVertices(5), pointCount),
+                square: samplePolygonPerimeter([
+                    { x: 0, y: -0.82 },
+                    { x: 0.82, y: -0.82 },
+                    { x: 0.82, y: 0.82 },
+                    { x: -0.82, y: 0.82 },
+                    { x: -0.82, y: -0.82 }
+                ], pointCount)
             };
-        });
-    }
-
-    function currentMaterial(now) {
-        const startedAt = visualizeStartedAt || now;
-        const elapsed = clamp((now - startedAt) / 1000, 0, EXPERIENCE_DURATION_SECONDS);
-        let phaseIndex = 0;
-
-        while (phaseIndex + 1 < MATERIAL_PHASES.length && elapsed >= MATERIAL_PHASES[phaseIndex + 1].start) {
-            phaseIndex++;
         }
 
-        const current = MATERIAL_PHASES[phaseIndex];
-        if (!phaseIndex) return current;
-
-        const previous = MATERIAL_PHASES[phaseIndex - 1];
-        const transition = smoothstep(clamp((elapsed - current.start) / MATERIAL_TRANSITION_SECONDS, 0, 1));
-        return interpolateMaterial(previous, current, transition);
-    }
-
-    function interpolateMaterial(from, to, amount) {
-        const material = { name: to.name };
-
-        for (const key of ["spring", "damping", "diffusion", "response", "breathing", "noise", "noiseSpeed", "ripple", "tension", "fill", "glow", "lineWidth"]) {
-            material[key] = from[key] + (to[key] - from[key]) * amount;
-        }
-        for (const key of ["stroke", "fillColor", "background"]) {
-            material[key] = from[key].map((value, index) => value + (to[key][index] - value) * amount);
+        function regularPolygonVertices(count) {
+            return Array.from({ length: count }, (_, index) => {
+                const angle = index / count * Math.PI * 2 - Math.PI / 2;
+                return { x: Math.cos(angle), y: Math.sin(angle) };
+            });
         }
 
-        return material;
-    }
+        function samplePolygonPerimeter(vertices, pointCount) {
+            const edges = vertices.map((start, index) => {
+                const end = vertices[(index + 1) % vertices.length];
+                return { start, end, length: Math.hypot(end.x - start.x, end.y - start.y) };
+            });
+            const perimeter = edges.reduce((sum, edge) => sum + edge.length, 0);
 
-    function smoothstep(value) {
-        return value * value * (3 - 2 * value);
-    }
+            return Array.from({ length: pointCount }, (_, pointIndex) => {
+                let distance = pointIndex / pointCount * perimeter;
+                let edge = edges[0];
 
-    function drawSpectrum({ active, points, material, shapeName }) {
-        const { width, height } = vizCanvas;
-        visualize.dataset.material = material.name;
-        visualize.dataset.shape = shapeName;
-        const backgroundAlpha = calibrationStage === "positioning" ? 0.32 : 0.9;
-        visualize.style.backgroundColor = rgba(material.background, backgroundAlpha);
-        experienceScorePanel.style.setProperty("--score-panel-color", rgba(material.stroke, 0.9));
-        experienceScorePanel.style.setProperty("--score-panel-glow", rgba(material.stroke, 0.14));
-        vizCtx.clearRect(0, 0, width, height);
-        drawSpectrumPath(vizCtx, points, active, material);
-    }
+                for (const candidate of edges) {
+                    edge = candidate;
+                    if (distance <= edge.length) break;
+                    distance -= edge.length;
+                }
 
-    function orderedSpectrumCategories(categories) {
-        const byName = new Map(categories.map(category => [category.categoryName, category]));
-        const known = spectrumOrder.filter(categoryName => byName.has(categoryName));
-        const added = categories
-            .map(({ categoryName }) => categoryName)
-            .filter(categoryName => !known.includes(categoryName));
-        const nextOrder = known.length ? [...known, ...shuffle(added)] : shuffle(categories.map(({ categoryName }) => categoryName));
-
-        spectrumOrder = nextOrder;
-
-        return nextOrder.map(categoryName => byName.get(categoryName)).filter(Boolean);
-    }
-
-    function shuffle(items) {
-        const shuffled = [...items];
-        for (let i = shuffled.length - 1; i > 0; i--) {
-            const j = Math.floor(Math.random() * (i + 1));
-            [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+                const amount = edge.length ? distance / edge.length : 0;
+                return {
+                    x: edge.start.x + (edge.end.x - edge.start.x) * amount,
+                    y: edge.start.y + (edge.end.y - edge.start.y) * amount
+                };
+            });
         }
-        return shuffled;
-    }
 
-    function drawSpectrumPath(targetCtx, points, active, material) {
-        if (points.length < 3) return;
-        const showCalibrationOutline = calibrationOutlineVisible();
+        function currentMaterial(now) {
+            const startedAt = visualizeStartedAt || now;
+            const elapsed = clamp((now - startedAt) / 1000, 0, EXPERIENCE_DURATION_SECONDS);
+            let phaseIndex = 0;
 
-        targetCtx.save();
-        targetCtx.lineWidth = showCalibrationOutline ? Math.max(material.lineWidth, 7) : material.lineWidth;
-        targetCtx.lineJoin = "round";
-        targetCtx.lineCap = "round";
-        targetCtx.strokeStyle = showCalibrationOutline
-            ? "rgba(47, 207, 131, 0.98)"
-            : active ? rgba(material.stroke, 0.96) : rgba(material.stroke, 0.48);
-        targetCtx.fillStyle = showCalibrationOutline
-            ? "rgba(255, 255, 255, 0.06)"
-            : active ? rgba(material.fillColor, material.fill) : rgba(material.fillColor, material.fill * 0.35);
-        targetCtx.shadowColor = showCalibrationOutline
-            ? "rgba(47, 207, 131, 0.72)"
-            : active ? rgba(material.fillColor, 0.2) : "transparent";
-        targetCtx.shadowBlur = showCalibrationOutline ? 22 : active ? material.glow : 0;
-        targetCtx.beginPath();
-        targetCtx.moveTo(points[0].x, points[0].y);
+            while (phaseIndex + 1 < MATERIAL_PHASES.length && elapsed >= MATERIAL_PHASES[phaseIndex + 1].start) {
+                phaseIndex++;
+            }
 
-        for (let i = 0; i < points.length; i++) {
-            const p0 = points[(i - 1 + points.length) % points.length];
-            const p1 = points[i];
-            const p2 = points[(i + 1) % points.length];
-            const p3 = points[(i + 2) % points.length];
-            const tension = material.tension;
-            const cp1 = {
-                x: p1.x + (p2.x - p0.x) * tension / 6,
-                y: p1.y + (p2.y - p0.y) * tension / 6
+            const current = MATERIAL_PHASES[phaseIndex];
+            if (!phaseIndex) return current;
+
+            const previous = MATERIAL_PHASES[phaseIndex - 1];
+            const transition = smoothstep(clamp((elapsed - current.start) / MATERIAL_TRANSITION_SECONDS, 0, 1));
+            return interpolateMaterial(previous, current, transition);
+        }
+
+        function interpolateMaterial(from, to, amount) {
+            const material = { name: to.name };
+
+            for (const key of ["spring", "damping", "diffusion", "response", "breathing", "noise", "noiseSpeed", "ripple", "tension", "fill", "glow", "lineWidth"]) {
+                material[key] = from[key] + (to[key] - from[key]) * amount;
+            }
+            for (const key of ["stroke", "fillColor", "background"]) {
+                material[key] = from[key].map((value, index) => value + (to[key][index] - value) * amount);
+            }
+
+            return material;
+        }
+
+        function smoothstep(value) {
+            return value * value * (3 - 2 * value);
+        }
+
+        function drawSpectrum({ active, points, material, shapeName }) {
+            const { width, height } = vizCanvas;
+            visualize.dataset.material = material.name;
+            visualize.dataset.shape = shapeName;
+            const backgroundAlpha = calibrationStage === "positioning" ? 0.32 : 0.9;
+            visualize.style.backgroundColor = rgba(material.background, backgroundAlpha);
+            experienceScorePanel.style.setProperty("--score-panel-color", rgba(material.stroke, 0.9));
+            experienceScorePanel.style.setProperty("--score-panel-glow", rgba(material.stroke, 0.14));
+            vizCtx.clearRect(0, 0, width, height);
+            drawSpectrumPath(vizCtx, points, active, material);
+        }
+
+        function orderedSpectrumCategories(categories) {
+            const byName = new Map(categories.map(category => [category.categoryName, category]));
+            const known = spectrumOrder.filter(categoryName => byName.has(categoryName));
+            const added = categories
+                .map(({ categoryName }) => categoryName)
+                .filter(categoryName => !known.includes(categoryName));
+            const nextOrder = known.length ? [...known, ...shuffle(added)] : shuffle(categories.map(({ categoryName }) => categoryName));
+
+            spectrumOrder = nextOrder;
+
+            return nextOrder.map(categoryName => byName.get(categoryName)).filter(Boolean);
+        }
+
+        function shuffle(items) {
+            const shuffled = [...items];
+            for (let i = shuffled.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+            }
+            return shuffled;
+        }
+
+        function drawSpectrumPath(targetCtx, points, active, material) {
+            if (points.length < 3) return;
+            const showCalibrationOutline = calibrationOutlineVisible();
+
+            targetCtx.save();
+            targetCtx.lineWidth = showCalibrationOutline ? Math.max(material.lineWidth, 7) : material.lineWidth;
+            targetCtx.lineJoin = "round";
+            targetCtx.lineCap = "round";
+            targetCtx.strokeStyle = showCalibrationOutline
+                ? "rgba(47, 207, 131, 0.98)"
+                : active ? rgba(material.stroke, 0.96) : rgba(material.stroke, 0.48);
+            targetCtx.fillStyle = showCalibrationOutline
+                ? "rgba(255, 255, 255, 0.06)"
+                : active ? rgba(material.fillColor, material.fill) : rgba(material.fillColor, material.fill * 0.35);
+            targetCtx.shadowColor = showCalibrationOutline
+                ? "rgba(47, 207, 131, 0.72)"
+                : active ? rgba(material.fillColor, 0.2) : "transparent";
+            targetCtx.shadowBlur = showCalibrationOutline ? 22 : active ? material.glow : 0;
+            targetCtx.beginPath();
+            targetCtx.moveTo(points[0].x, points[0].y);
+
+            for (let i = 0; i < points.length; i++) {
+                const p0 = points[(i - 1 + points.length) % points.length];
+                const p1 = points[i];
+                const p2 = points[(i + 1) % points.length];
+                const p3 = points[(i + 2) % points.length];
+                const tension = material.tension;
+                const cp1 = {
+                    x: p1.x + (p2.x - p0.x) * tension / 6,
+                    y: p1.y + (p2.y - p0.y) * tension / 6
+                };
+                const cp2 = {
+                    x: p2.x - (p3.x - p1.x) * tension / 6,
+                    y: p2.y - (p3.y - p1.y) * tension / 6
+                };
+                targetCtx.bezierCurveTo(cp1.x, cp1.y, cp2.x, cp2.y, p2.x, p2.y);
+            }
+
+            targetCtx.closePath();
+            targetCtx.fill();
+            targetCtx.stroke();
+            targetCtx.restore();
+        }
+
+        function rgba([red, green, blue], alpha) {
+            return `rgba(${Math.round(red)}, ${Math.round(green)}, ${Math.round(blue)}, ${alpha})`;
+        }
+
+        function clamp(value, min, max) {
+            return Math.max(min, Math.min(value, max));
+        }
+
+        function midpoint(a, b) {
+            return {
+                x: (a.x + b.x) / 2,
+                y: (a.y + b.y) / 2
             };
-            const cp2 = {
-                x: p2.x - (p3.x - p1.x) * tension / 6,
-                y: p2.y - (p3.y - p1.y) * tension / 6
-            };
-            targetCtx.bezierCurveTo(cp1.x, cp1.y, cp2.x, cp2.y, p2.x, p2.y);
         }
 
-        targetCtx.closePath();
-        targetCtx.fill();
-        targetCtx.stroke();
-        targetCtx.restore();
-    }
+        function drawLandmarks(landmarks = []) {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            if (!currentPoseStable) return;
 
-    function rgba([red, green, blue], alpha) {
-        return `rgba(${Math.round(red)}, ${Math.round(green)}, ${Math.round(blue)}, ${alpha})`;
-    }
+            const media = activeMode === "image-pair" ? sourceImage : video;
+            const [sw, sh] = [
+                media.videoWidth || media.naturalWidth || VW,
+                media.videoHeight || media.naturalHeight || VH
+            ];
+            const scale = activeMode === "camera"
+                ? Math.max(canvas.width / sw, canvas.height / sh)
+                : Math.min(canvas.width / sw, canvas.height / sh);
+            const [dx, dy] = [(canvas.width - sw * scale) / 2, (canvas.height - sh * scale) / 2];
 
-    function clamp(value, min, max) {
-        return Math.max(min, Math.min(value, max));
-    }
-
-    function midpoint(a, b) {
-        return {
-            x: (a.x + b.x) / 2,
-            y: (a.y + b.y) / 2
-        };
-    }
-
-    function drawLandmarks(landmarks = []) {
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        if (!currentPoseStable) return;
-
-        const media = activeMode === "image-pair" ? sourceImage : video;
-        const [sw, sh] = [
-            media.videoWidth || media.naturalWidth || VW,
-            media.videoHeight || media.naturalHeight || VH
-        ];
-        const scale = activeMode === "camera"
-            ? Math.max(canvas.width / sw, canvas.height / sh)
-            : Math.min(canvas.width / sw, canvas.height / sh);
-        const [dx, dy] = [(canvas.width - sw * scale) / 2, (canvas.height - sh * scale) / 2];
-
-        ctx.fillStyle = "green";
-        ctx.beginPath();
-        for (const p of landmarks) {
-            const [x, y] = [p.x * sw * scale + dx, p.y * sh * scale + dy];
-            ctx.moveTo(x, y);
-            ctx.arc(x, y, 1.2, 0, Math.PI * 2);
+            ctx.fillStyle = "green";
+            ctx.beginPath();
+            for (const p of landmarks) {
+                const [x, y] = [p.x * sw * scale + dx, p.y * sh * scale + dy];
+                ctx.moveTo(x, y);
+                ctx.arc(x, y, 1.2, 0, Math.PI * 2);
+            }
+            ctx.fill();
         }
-        ctx.fill();
-    }
-</script>
+    </script>
 
 </body>
+
 </html>

@@ -90,7 +90,7 @@
         function playLoopMusic(audio, volume) {
             audioFadeTokens.set(audio, (audioFadeTokens.get(audio) ?? 0) + 1);
             audio.volume = volume;
-            audio.play().catch(() => {});
+            audio.play().catch(() => { });
         }
 
         function stopAudio(audio, restoreVolume) {
@@ -139,7 +139,7 @@
         function playEffectSound(audio, volume = 0.6) {
             audio.currentTime = 0;
             audio.volume = volume;
-            audio.play().catch(() => {});
+            audio.play().catch(() => { });
         }
 
         function send(action) {
