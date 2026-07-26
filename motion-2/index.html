@@ -304,6 +304,11 @@
             display: none;
         }
 
+        #experienceHud[data-guide="timer"] #experienceTimer,
+        #experienceHud[data-guide="score"] #experienceScore {
+            animation: experienceGuideFocus 0.9s ease-in-out infinite alternate;
+        }
+
         @keyframes experienceAnnouncementPop {
             from {
                 opacity: 0;
@@ -313,6 +318,16 @@
             to {
                 opacity: 1;
                 transform: translate(-50%, -50%) scale(1);
+            }
+        }
+
+        @keyframes experienceGuideFocus {
+            from {
+                filter: drop-shadow(0 0 0 rgb(47 207 131 / 0%));
+            }
+
+            to {
+                filter: drop-shadow(0 0 18px rgb(47 207 131 / 58%));
             }
         }
 
@@ -700,7 +715,7 @@
                 </svg>
             </div>
         </div>
-        <div id="experienceAnnouncement" hidden>顔を大きく動かしてみよう！</div>
+        <div id="experienceAnnouncement" hidden>さぁ！顔を大きく動かしてみましょう！</div>
         <div id="experienceHud" hidden>
             <div id="scoreEffectLayer"></div>
             <div id="experienceTimer" aria-label="残り60秒">残り <span id="experienceTimerValue">60</span> 秒</div>
@@ -823,19 +838,26 @@
         GUIDE_MESSAGE,
         MOTION_GAIN_MESSAGE
     ] = [
-        "この円の中に顔を入れてください",
-        "顔を動かさずにこの点を見つめてください",
+        "円の中に顔を入れてください",
+        "顔を動かさずに点を見つめてください",
         "動かしていない顔を記録しています...",
         "自由に表情を動かしてください."
     ];
     const CALIBRATION_OUTLINE_STAGES = new Set(["positioning", "intro", "waiting", "recording"]);
     const CALIBRATION_INTRO_MS = 2000;
-    const EXPERIENCE_ANNOUNCEMENT_MS = 4000;
+    const EXPERIENCE_INTRO_STEPS = [
+        { message: "顔を動かすとスコアが増えるよ！", guide: "score", duration: 3000 },
+        { message: "違う形を作ると高得点！", guide: "score", duration: 3000 },
+        { message: "制限時間は60秒！", guide: "timer", duration: 3000 },
+        { message: "さぁ！顔を大きく動かしてみましょう！", startsExperience: true, duration: 3000 }
+    ];
     const EXPERIENCE_DURATION_MS = 60000;
     const SCORE_TRIGGER_THRESHOLD = 1.80;
     const SCORE_EVENT_COOLDOWN_MS = 220;
-    const SCORE_MEDIUM_THRESHOLD = 0.35;
-    const SCORE_LARGE_THRESHOLD = 0.7;
+    const SCORE_MEDIUM_THRESHOLD = 2.8;
+    const SCORE_LARGE_THRESHOLD = 4.5;
+    const SCORE_SHAPE_CHANGE_BONUS = 10;
+    const SCORE_NEW_SHAPE_BONUS = 20;
     const SCORE_LAUNCH_RADIUS_RATIO = 0.39;
     const SCORE_FLIGHT_MS = 1000;
     const SCORE_ARRIVAL_DELAY_MS = 940;
@@ -859,10 +881,13 @@
     let calibrationIntroUntil = 0;
     let calibrationStage = "idle";
     let experienceAnnouncementTimer = 0;
+    let experienceIntroSequenceId = 0;
     let experienceScore = 0;
     let lastScoreEventAt = 0;
     let experienceSessionId = 0;
     const previousMotionScores = new Map();
+    const discoveredScoreShapes = new Set(["circle"]);
+    let lastScoredShapeName = "circle";
     let previousMotionSampleAt = 0;
     let paramSets = await loadParamSets();
     let activeParamSetName = "";
@@ -1127,7 +1152,6 @@
 
     function beginFacePositioning() {
         if (activeMode !== "camera") return;
-        hideExperienceAnnouncement();
         hideExperienceHud();
         resetCalibration();
         calibrationStage = "positioning";
@@ -1136,18 +1160,49 @@
         updateCalibrationPoint(0);
     }
 
-    function showExperienceAnnouncement() {
+    function showExperienceAnnouncement(message, guide = "") {
         window.clearTimeout(experienceAnnouncementTimer);
+        experienceAnnouncement.hidden = true;
+        experienceAnnouncement.textContent = message;
+        experienceHud.dataset.guide = guide;
+        void experienceAnnouncement.offsetWidth;
         experienceAnnouncement.hidden = false;
-        experienceAnnouncementTimer = window.setTimeout(() => {
-            experienceAnnouncement.hidden = true;
-        }, EXPERIENCE_ANNOUNCEMENT_MS);
     }
 
     function hideExperienceAnnouncement() {
+        experienceIntroSequenceId++;
         window.clearTimeout(experienceAnnouncementTimer);
         experienceAnnouncementTimer = 0;
         experienceAnnouncement.hidden = true;
+        experienceHud.dataset.guide = "";
+    }
+
+    function startExperienceIntro() {
+        hideExperienceAnnouncement();
+        visualizeStartedAt = 0;
+        startExperienceHud();
+        const sequenceId = ++experienceIntroSequenceId;
+        let stepIndex = 0;
+
+        const showNextStep = () => {
+            if (sequenceId !== experienceIntroSequenceId) return;
+            const step = EXPERIENCE_INTRO_STEPS[stepIndex++];
+
+            if (!step) {
+                hideExperienceAnnouncement();
+                return;
+            }
+
+            if (step.startsExperience) {
+                visualizeStartedAt = performance.now();
+                resetMotionTracking();
+            }
+
+            showExperienceAnnouncement(step.message, step.guide);
+            experienceAnnouncementTimer = window.setTimeout(showNextStep, step.duration);
+        };
+
+        showNextStep();
     }
 
     function startExperienceHud() {
@@ -1161,6 +1216,7 @@
     }
 
     function hideExperienceHud() {
+        hideExperienceAnnouncement();
         experienceSessionId++;
         experienceHud.hidden = true;
         resetScoreState();
@@ -1169,9 +1225,16 @@
     function resetScoreState() {
         experienceScore = 0;
         lastScoreEventAt = 0;
+        lastScoredShapeName = "circle";
+        discoveredScoreShapes.clear();
+        discoveredScoreShapes.add("circle");
+        resetMotionTracking();
+        scoreEffectLayer.replaceChildren();
+    }
+
+    function resetMotionTracking() {
         previousMotionScores.clear();
         previousMotionSampleAt = 0;
-        scoreEffectLayer.replaceChildren();
     }
 
     function updateExperienceHud(categories, now = performance.now()) {
@@ -1229,9 +1292,23 @@
     }
 
     function scoreForMotion(motionAmount) {
-        if (motionAmount >= SCORE_LARGE_THRESHOLD) return 50;
-        if (motionAmount >= SCORE_MEDIUM_THRESHOLD) return 30;
-        return 10;
+        let points = 10;
+        if (motionAmount >= SCORE_LARGE_THRESHOLD) {
+            points = 30;
+        } else if (motionAmount >= SCORE_MEDIUM_THRESHOLD) {
+            points = 20;
+        }
+
+        const shapeName = dominantShapeName;
+        const changedShape = shapeName !== lastScoredShapeName;
+        const discoveredShape = shapeName !== "circle" && !discoveredScoreShapes.has(shapeName);
+
+        if (changedShape) points += SCORE_SHAPE_CHANGE_BONUS;
+        if (discoveredShape) points += SCORE_NEW_SHAPE_BONUS;
+
+        lastScoredShapeName = shapeName;
+        discoveredScoreShapes.add(shapeName);
+        return points;
     }
 
     function launchScoreEffect(points) {
@@ -2114,11 +2191,9 @@
         calibrate.disabled = false;
         measureMotionGain.disabled = false;
         calibrationStage = "complete";
-        visualizeStartedAt = performance.now();
         resetMotionVisualState();
         hideCalibrationGuide();
-        startExperienceHud();
-        showExperienceAnnouncement();
+        startExperienceIntro();
         status.textContent = `キャリブ済み (${calibration.samples} frames)`;
     }
 
