@@ -254,6 +254,46 @@
             text-align: center;
         }
 
+        #experienceTimerValue {
+            display: inline-block;
+            min-width: 1.4em;
+            font-variant-numeric: tabular-nums;
+        }
+
+        #experienceTimerValue.is-warning {
+            color: #df8e14;
+            animation: timerWarning 0.85s ease-in-out;
+        }
+
+        #experienceTimerValue.is-urgent {
+            color: #c62e42;
+            animation: timerUrgent 0.58s ease-in-out infinite;
+        }
+
+        @keyframes timerWarning {
+            0%,
+            100% {
+                transform: scale(1);
+            }
+
+            50% {
+                transform: scale(1.24);
+            }
+        }
+
+        @keyframes timerUrgent {
+            0%,
+            100% {
+                transform: scale(1);
+                text-shadow: 0 0 0 rgb(198 46 66 / 0%);
+            }
+
+            50% {
+                transform: scale(1.22);
+                text-shadow: 0 0 16px rgb(198 46 66 / 42%);
+            }
+        }
+
         #experienceScore {
             position: absolute;
             top: 0;
@@ -568,7 +608,7 @@
         <div id="experienceAnnouncement" hidden>顔を大きく動かしてみよう！</div>
         <div id="experienceHud" hidden>
             <div id="scoreEffectLayer"></div>
-            <div id="experienceTimer" aria-label="残り時間">01:30</div>
+            <div id="experienceTimer" aria-label="残り60秒">残り <span id="experienceTimerValue">60</span> 秒</div>
             <div id="experienceScore">
                 <span id="experienceScoreLabel">スコア</span>
                 <span id="experienceScoreNumber">
@@ -614,6 +654,7 @@
             <div id="shapesPanel" hidden></div>
         </div>
     </main>
+    <audio id="pointGetSound" src="./point-get.mp3" preload="auto"></audio>
 <script>
     window.motionControlPanel = window.open(
         "./control-panel.html",
@@ -629,12 +670,12 @@
     const ids = [
         "stage", "startScreen", "video", "sourceImage", "canvas", "vizCanvas", "cameraButton", "fileInput", "neutralImageInput", "expressionImageInput",
         "calibrate", "measureMotionGain", "clearBaseline", "toggleShapes", "status", "paramSetSelect", "saveParamSet", "motionGainSetSelect", "saveMotionGainSet", "shapesPanel", "layerControls", "sourceControls", "out",
-        "visualizeToggle", "visualize_01", "calibrationGuide", "calibrationGuideText", "calibrationPoint", "experienceAnnouncement", "experienceHud", "experienceTimer", "experienceScore", "experienceScoreNumber", "experienceScoreValue", "scoreEffectLayer", "shuffleSpectrum"
+        "visualizeToggle", "visualize_01", "calibrationGuide", "calibrationGuideText", "calibrationPoint", "experienceAnnouncement", "experienceHud", "experienceTimer", "experienceTimerValue", "experienceScore", "experienceScoreNumber", "experienceScoreValue", "scoreEffectLayer", "pointGetSound", "shuffleSpectrum"
     ];
     const {
         stage, startScreen, video, sourceImage, canvas, vizCanvas, cameraButton, fileInput, neutralImageInput, expressionImageInput,
         calibrate, measureMotionGain, clearBaseline, toggleShapes, status, paramSetSelect, saveParamSet, motionGainSetSelect, saveMotionGainSet, shapesPanel, layerControls, sourceControls, out,
-        visualizeToggle, visualize_01: visualize, calibrationGuide, calibrationGuideText, calibrationPoint, experienceAnnouncement, experienceHud, experienceTimer, experienceScore: experienceScorePanel, experienceScoreNumber, experienceScoreValue, scoreEffectLayer, shuffleSpectrum
+        visualizeToggle, visualize_01: visualize, calibrationGuide, calibrationGuideText, calibrationPoint, experienceAnnouncement, experienceHud, experienceTimer, experienceTimerValue, experienceScore: experienceScorePanel, experienceScoreNumber, experienceScoreValue, scoreEffectLayer, pointGetSound, shuffleSpectrum
     } = Object.fromEntries(ids.map(id => [id, $(id)]));
     const debugPanels = [layerControls, sourceControls, out];
     const panelTargetOrigin = location.origin === "null" ? "*" : location.origin;
@@ -659,11 +700,11 @@
     const MAX_VERTEX_DISPLACEMENT_RATIO = 0.2;
     const MATERIAL_PHASES = [
         { start: 0, name: "breathing", spring: 0.035, damping: 0.91, diffusion: 0.16, response: 0.42, breathing: 0.018, noise: 0.008, noiseSpeed: 0.35, ripple: 0.08, tension: 0.94, fill: 0.032, glow: 7, lineWidth: 2.4, stroke: [125, 140, 136], fillColor: [155, 185, 174], background: [240, 240, 240] },
-        { start: 12, name: "gel", spring: 0.055, damping: 0.86, diffusion: 0.1, response: 1, breathing: 0.012, noise: 0.019, noiseSpeed: 0.75, ripple: 0.22, tension: 0.82, fill: 0.09, glow: 12, lineWidth: 4, stroke: [59, 158, 111], fillColor: [66, 211, 146], background: [232, 245, 238] },
-        { start: 30, name: "water", spring: 0.04, damping: 0.94, diffusion: 0.24, response: 0.84, breathing: 0.007, noise: 0.012, noiseSpeed: 0.55, ripple: 0.45, tension: 0.92, fill: 0.045, glow: 16, lineWidth: 2.1, stroke: [56, 142, 184], fillColor: [86, 190, 222], background: [230, 241, 247] },
-        { start: 48, name: "elastic", spring: 0.11, damping: 0.77, diffusion: 0.055, response: 1.08, breathing: 0.005, noise: 0.008, noiseSpeed: 1.1, ripple: 0.3, tension: 0.68, fill: 0.04, glow: 9, lineWidth: 3, stroke: [222, 103, 76], fillColor: [244, 141, 105], background: [248, 237, 231] },
-        { start: 66, name: "viscous", spring: 0.022, damping: 0.955, diffusion: 0.13, response: 0.9, breathing: 0.014, noise: 0.016, noiseSpeed: 0.25, ripple: 0.1, tension: 0.98, fill: 0.12, glow: 8, lineWidth: 5.2, stroke: [105, 76, 128], fillColor: [145, 102, 166], background: [235, 229, 239] },
-        { start: 82, name: "fusion", spring: 0.06, damping: 0.88, diffusion: 0.18, response: 1, breathing: 0.012, noise: 0.015, noiseSpeed: 0.72, ripple: 0.32, tension: 0.84, fill: 0.1, glow: 18, lineWidth: 3.6, stroke: [123, 94, 163], fillColor: [82, 185, 163], background: [237, 233, 245] }
+        { start: 8, name: "gel", spring: 0.055, damping: 0.86, diffusion: 0.1, response: 1, breathing: 0.012, noise: 0.019, noiseSpeed: 0.75, ripple: 0.22, tension: 0.82, fill: 0.09, glow: 12, lineWidth: 4, stroke: [59, 158, 111], fillColor: [66, 211, 146], background: [232, 245, 238] },
+        { start: 20, name: "water", spring: 0.04, damping: 0.94, diffusion: 0.24, response: 0.84, breathing: 0.007, noise: 0.012, noiseSpeed: 0.55, ripple: 0.45, tension: 0.92, fill: 0.045, glow: 16, lineWidth: 2.1, stroke: [56, 142, 184], fillColor: [86, 190, 222], background: [230, 241, 247] },
+        { start: 32, name: "elastic", spring: 0.11, damping: 0.77, diffusion: 0.055, response: 1.08, breathing: 0.005, noise: 0.008, noiseSpeed: 1.1, ripple: 0.3, tension: 0.68, fill: 0.04, glow: 9, lineWidth: 3, stroke: [222, 103, 76], fillColor: [244, 141, 105], background: [248, 237, 231] },
+        { start: 44, name: "viscous", spring: 0.022, damping: 0.955, diffusion: 0.13, response: 0.9, breathing: 0.014, noise: 0.016, noiseSpeed: 0.25, ripple: 0.1, tension: 0.98, fill: 0.12, glow: 8, lineWidth: 5.2, stroke: [105, 76, 128], fillColor: [145, 102, 166], background: [235, 229, 239] },
+        { start: 55, name: "fusion", spring: 0.06, damping: 0.88, diffusion: 0.18, response: 1, breathing: 0.012, noise: 0.015, noiseSpeed: 0.72, ripple: 0.32, tension: 0.84, fill: 0.1, glow: 18, lineWidth: 3.6, stroke: [123, 94, 163], fillColor: [82, 185, 163], background: [237, 233, 245] }
     ];
     const SHAPE_GESTURES = [
         { name: "star", categories: ["cheekPuff"], strength: 9 },
@@ -679,7 +720,7 @@
     const motionGains = new Map();
     const [WARMUP_FRAMES, CALIBRATION_FRAMES, DEADZONE, SPECTRUM_ZERO_THRESHOLD, VIDEO_BASELINE_SECONDS, VIDEO_BASELINE_PASSES] = [20, 120, 0.005, 0.012, 0.2, 5];
     const [MOTION_GAIN_SAMPLE_MS, MOTION_GAIN_SET_COUNT, MOTION_GAIN_MIN, MOTION_GAIN_MAX, MOTION_GAIN_EPSILON, MOTION_GAIN_POWER] = [20000, 3, 0, 2, 0.004, 1.5];
-    const [POSE_THRESHOLD, ROLL_THRESHOLD] = [0.26, 0.18];
+    const [POSE_THRESHOLD, ROLL_THRESHOLD] = [0.38, 0.28];
     const [LANDMARK_SMOOTHING, PRIMARY_FACE_MAX_DISTANCE] = [0.78, 0.22];
     const [
         POSITION_MESSAGE,
@@ -687,7 +728,7 @@
         GUIDE_MESSAGE,
         MOTION_GAIN_MESSAGE
     ] = [
-        "まずは、この円の中に顔を入れてください",
+        "この円の中に顔を入れてください",
         "顔を動かさずにこの点を見つめてください",
         "動かしていない顔を記録しています...",
         "自由に表情を動かしてください."
@@ -695,7 +736,7 @@
     const CALIBRATION_OUTLINE_STAGES = new Set(["positioning", "intro", "waiting", "recording"]);
     const CALIBRATION_INTRO_MS = 2000;
     const EXPERIENCE_ANNOUNCEMENT_MS = 4000;
-    const EXPERIENCE_DURATION_MS = 90000;
+    const EXPERIENCE_DURATION_MS = 60000;
     const SCORE_TRIGGER_THRESHOLD = 1.80;
     const SCORE_EVENT_COOLDOWN_MS = 220;
     const SCORE_MEDIUM_THRESHOLD = 0.35;
@@ -981,7 +1022,9 @@
         experienceSessionId++;
         resetScoreState();
         experienceScoreValue.textContent = "0";
-        experienceTimer.textContent = formatTime(EXPERIENCE_DURATION_MS);
+        experienceTimerValue.textContent = String(EXPERIENCE_DURATION_MS / 1000);
+        experienceTimerValue.classList.remove("is-warning", "is-urgent");
+        experienceTimer.setAttribute("aria-label", `残り${EXPERIENCE_DURATION_MS / 1000}秒`);
         experienceHud.hidden = false;
     }
 
@@ -1004,7 +1047,11 @@
 
         const elapsed = now - visualizeStartedAt;
         const remaining = Math.max(0, EXPERIENCE_DURATION_MS - elapsed);
-        experienceTimer.textContent = formatTime(remaining);
+        const remainingSeconds = Math.ceil(remaining / 1000);
+        experienceTimerValue.textContent = String(remainingSeconds);
+        experienceTimerValue.classList.toggle("is-warning", remainingSeconds === 30);
+        experienceTimerValue.classList.toggle("is-urgent", remainingSeconds <= 10);
+        experienceTimer.setAttribute("aria-label", `残り${remainingSeconds}秒`);
 
         if (!remaining) return;
         const motionAmount = measureMotionAmount(categories, now);
@@ -1053,13 +1100,6 @@
         if (motionAmount >= SCORE_LARGE_THRESHOLD) return 50;
         if (motionAmount >= SCORE_MEDIUM_THRESHOLD) return 30;
         return 10;
-    }
-
-    function formatTime(milliseconds) {
-        const totalSeconds = Math.ceil(milliseconds / 1000);
-        const minutes = Math.floor(totalSeconds / 60);
-        const seconds = totalSeconds % 60;
-        return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
     }
 
     function launchScoreEffect(points) {
@@ -1147,6 +1187,7 @@
                 .catch(() => {})
                 .finally(() => arrival.remove());
 
+            playPointGetSound();
             experienceScore += points;
             experienceScoreValue.textContent = String(experienceScore);
             experienceScoreNumber.animate([
@@ -1155,6 +1196,17 @@
                 { transform: "translateX(-50%) scale(1)" }
             ], { duration: 360, easing: "ease-out" });
         }, SCORE_ARRIVAL_DELAY_MS);
+    }
+
+    function playPointGetSound() {
+        const sound = pointGetSound.cloneNode();
+        const removeSound = () => sound.remove();
+
+        sound.volume = 0.7;
+        sound.addEventListener("ended", removeSound, { once: true });
+        sound.addEventListener("error", removeSound, { once: true });
+        document.body.append(sound);
+        sound.play().catch(removeSound);
     }
 
     function showCalibrationGuide(message, phase = "recording") {
