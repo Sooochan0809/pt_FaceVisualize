@@ -16,6 +16,7 @@
             --start-reveal-delay: 0.75s;
             --start-reveal-duration: 1.85s;
             --thumbnail-exit-duration: 1.3s;
+            --thumbnail-return-delay: var(--start-reveal-duration);
         }
 
         body {
@@ -55,6 +56,42 @@
             position: absolute;
             inset: 0;
             overflow: hidden;
+        }
+
+        #thumbnailReturnBackground {
+            position: absolute;
+            inset: 0;
+            z-index: 1001;
+            overflow: hidden;
+        }
+
+        #thumbnailReturnBackground[hidden] {
+            display: none;
+        }
+
+        .thumbnailReturnIris {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 0;
+            aspect-ratio: 1;
+            border-radius: 50%;
+            box-shadow: 0 0 0 200vmax #f0f0f0;
+            transform: translate(-50%, -50%);
+            will-change: width;
+        }
+
+        .thumbnailReturnTexture {
+            position: absolute;
+            inset: 0;
+            z-index: 1;
+            display: block;
+            width: 100%;
+            height: 100%;
+            object-fit: fill;
+            pointer-events: none;
+            user-select: none;
+            -webkit-user-drag: none;
         }
 
         .startThumbnailLayer {
@@ -109,10 +146,21 @@
                 revealExperienceScene var(--start-reveal-duration) cubic-bezier(0.5, 0, 0.18, 1) var(--start-reveal-delay) both;
         }
 
+        #startScreen.is-returning .thumbnailReturnIris {
+            animation:
+                openThumbnailIris var(--start-reveal-duration) cubic-bezier(0.5, 0, 0.18, 1) reverse both;
+        }
+
         #startScreen.is-transitioning .startThumbnailTitle,
         #startScreen.is-transitioning .startThumbnailDetail {
             animation:
                 exitThumbnailLayer var(--thumbnail-exit-duration) cubic-bezier(0.55, 0, 0.3, 1) forwards;
+        }
+
+        #startScreen.is-returning .startThumbnailTitle,
+        #startScreen.is-returning .startThumbnailDetail {
+            animation:
+                exitThumbnailLayer var(--thumbnail-exit-duration) cubic-bezier(0.55, 0, 0.3, 1) var(--thumbnail-return-delay) reverse both;
         }
 
         @keyframes revealExperienceScene {
@@ -122,6 +170,16 @@
 
             to {
                 clip-path: circle(115% at 50% 50%);
+            }
+        }
+
+        @keyframes openThumbnailIris {
+            from {
+                width: 0;
+            }
+
+            to {
+                width: 230%;
             }
         }
 
@@ -464,8 +522,10 @@
             display: grid;
             place-items: center;
             padding: 6%;
-            background: rgb(255 250 242 / 72%);
-            backdrop-filter: blur(12px);
+            background:
+                url("./assets/images/background.png")
+                center / 100% 100%
+                no-repeat;
             color: #2f2250;
             pointer-events: none;
         }
@@ -817,6 +877,10 @@
         <img id="experienceBackground" src="./assets/images/background.png" alt="" aria-hidden="true">
         <div id="startScreen">
             <div id="startThumbnail" aria-label="Suitopiaぷちフェス 顔あそび 体験その1">
+                <div id="thumbnailReturnBackground" aria-hidden="true" hidden>
+                    <span class="thumbnailReturnIris"></span>
+                    <img class="thumbnailReturnTexture" src="./assets/images/background.png" alt="">
+                </div>
                 <img class="startThumbnailLayer startThumbnailTitle" src="./assets/images/title_block.png"
                     alt="Suitopiaぷちフェス！ 顔あそび">
                 <img class="startThumbnailLayer startThumbnailDetail" src="./assets/images/detail_block.png"
@@ -912,12 +976,12 @@
 
         const $ = id => document.getElementById(id);
         const ids = [
-            "stage", "startScreen", "video", "sourceImage", "canvas", "vizCanvas", "cameraButton", "fileInput", "neutralImageInput", "expressionImageInput",
+            "stage", "startScreen", "thumbnailReturnBackground", "video", "sourceImage", "canvas", "vizCanvas", "cameraButton", "fileInput", "neutralImageInput", "expressionImageInput",
             "calibrate", "measureMotionGain", "clearBaseline", "toggleShapes", "status", "paramSetSelect", "saveParamSet", "motionGainSetSelect", "saveMotionGainSet", "shapesPanel", "layerControls", "sourceControls", "out",
             "visualizeToggle", "visualize_01", "calibrationGuide", "calibrationGuideText", "calibrationPoint", "experienceAnnouncement", "experienceHud", "experienceTimer", "experienceTimerValue", "experienceScore", "experienceScoreNumber", "experienceScoreValue", "scoreEffectLayer", "experienceResults", "experienceResultScoreValue", "experienceRankingList", "pointGetSound"
         ];
         const {
-            stage, startScreen, video, sourceImage, canvas, vizCanvas, cameraButton, fileInput, neutralImageInput, expressionImageInput,
+            stage, startScreen, thumbnailReturnBackground, video, sourceImage, canvas, vizCanvas, cameraButton, fileInput, neutralImageInput, expressionImageInput,
             calibrate, measureMotionGain, clearBaseline, toggleShapes, status, paramSetSelect, saveParamSet, motionGainSetSelect, saveMotionGainSet, shapesPanel, layerControls, sourceControls, out,
             visualizeToggle, visualize_01: visualize, calibrationGuide, calibrationGuideText, calibrationPoint, experienceAnnouncement, experienceHud, experienceTimer, experienceTimerValue, experienceScore: experienceScorePanel, experienceScoreNumber, experienceScoreValue, scoreEffectLayer, experienceResults, experienceResultScoreValue, experienceRankingList, pointGetSound
         } = Object.fromEntries(ids.map(id => [id, $(id)]));
@@ -979,7 +1043,7 @@
             ];
         const CALIBRATION_OUTLINE_STAGES = new Set(["positioning", "intro", "waiting", "recording"]);
         const CALIBRATION_INTRO_MS = 2000;
-        const EXPERIENCE_DURATION_SECONDS = 60;
+        const EXPERIENCE_DURATION_SECONDS = 5;
         const EXPERIENCE_DURATION_MS = EXPERIENCE_DURATION_SECONDS * 1000;
         const EXPERIENCE_INTRO_STEP_MS = 3000;
         const EXPERIENCE_INTRO_STEPS = [
@@ -1001,6 +1065,7 @@
         const SCORE_FLIGHT_MS = 1000;
         const SCORE_ARRIVAL_DELAY_MS = 940;
         const EXPERIENCE_RESULT_DELAY_MS = SCORE_ARRIVAL_DELAY_MS + 200;
+        const EXPERIENCE_RESULTS_DISPLAY_MS = 5000;
         const SCORE_RANKING_STORAGE_KEY = "motion2ScoreRanking";
         const SCORE_RANKING_LIMIT = 30;
         const calibration = createCalibrationState();
@@ -1029,6 +1094,7 @@
         let experienceSessionId = 0;
         let experienceFinished = false;
         let experienceResultTimer = 0;
+        let experienceReturnTimer = 0;
         let workMusicPlaybackRate = WORK_MUSIC_RATE_NORMAL;
         const previousMotionScores = new Map();
         const discoveredScoreShapes = new Set(["circle"]);
@@ -1193,6 +1259,7 @@
         }
 
         async function playStartTransition() {
+            thumbnailReturnBackground.hidden = true;
             stage.classList.remove("is-preparing");
             stage.classList.add("is-starting");
             startScreen.classList.add("is-transitioning");
@@ -1201,6 +1268,24 @@
             startScreen.hidden = true;
             startScreen.classList.remove("is-transitioning");
             stage.classList.remove("is-starting");
+        }
+
+        async function playReturnTransition() {
+            const animationFinished = new Promise(resolve => {
+                startScreen.querySelector(".startThumbnailDetail")
+                    .addEventListener("animationend", resolve, { once: true });
+            });
+
+            thumbnailReturnBackground.hidden = false;
+            startScreen.hidden = false;
+            startScreen.classList.add("is-returning");
+            await animationFinished;
+
+            resetMediaSource();
+            visualizeToggle.checked = false;
+            toggleVisualize();
+            startScreen.classList.remove("is-returning");
+            sendControlPanelMessage({ type: "thumbnail-restored" });
         }
 
         async function startCameraExperience() {
@@ -1354,10 +1439,12 @@
             resetScoreState();
         }
 
-        function resetScoreState() {
-            window.clearTimeout(experienceResultTimer);
-            experienceResultTimer = 0;
-            experienceScore = 0;
+    function resetScoreState() {
+        window.clearTimeout(experienceResultTimer);
+        window.clearTimeout(experienceReturnTimer);
+        experienceResultTimer = 0;
+        experienceReturnTimer = 0;
+        experienceScore = 0;
             lastScoreEventAt = 0;
             experienceFinished = false;
             workMusicPlaybackRate = WORK_MUSIC_RATE_NORMAL;
@@ -1437,8 +1524,12 @@
                 );
             }
 
-            experienceResults.hidden = false;
-        }
+        experienceResults.hidden = false;
+        experienceReturnTimer = window.setTimeout(() => {
+            if (sessionId !== experienceSessionId || !experienceFinished) return;
+            playReturnTransition();
+        }, EXPERIENCE_RESULTS_DISPLAY_MS);
+    }
 
         function saveScoreRanking(score) {
             const player = {
