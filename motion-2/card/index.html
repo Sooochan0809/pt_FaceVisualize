@@ -456,6 +456,13 @@
       return "△";
     }
 
+    async function printAutomatically() {
+      if (document.fonts?.ready) await document.fonts.ready;
+      await new Promise(resolve => setTimeout(resolve, 300));
+      window.focus();
+      window.print();
+    }
+
     window.addEventListener("message", event => {
       if (event.source !== window.opener || event.data?.source !== "motion-control-panel") return;
       if (location.origin !== "null" && event.origin !== location.origin) return;
@@ -468,6 +475,7 @@
           { source: "motion-card", type: "card-received" },
           targetOrigin
         );
+        printAutomatically();
       };
       lenticularPhoto.src = event.data.imageUrl;
       const score = Math.max(0, Math.round(Number(event.data.score) || 0));
