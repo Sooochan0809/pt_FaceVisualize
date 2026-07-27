@@ -22,8 +22,7 @@
         body {
             margin: 0;
             min-height: 100vh;
-            display: grid;
-            place-items: start center;
+            min-height: 100dvh;
             padding: clamp(24px, 3vw, 40px);
             background: #F0F0F0;
             color: #2f2250;
@@ -33,7 +32,7 @@
             width: min(100%, 1200px);
             display: grid;
             gap: 30px;
-            margin-block: auto;
+            margin-inline: auto;
         }
 
         button {
@@ -69,6 +68,18 @@
         .highlightDecision {
             width: min(100%, 520px);
             justify-self: center;
+        }
+
+        #panelStart {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            width: min(calc(100% - 48px), 520px);
+            transform: translate(-50%, -50%);
+        }
+
+        #panelStart:active {
+            transform: translate(-50%, calc(-50% + 3px));
         }
 
         [hidden] {
