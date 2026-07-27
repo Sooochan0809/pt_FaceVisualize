@@ -163,7 +163,7 @@
         <button id="panelStart" type="button" disabled>準備中...</button>
         <section id="highlightPanel" class="highlightPanel" aria-live="polite" hidden>
             <h1 class="highlightTitle">体験のハイライト</h1>
-            <p id="highlightEmpty" class="highlightEmpty" hidden>特徴的な画像を取得できませんでした</p>
+            <p id="highlightEmpty" class="highlightEmpty" hidden>画像を取得できませんでした</p>
             <div id="highlightGrid" class="highlightGrid"></div>
         </section>
     </main>
@@ -271,7 +271,7 @@
 
         function showHighlightsLoading() {
             highlightGrid.replaceChildren();
-            highlightEmpty.textContent = "特徴的な表情を選んでいます...";
+            highlightEmpty.textContent = "素敵な表情を選んでいます...";
             highlightEmpty.hidden = false;
             highlightPanel.hidden = false;
         }
@@ -279,7 +279,7 @@
         function renderHighlights(images) {
             const selectedImages = images.slice(0, 10);
             highlightGrid.replaceChildren();
-            highlightEmpty.textContent = "特徴的な画像を取得できませんでした";
+            highlightEmpty.textContent = "表情を取得できませんでした";
             highlightEmpty.hidden = selectedImages.length > 0;
 
             selectedImages.forEach((item, index) => {
