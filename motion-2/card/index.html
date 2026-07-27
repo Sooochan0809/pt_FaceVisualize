@@ -141,6 +141,34 @@
       background: var(--photo-gray);
     }
 
+    .photo-area img {
+      width: 100%;
+      height: 100%;
+      display: block;
+      object-fit: cover;
+    }
+
+    .print-actions {
+      position: fixed;
+      z-index: 10;
+      right: 20px;
+      bottom: 20px;
+    }
+
+    .print-button {
+      min-width: 140px;
+      min-height: 52px;
+      border: 0;
+      border-radius: 16px;
+      padding: 10px 22px;
+      background: var(--orange);
+      box-shadow: 0 5px 12px rgb(0 0 0 / 16%);
+      color: #fff;
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
     .total-score {
       position: absolute;
       left: 8.6614%;
@@ -309,6 +337,10 @@
         print-color-adjust: exact;
         -webkit-print-color-adjust: exact;
       }
+
+      .print-actions {
+        display: none;
+      }
     }
   </style>
 </head>
@@ -321,7 +353,7 @@
 
     <div class="person person-name">
       <span class="person-label">氏　名</span>
-      <span class="person-value">測定　たろう</span>
+      <span class="person-value"></span>
     </div>
 
     <div class="person person-number">
@@ -329,9 +361,11 @@
       <span class="person-value number-value">1234567</span>
     </div>
 
-    <div class="photo-area" aria-label="顔写真欄"></div>
+    <div class="photo-area" aria-label="顔写真欄">
+      <img id="lenticularPhoto" alt="選択した表情のレンチキュラー画像" hidden />
+    </div>
 
-    <div class="total-score">総合得点：〇〇〇〇点</div>
+    <div id="totalScore" class="total-score">総合得点：0点</div>
 
     <div class="result-table-wrap">
       <table class="result-table">
@@ -395,6 +429,40 @@
     <img class="association-seal" src="assets/seal.png" alt="全日本表情協会 印鑑" />
     <div class="association-name">全日本表情協会 会長</div>
   </main>
+  <div class="print-actions">
+    <button id="printButton" class="print-button" type="button" disabled>印刷する</button>
+  </div>
+  <script>
+    const lenticularPhoto = document.getElementById("lenticularPhoto");
+    const totalScore = document.getElementById("totalScore");
+    const printButton = document.getElementById("printButton");
+    const targetOrigin = location.origin === "null" ? "*" : location.origin;
+
+    printButton.addEventListener("click", () => window.print());
+
+    window.addEventListener("message", event => {
+      if (event.source !== window.opener || event.data?.source !== "motion-control-panel") return;
+      if (location.origin !== "null" && event.origin !== location.origin) return;
+      if (event.data.type !== "lenticular-card" || !event.data.imageUrl) return;
+
+      lenticularPhoto.onload = () => {
+        lenticularPhoto.hidden = false;
+        printButton.disabled = false;
+        window.opener?.postMessage(
+          { source: "motion-card", type: "card-received" },
+          targetOrigin
+        );
+      };
+      lenticularPhoto.src = event.data.imageUrl;
+      const score = Math.max(0, Math.round(Number(event.data.score) || 0));
+      totalScore.textContent = `総合得点：${score}点`;
+    });
+
+    window.opener?.postMessage(
+      { source: "motion-card", type: "card-ready" },
+      targetOrigin
+    );
+  </script>
 </body>
 
 </html>

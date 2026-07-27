@@ -1693,7 +1693,7 @@
             return { sourceX, sourceY, cropWidth, cropHeight };
         }
 
-        async function publishExperienceHighlights(sessionId) {
+        async function publishExperienceHighlights(sessionId, score) {
             sendControlPanelMessage({ type: "feature-images-loading" });
             const analyzedFrames = await analyzeFeatureEmotions(featureFrameSamples, sessionId);
             if (sessionId !== experienceSessionId) return;
@@ -1706,7 +1706,7 @@
                 emotionScore: frame.emotionScore,
                 emotion: frame.dominantEmotion
             }));
-            sendControlPanelMessage({ type: "feature-images", images });
+            sendControlPanelMessage({ type: "feature-images", images, score });
         }
 
         async function analyzeFeatureEmotions(samples, sessionId) {
@@ -1905,7 +1905,7 @@
             experienceFinished = true;
             stopWorkMusic();
             const sessionId = experienceSessionId;
-            publishExperienceHighlights(sessionId).catch(error => {
+            publishExperienceHighlights(sessionId, experienceScore).catch(error => {
                 console.error("ハイライト画像を選別できませんでした", error);
                 if (sessionId === experienceSessionId) {
                     sendControlPanelMessage({ type: "feature-images", images: [] });

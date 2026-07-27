@@ -100,6 +100,19 @@
             box-shadow: 0 5px 14px rgb(47 34 80 / 13%);
             animation: highlightCardIn 450ms cubic-bezier(0.22, 1, 0.36, 1) both;
             animation-delay: calc(var(--highlight-index) * 55ms);
+            cursor: pointer;
+            transition:
+                border-color 160ms ease,
+                box-shadow 160ms ease,
+                transform 160ms ease;
+        }
+
+        .highlightCard.is-selected {
+            border-color: #6251d6;
+            box-shadow:
+                0 0 0 3px rgb(98 81 214 / 20%),
+                0 7px 16px rgb(47 34 80 / 20%);
+            transform: translateY(-3px);
         }
 
         .highlightCard img {
@@ -123,6 +136,16 @@
             color: #fff;
             font-size: 14px;
             line-height: 1;
+        }
+
+        .highlightCard:not(.is-selected) .highlightRank {
+            display: none;
+        }
+
+        .highlightDecision {
+            min-height: 76px;
+            border-radius: 22px;
+            font-size: 22px;
         }
 
         .highlightEmpty {
@@ -162,9 +185,10 @@
     <main>
         <button id="panelStart" type="button" disabled>準備中...</button>
         <section id="highlightPanel" class="highlightPanel" aria-live="polite" hidden>
-            <h1 class="highlightTitle">ハイライト📸</h1>
+            <h1 id="highlightTitle" class="highlightTitle">写真を6枚選んでください</h1>
             <p id="highlightEmpty" class="highlightEmpty" hidden>画像を取得できませんでした</p>
             <div id="highlightGrid" class="highlightGrid"></div>
+            <button id="highlightDecision" class="highlightDecision" type="button" disabled>決定</button>
         </section>
     </main>
     <audio id="thumbnailMusic" src="./assets/audio/thumbnail.mp3" preload="auto" loop></audio>
@@ -172,6 +196,7 @@
     <audio id="startSound" src="./assets/audio/start.mp3" preload="auto"></audio>
     <audio id="calibrationSound" src="./assets/audio/calibration.mp3" preload="auto"></audio>
     <audio id="finishSound" src="./assets/audio/finish.mp3" preload="auto"></audio>
+    <script src="./lenticular-maker.js"></script>
 
     <script>
         const panelStart = document.getElementById("panelStart");
@@ -181,13 +206,23 @@
         const calibrationSound = document.getElementById("calibrationSound");
         const finishSound = document.getElementById("finishSound");
         const highlightPanel = document.getElementById("highlightPanel");
+        const highlightTitle = document.getElementById("highlightTitle");
         const highlightGrid = document.getElementById("highlightGrid");
         const highlightEmpty = document.getElementById("highlightEmpty");
+        const highlightDecision = document.getElementById("highlightDecision");
         const targetOrigin = location.origin === "null" ? "*" : location.origin;
         const THUMBNAIL_MUSIC_VOLUME = 0.55;
         const WORK_MUSIC_VOLUME = 0.7;
         const MUSIC_FADE_MS = 1200;
+        const HIGHLIGHT_SELECTION_COUNT = 6;
         const audioFadeTokens = new WeakMap();
+        let highlightImages = [];
+        let selectedHighlightIndexes = [];
+        let highlightScore = 0;
+        let cardWindow = null;
+        let cardReady = false;
+        let pendingCardPayload = null;
+        let thumbnailReady = true;
 
         function playLoopMusic(audio, volume) {
             audioFadeTokens.set(audio, (audioFadeTokens.get(audio) ?? 0) + 1);
@@ -267,18 +302,32 @@
             highlightPanel.hidden = true;
             highlightEmpty.hidden = true;
             highlightGrid.replaceChildren();
+            highlightImages = [];
+            selectedHighlightIndexes = [];
+            highlightScore = 0;
+            highlightDecision.disabled = true;
+            highlightDecision.textContent = "決定";
         }
 
         function showHighlightsLoading() {
+            panelStart.hidden = true;
             highlightGrid.replaceChildren();
+            highlightDecision.hidden = true;
+            highlightTitle.textContent = "ハイライトを準備しています";
             highlightEmpty.textContent = "素敵な表情を選んでいます...";
             highlightEmpty.hidden = false;
             highlightPanel.hidden = false;
         }
 
-        function renderHighlights(images) {
+        function renderHighlights(images, score) {
             const selectedImages = images.slice(0, 10);
+            panelStart.hidden = true;
+            highlightDecision.hidden = false;
+            highlightImages = selectedImages;
+            selectedHighlightIndexes = [];
+            highlightScore = Number.isFinite(Number(score)) ? Number(score) : 0;
             highlightGrid.replaceChildren();
+            updateHighlightSelection();
             highlightEmpty.textContent = "表情を取得できませんでした";
             highlightEmpty.hidden = selectedImages.length > 0;
 
@@ -296,7 +345,15 @@
                 image.alt = `特徴的な瞬間 ${index + 1}`;
                 image.loading = "lazy";
                 rank.className = "highlightRank";
-                rank.textContent = String(index + 1).padStart(2, "0");
+                card.tabIndex = 0;
+                card.setAttribute("role", "checkbox");
+                card.setAttribute("aria-checked", "false");
+                card.addEventListener("click", () => toggleHighlightSelection(index));
+                card.addEventListener("keydown", event => {
+                    if (event.key !== "Enter" && event.key !== " ") return;
+                    event.preventDefault();
+                    toggleHighlightSelection(index);
+                });
 
                 if (Number.isFinite(time)) {
                     card.title = `${item.emotion} / ${time.toFixed(1)}秒 / 正面度 ${Math.round(frontal * 100)}% / 感情度 ${Math.round(emotionScore * 100)}%`;
@@ -308,8 +365,76 @@
             highlightPanel.hidden = false;
         }
 
+        function toggleHighlightSelection(index) {
+            const selectedIndex = selectedHighlightIndexes.indexOf(index);
+            if (selectedIndex >= 0) {
+                selectedHighlightIndexes.splice(selectedIndex, 1);
+            } else if (selectedHighlightIndexes.length < HIGHLIGHT_SELECTION_COUNT) {
+                selectedHighlightIndexes.push(index);
+            }
+            updateHighlightSelection();
+        }
+
+        function updateHighlightSelection() {
+            [...highlightGrid.children].forEach((card, index) => {
+                const selectionIndex = selectedHighlightIndexes.indexOf(index);
+                const selected = selectionIndex >= 0;
+                card.classList.toggle("is-selected", selected);
+                card.setAttribute("aria-checked", String(selected));
+                const rank = card.querySelector(".highlightRank");
+                if (rank) rank.textContent = selected ? String(selectionIndex + 1) : "";
+            });
+
+            const selectedCount = selectedHighlightIndexes.length;
+            highlightTitle.textContent = `写真を6枚選んでください（${selectedCount}/6）`;
+            highlightDecision.disabled = selectedCount !== HIGHLIGHT_SELECTION_COUNT;
+        }
+
+        function sendCardPayload() {
+            if (!cardReady || !pendingCardPayload || !cardWindow || cardWindow.closed) return;
+            cardWindow.postMessage(
+                { source: "motion-control-panel", type: "lenticular-card", ...pendingCardPayload },
+                targetOrigin
+            );
+            pendingCardPayload = null;
+        }
+
+        highlightDecision.onclick = async () => {
+            if (selectedHighlightIndexes.length !== HIGHLIGHT_SELECTION_COUNT) return;
+
+            cardReady = false;
+            pendingCardPayload = null;
+            cardWindow = window.open(
+                "./card/index.html",
+                "motion2-print-card",
+                "popup=yes,width=900,height=700,resizable=yes,scrollbars=yes"
+            );
+            if (!cardWindow) {
+                highlightTitle.textContent = "印刷画面を開けませんでした";
+                return;
+            }
+
+            highlightDecision.disabled = true;
+            highlightDecision.textContent = "作成中...";
+            try {
+                const imageUrls = selectedHighlightIndexes.map(index => highlightImages[index].imageUrl);
+                const result = await MotionLenticular.create(imageUrls);
+                pendingCardPayload = {
+                    imageUrl: result.imageUrl,
+                    score: highlightScore
+                };
+                sendCardPayload();
+            } catch (error) {
+                console.error(error);
+                highlightTitle.textContent = "レンチキュラー画像を作成できませんでした";
+                highlightDecision.textContent = "決定";
+                highlightDecision.disabled = false;
+            }
+        };
+
         panelStart.onclick = () => {
             clearHighlights();
+            thumbnailReady = false;
             setButton("体験中...", true);
             playEffectSound(startSound);
             unlockWorkMusic();
@@ -334,6 +459,8 @@
                 case "thumbnail-restored":
                     stopWorkMusic();
                     playLoopMusic(thumbnailMusic, THUMBNAIL_MUSIC_VOLUME);
+                    thumbnailReady = true;
+                    if (highlightPanel.hidden) panelStart.hidden = false;
                     setButton("スタート", false);
                     break;
                 case "work-music-start":
@@ -356,11 +483,30 @@
                     showHighlightsLoading();
                     break;
                 case "feature-images":
-                    renderHighlights(Array.isArray(event.data.images) ? event.data.images : []);
+                    renderHighlights(
+                        Array.isArray(event.data.images) ? event.data.images : [],
+                        event.data.score
+                    );
                     break;
                 case "finish":
                     playEffectSound(finishSound);
                     break;
+            }
+        });
+
+        window.addEventListener("message", event => {
+            if (event.source !== cardWindow || event.data?.source !== "motion-card") return;
+            if (location.origin !== "null" && event.origin !== location.origin) return;
+
+            if (event.data.type === "card-ready") {
+                cardReady = true;
+                sendCardPayload();
+            } else if (event.data.type === "card-received") {
+                clearHighlights();
+                if (thumbnailReady) {
+                    panelStart.hidden = false;
+                    setButton("スタート", false);
+                }
             }
         });
 
