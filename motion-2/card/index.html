@@ -358,7 +358,7 @@
 
     <div class="person person-number">
       <span class="person-label">番　号</span>
-      <span class="person-value number-value">1234567</span>
+      <span id="certificateNumber" class="person-value number-value">0000000</span>
     </div>
 
     <div class="photo-area" aria-label="顔写真欄">
@@ -387,37 +387,37 @@
           <tr>
             <td>喜び</td>
             <td>R8. 08. 02</td>
-            <td></td>
+            <td data-emotion-grade="happy">-</td>
             <td>fEN</td>
           </tr>
           <tr>
             <td>悲しみ</td>
             <td>R8. 08. 02</td>
-            <td></td>
+            <td data-emotion-grade="sad">-</td>
             <td>fEN</td>
           </tr>
           <tr>
             <td>怒り</td>
             <td>R8. 08. 02</td>
-            <td></td>
+            <td data-emotion-grade="angry">-</td>
             <td>fEN</td>
           </tr>
           <tr>
             <td>驚き</td>
             <td>R8. 08. 02</td>
-            <td></td>
+            <td data-emotion-grade="surprised">-</td>
             <td>fEN</td>
           </tr>
           <tr>
             <td>恐怖</td>
             <td>R8. 08. 02</td>
-            <td></td>
+            <td data-emotion-grade="fearful">-</td>
             <td>fEN</td>
           </tr>
           <tr>
             <td>嫌悪</td>
             <td>R8. 08. 02</td>
-            <td></td>
+            <td data-emotion-grade="disgusted">-</td>
             <td>fEN</td>
           </tr>
         </tbody>
@@ -435,10 +435,18 @@
   <script>
     const lenticularPhoto = document.getElementById("lenticularPhoto");
     const totalScore = document.getElementById("totalScore");
+    const certificateNumber = document.getElementById("certificateNumber");
     const printButton = document.getElementById("printButton");
     const targetOrigin = location.origin === "null" ? "*" : location.origin;
 
     printButton.addEventListener("click", () => window.print());
+
+    function emotionGrade(score) {
+      if (!Number.isFinite(score) || score < 0.5) return "-";
+      if (score >= 0.9) return "◎";
+      if (score >= 0.7) return "○";
+      return "△";
+    }
 
     window.addEventListener("message", event => {
       if (event.source !== window.opener || event.data?.source !== "motion-control-panel") return;
@@ -456,6 +464,12 @@
       lenticularPhoto.src = event.data.imageUrl;
       const score = Math.max(0, Math.round(Number(event.data.score) || 0));
       totalScore.textContent = `総合得点：${score}点`;
+      certificateNumber.textContent = String(event.data.certificateNumber || "0000000");
+      const emotionScores = event.data.emotionScores || {};
+      document.querySelectorAll("[data-emotion-grade]").forEach(cell => {
+        const emotion = cell.dataset.emotionGrade;
+        cell.textContent = emotionGrade(Number(emotionScores[emotion]));
+      });
     });
 
     window.opener?.postMessage(

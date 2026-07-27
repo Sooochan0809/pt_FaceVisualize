@@ -1072,6 +1072,7 @@
         const EXPERIENCE_RESULTS_DISPLAY_MS = 5000;
         const SCORE_RANKING_STORAGE_KEY = "motion2ScoreRanking";
         const SCORE_RANKING_LIMIT = 30;
+        const EXPERIENCE_COUNTER_STORAGE_KEY = "motion2ExperienceCounter";
         const FEATURE_FRAME_INTERVAL_MS = 300;
         const FEATURE_FRAME_MIN_GAP_SECONDS = 0.75;
         const FEATURE_FRAME_PICK_LIMIT = 10;
@@ -1693,7 +1694,7 @@
             return { sourceX, sourceY, cropWidth, cropHeight };
         }
 
-        async function publishExperienceHighlights(sessionId, score) {
+        async function publishExperienceHighlights(sessionId, score, certificateNumber) {
             sendControlPanelMessage({ type: "feature-images-loading" });
             const analyzedFrames = await analyzeFeatureEmotions(featureFrameSamples, sessionId);
             if (sessionId !== experienceSessionId) return;
@@ -1706,7 +1707,21 @@
                 emotionScore: frame.emotionScore,
                 emotion: frame.dominantEmotion
             }));
-            sendControlPanelMessage({ type: "feature-images", images, score });
+            const emotionScores = Object.fromEntries(
+                FEATURE_EMOTIONS
+                    .filter(emotion => emotion !== "neutral")
+                    .map(emotion => [
+                        emotion,
+                        Math.max(0, ...analyzedFrames.map(frame => frame.emotions[emotion] || 0))
+                    ])
+            );
+            sendControlPanelMessage({
+                type: "feature-images",
+                images,
+                score,
+                certificateNumber,
+                emotionScores
+            });
         }
 
         async function analyzeFeatureEmotions(samples, sessionId) {
@@ -1905,7 +1920,8 @@
             experienceFinished = true;
             stopWorkMusic();
             const sessionId = experienceSessionId;
-            publishExperienceHighlights(sessionId, experienceScore).catch(error => {
+            const certificateNumber = createExperienceNumber();
+            publishExperienceHighlights(sessionId, experienceScore, certificateNumber).catch(error => {
                 console.error("ハイライト画像を選別できませんでした", error);
                 if (sessionId === experienceSessionId) {
                     sendControlPanelMessage({ type: "feature-images", images: [] });
@@ -1917,6 +1933,32 @@
                 if (sessionId !== experienceSessionId || !experienceFinished) return;
                 showExperienceResults(sessionId);
             }, EXPERIENCE_RESULT_DELAY_MS);
+        }
+
+        function createExperienceNumber(now = new Date()) {
+            const year = now.getFullYear();
+            const month = String(now.getMonth() + 1).padStart(2, "0");
+            const day = String(now.getDate()).padStart(2, "0");
+            const dateKey = `${year}-${month}-${day}`;
+            let count = 1;
+
+            try {
+                const stored = JSON.parse(
+                    localStorage.getItem(EXPERIENCE_COUNTER_STORAGE_KEY) ?? "null"
+                );
+                if (stored?.dateKey === dateKey && Number.isInteger(stored.count)) {
+                    count = stored.count + 1;
+                }
+                localStorage.setItem(
+                    EXPERIENCE_COUNTER_STORAGE_KEY,
+                    JSON.stringify({ dateKey, count })
+                );
+            } catch {
+                count = Math.max(1, experienceSessionId);
+            }
+
+            const displayCount = (count - 1) % 999 + 1;
+            return `${month}${day}${String(displayCount).padStart(3, "0")}`;
         }
 
         function showExperienceResults(sessionId) {

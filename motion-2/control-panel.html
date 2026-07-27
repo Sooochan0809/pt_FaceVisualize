@@ -219,6 +219,8 @@
         let highlightImages = [];
         let selectedHighlightIndexes = [];
         let highlightScore = 0;
+        let highlightCertificateNumber = "";
+        let highlightEmotionScores = {};
         let cardWindow = null;
         let cardReady = false;
         let pendingCardPayload = null;
@@ -305,6 +307,8 @@
             highlightImages = [];
             selectedHighlightIndexes = [];
             highlightScore = 0;
+            highlightCertificateNumber = "";
+            highlightEmotionScores = {};
             highlightDecision.disabled = true;
             highlightDecision.textContent = "決定";
         }
@@ -319,13 +323,17 @@
             highlightPanel.hidden = false;
         }
 
-        function renderHighlights(images, score) {
+        function renderHighlights(images, score, certificateNumber, emotionScores) {
             const selectedImages = images.slice(0, 10);
             panelStart.hidden = true;
             highlightDecision.hidden = false;
             highlightImages = selectedImages;
             selectedHighlightIndexes = [];
             highlightScore = Number.isFinite(Number(score)) ? Number(score) : 0;
+            highlightCertificateNumber = String(certificateNumber || "");
+            highlightEmotionScores = emotionScores && typeof emotionScores === "object"
+                ? emotionScores
+                : {};
             highlightGrid.replaceChildren();
             updateHighlightSelection();
             highlightEmpty.textContent = "表情を取得できませんでした";
@@ -421,7 +429,9 @@
                 const result = await MotionLenticular.create(imageUrls);
                 pendingCardPayload = {
                     imageUrl: result.imageUrl,
-                    score: highlightScore
+                    score: highlightScore,
+                    certificateNumber: highlightCertificateNumber,
+                    emotionScores: highlightEmotionScores
                 };
                 sendCardPayload();
             } catch (error) {
@@ -485,7 +495,9 @@
                 case "feature-images":
                     renderHighlights(
                         Array.isArray(event.data.images) ? event.data.images : [],
-                        event.data.score
+                        event.data.score,
+                        event.data.certificateNumber,
+                        event.data.emotionScores
                     );
                     break;
                 case "finish":
