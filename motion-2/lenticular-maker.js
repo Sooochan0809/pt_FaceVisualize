@@ -2,6 +2,7 @@
     "use strict";
 
     const MM_PER_INCH = 25.4;
+    const REQUIRED_IMAGE_COUNT = 6;
     const SETTINGS = Object.freeze({
         widthMm: 29.25,
         heightMm: 39,
@@ -39,22 +40,28 @@
         return map;
     }
 
+    function forEachMappedRun(axisMap, imageIndex, axisStart, axisEnd, callback) {
+        let runStart = -1;
+
+        for (let axis = axisStart; axis <= axisEnd; axis++) {
+            const matches = axis < axisEnd && axisMap[axis] === imageIndex;
+            if (matches && runStart < 0) {
+                runStart = axis;
+            } else if (!matches && runStart >= 0) {
+                callback(runStart, axis - runStart);
+                runStart = -1;
+            }
+        }
+    }
+
     function addMappedRunsToPath(ctx, axisMap, imageIndex, width, height) {
         const horizontalLens = SETTINGS.lensDirection === "horizontal";
         const axisEnd = horizontalLens ? height : width;
-        let start = -1;
 
-        for (let axis = 0; axis <= axisEnd; axis++) {
-            const matches = axis < axisEnd && axisMap[axis] === imageIndex;
-            if (matches && start < 0) {
-                start = axis;
-            } else if (!matches && start >= 0) {
-                const runLength = axis - start;
-                if (horizontalLens) ctx.rect(0, start, width, runLength);
-                else ctx.rect(start, 0, runLength, height);
-                start = -1;
-            }
-        }
+        forEachMappedRun(axisMap, imageIndex, 0, axisEnd, (start, runLength) => {
+            if (horizontalLens) ctx.rect(0, start, width, runLength);
+            else ctx.rect(start, 0, runLength, height);
+        });
     }
 
     function drawCover(ctx, image, width, height) {
@@ -127,21 +134,19 @@
             const horizontalLens = SETTINGS.lensDirection === "horizontal";
             const axisStart = horizontalLens ? top : left;
             const axisEnd = horizontalLens ? bottom : right;
-            let start = -1;
 
             ctx.save();
             ctx.beginPath();
-            for (let axis = axisStart; axis <= axisEnd; axis++) {
-                const matches = axis < axisEnd && axisMap[axis] === referenceImageIndex;
-                if (matches && start < 0) {
-                    start = axis;
-                } else if (!matches && start >= 0) {
-                    const runLength = axis - start;
+            forEachMappedRun(
+                axisMap,
+                referenceImageIndex,
+                axisStart,
+                axisEnd,
+                (start, runLength) => {
                     if (horizontalLens) ctx.rect(left, start, right - left, runLength);
                     else ctx.rect(start, top, runLength, bottom - top);
-                    start = -1;
                 }
-            }
+            );
             ctx.clip();
             drawSixDotMark(ctx, x, y, radius);
             ctx.restore();
@@ -149,8 +154,8 @@
     }
 
     async function create(imageUrls) {
-        if (!Array.isArray(imageUrls) || imageUrls.length !== 6) {
-            throw new Error("レンチキュラー画像には6枚の写真が必要です。");
+        if (!Array.isArray(imageUrls) || imageUrls.length !== REQUIRED_IMAGE_COUNT) {
+            throw new Error(`レンチキュラー画像には${REQUIRED_IMAGE_COUNT}枚の写真が必要です。`);
         }
 
         const images = await Promise.all(imageUrls.map(loadImage));

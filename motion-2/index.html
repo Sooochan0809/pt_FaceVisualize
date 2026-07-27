@@ -110,14 +110,11 @@
         #experienceBackground {
             position: absolute;
             inset: 0;
+            z-index: 3;
             width: 100%;
             height: 100%;
             object-fit: fill;
             pointer-events: none;
-        }
-
-        #experienceBackground {
-            z-index: 3;
         }
 
         .startThumbnailTitle {
@@ -1002,7 +999,10 @@
         let spectrumOrder = [];
         let visualizeStartedAt = 0;
         let dominantShapeName = "circle";
+
+        const MILLISECONDS_PER_SECOND = 1000;
         const PARAM_SET_DIR = "../parameter";
+
         const MATERIAL_TRANSITION_SECONDS = 2.5;
         const SHAPE_POINT_COUNT = 48;
         const SHAPE_CENTER_Y_RATIO = 0.4;
@@ -1028,27 +1028,36 @@
             { name: "square", categories: ["mouthPressLeft", "mouthPressRight"], strength: 11 }
         ];
         const SHAPE_TEMPLATES = createShapeTemplates(SHAPE_POINT_COUNT);
+
         const base = new Map();
         const motionGains = new Map();
-        const [WARMUP_FRAMES, CALIBRATION_FRAMES, DEADZONE, SPECTRUM_ZERO_THRESHOLD, VIDEO_BASELINE_SECONDS, VIDEO_BASELINE_PASSES] = [20, 120, 0.005, 0.012, 0.2, 5];
-        const [MOTION_GAIN_SAMPLE_MS, MOTION_GAIN_SET_COUNT, MOTION_GAIN_MIN, MOTION_GAIN_MAX, MOTION_GAIN_EPSILON, MOTION_GAIN_POWER] = [20000, 3, 0, 2, 0.004, 1.5];
-        const [POSE_THRESHOLD, ROLL_THRESHOLD] = [0.38, 0.28];
-        const [LANDMARK_SMOOTHING, PRIMARY_FACE_MAX_DISTANCE] = [0.78, 0.22];
-        const [
-            POSITION_MESSAGE,
-            INTRO_MESSAGE,
-            GUIDE_MESSAGE,
-            MOTION_GAIN_MESSAGE
-        ] = [
-                "円の中に顔を入れてください",
-                "顔を動かさずに点を見つめてください",
-                "動かしていない顔を記録しています...",
-                "自由に表情を動かしてください."
-            ];
+
+        const WARMUP_FRAMES = 20;
+        const CALIBRATION_FRAMES = 120;
+        const DEADZONE = 0.005;
+        const SPECTRUM_ZERO_THRESHOLD = 0.012;
+        const VIDEO_BASELINE_SECONDS = 0.2;
+        const VIDEO_BASELINE_PASSES = 5;
+        const MOTION_GAIN_SAMPLE_MS = 20000;
+        const MOTION_GAIN_SET_COUNT = 3;
+        const MOTION_GAIN_MIN = 0;
+        const MOTION_GAIN_MAX = 2;
+        const MOTION_GAIN_EPSILON = 0.004;
+        const MOTION_GAIN_POWER = 1.5;
+        const POSE_THRESHOLD = 0.38;
+        const ROLL_THRESHOLD = 0.28;
+        const LANDMARK_SMOOTHING = 0.78;
+        const PRIMARY_FACE_MAX_DISTANCE = 0.22;
+
+        const POSITION_MESSAGE = "円の中に顔を入れてください";
+        const INTRO_MESSAGE = "顔を動かさずに点を見つめてください";
+        const GUIDE_MESSAGE = "動かしていない顔を記録しています...";
+        const MOTION_GAIN_MESSAGE = "自由に表情を動かしてください.";
         const CALIBRATION_OUTLINE_STAGES = new Set(["positioning", "intro", "waiting", "recording"]);
         const CALIBRATION_INTRO_MS = 2000;
+
         const EXPERIENCE_DURATION_SECONDS = 60;
-        const EXPERIENCE_DURATION_MS = EXPERIENCE_DURATION_SECONDS * 1000;
+        const EXPERIENCE_DURATION_MS = EXPERIENCE_DURATION_SECONDS * MILLISECONDS_PER_SECOND;
         const EXPERIENCE_INTRO_STEP_MS = 3000;
         const EXPERIENCE_INTRO_STEPS = [
             { message: "顔を動かすとスコアが増えるよ！", guide: "score" },
@@ -1056,23 +1065,40 @@
             { message: `制限時間は${EXPERIENCE_DURATION_SECONDS}秒！`, guide: "timer" },
             { message: "さぁ！顔を大きく動かしてみよう！", startsExperienceAfter: true }
         ];
+
+        const WORK_MUSIC_WARNING_SECONDS = 30;
+        const WORK_MUSIC_URGENT_SECONDS = 10;
         const WORK_MUSIC_RATE_NORMAL = 1;
         const WORK_MUSIC_RATE_WARNING = 1.2;
         const WORK_MUSIC_RATE_URGENT = 2;
+
         const SCORE_TRIGGER_THRESHOLD = 1.80;
         const SCORE_EVENT_COOLDOWN_MS = 220;
         const SCORE_MEDIUM_THRESHOLD = 2.8;
         const SCORE_LARGE_THRESHOLD = 4.5;
+        const SCORE_BASE_POINTS = 10;
+        const SCORE_MEDIUM_POINTS = 20;
+        const SCORE_LARGE_POINTS = 30;
         const SCORE_SHAPE_CHANGE_BONUS = 10;
         const SCORE_NEW_SHAPE_BONUS = 20;
         const SCORE_LAUNCH_RADIUS_RATIO = 0.39;
+        const SCORE_ARC_HEIGHT_RATIO = 0.36;
+        const SCORE_MAX_ARC_HEIGHT_PX = 150;
         const SCORE_FLIGHT_MS = 1000;
         const SCORE_ARRIVAL_DELAY_MS = 940;
+        const SCORE_ARRIVAL_ANIMATION_MS = 720;
+        const SCORE_VALUE_ANIMATION_MS = 360;
+        const POINT_GET_SOUND_VOLUME = 0.7;
+
         const EXPERIENCE_RESULT_DELAY_MS = SCORE_ARRIVAL_DELAY_MS + 200;
         const EXPERIENCE_RESULTS_DISPLAY_MS = 10000;
         const SCORE_RANKING_STORAGE_KEY = "motion2ScoreRanking";
         const SCORE_RANKING_LIMIT = 30;
+        const SCORE_RANKING_VISIBLE_LIMIT = 3;
         const EXPERIENCE_COUNTER_STORAGE_KEY = "motion2ExperienceCounter";
+        const EXPERIENCE_COUNTER_MAX = 999;
+        const EXPERIENCE_COUNTER_DIGITS = 3;
+
         const FEATURE_FRAME_INTERVAL_MS = 300;
         const FEATURE_FRAME_MIN_GAP_SECONDS = 0.75;
         const FEATURE_FRAME_PICK_LIMIT = 10;
@@ -1083,10 +1109,17 @@
         const FEATURE_EMOTIONS = ["neutral", "happy", "sad", "angry", "fearful", "disgusted", "surprised"];
         const FEATURE_EMOTION_ANALYSIS_LIMIT = 42;
         const FEATURE_EMOTION_ANALYSIS_GAP_SECONDS = 0.9;
+
+        const CAMERA_SOURCE_WIDTH = 1280;
+        const CAMERA_SOURCE_HEIGHT = 720;
+        const CAMERA_SOURCE_ASPECT_RATIO = 16 / 9;
+        const STAGE_CANVAS_WIDTH = 720;
+        const STAGE_CANVAS_HEIGHT = 960;
+        const VIDEO_FRAME_FALLBACK_MS = 80;
+
         const calibration = createCalibrationState();
         const poseCalibration = createPoseCalibrationState();
         const motionGainCalibration = { active: false, startedAt: 0, duration: MOTION_GAIN_SAMPLE_MS, setIndex: 0, stats: new Map(), sets: [] };
-        const [VW, VH] = [1280, 720];
         let activeMode = "camera";
         let activeObjectUrl = "";
         let imagePairObjectUrls = [];
@@ -1125,7 +1158,7 @@
         let primaryFaceCenter = null;
         let smoothedLandmarks = null;
 
-        Object.assign(canvas, { width: 720, height: 960 });
+        Object.assign(canvas, { width: STAGE_CANVAS_WIDTH, height: STAGE_CANVAS_HEIGHT });
         Object.assign(vizCanvas, { width: canvas.width, height: canvas.height });
 
         const featureEmotionDetectorOptions = new faceapi.TinyFaceDetectorOptions({
@@ -1461,9 +1494,7 @@
             experienceSessionId++;
             resetScoreState();
             experienceScoreValue.textContent = "0";
-            experienceTimerValue.textContent = String(EXPERIENCE_DURATION_SECONDS);
-            experienceTimerValue.classList.remove("is-warning", "is-urgent");
-            experienceTimer.setAttribute("aria-label", `残り${EXPERIENCE_DURATION_SECONDS}秒`);
+            renderExperienceTimer(EXPERIENCE_DURATION_SECONDS, false);
             experienceHud.hidden = false;
         }
 
@@ -1523,7 +1554,7 @@
             if (!quality || !expression || !imageUrl) return;
 
             featureFrameSamples.push({
-                time: Math.max(0, (now - visualizeStartedAt) / 1000),
+                time: Math.max(0, (now - visualizeStartedAt) / MILLISECONDS_PER_SECOND),
                 imageUrl,
                 ...quality,
                 ...expression
@@ -1864,7 +1895,7 @@
                 const pool = separated.length ? separated : leastRepeated;
                 const best = pool.reduce((winner, frame) =>
                     !winner || frame.totalScore > winner.totalScore ? frame : winner
-                , null);
+                    , null);
                 selected.push(best);
                 emotionCounts[best.dominantEmotion] += 1;
             }
@@ -1894,11 +1925,8 @@
 
             const elapsed = now - visualizeStartedAt;
             const remaining = Math.max(0, EXPERIENCE_DURATION_MS - elapsed);
-            const remainingSeconds = Math.ceil(remaining / 1000);
-            experienceTimerValue.textContent = String(remainingSeconds);
-            experienceTimerValue.classList.toggle("is-warning", remainingSeconds === 30);
-            experienceTimerValue.classList.toggle("is-urgent", remainingSeconds <= 10);
-            experienceTimer.setAttribute("aria-label", `残り${remainingSeconds}秒`);
+            const remainingSeconds = Math.ceil(remaining / MILLISECONDS_PER_SECOND);
+            renderExperienceTimer(remainingSeconds);
             updateWorkMusicPlaybackRate(remainingSeconds);
 
             if (!remaining) {
@@ -1914,6 +1942,19 @@
                 lastScoreEventAt = now;
                 launchScoreEffect(scoreForMotion(motionAmount));
             }
+        }
+
+        function renderExperienceTimer(remainingSeconds, showAlerts = true) {
+            experienceTimerValue.textContent = String(remainingSeconds);
+            experienceTimerValue.classList.toggle(
+                "is-warning",
+                showAlerts && remainingSeconds === WORK_MUSIC_WARNING_SECONDS
+            );
+            experienceTimerValue.classList.toggle(
+                "is-urgent",
+                showAlerts && remainingSeconds <= WORK_MUSIC_URGENT_SECONDS
+            );
+            experienceTimer.setAttribute("aria-label", `残り${remainingSeconds}秒`);
         }
 
         function finishExperience() {
@@ -1957,8 +1998,8 @@
                 count = Math.max(1, experienceSessionId);
             }
 
-            const displayCount = (count - 1) % 999 + 1;
-            return `${month}${day}${String(displayCount).padStart(3, "0")}`;
+            const displayCount = (count - 1) % EXPERIENCE_COUNTER_MAX + 1;
+            return `${month}${day}${String(displayCount).padStart(EXPERIENCE_COUNTER_DIGITS, "0")}`;
         }
 
         function showExperienceResults(sessionId) {
@@ -1970,11 +2011,11 @@
             experienceResultScoreValue.textContent = String(finalScore);
             experienceRankingList.replaceChildren();
 
-            result.topThree.forEach(entry => {
+            result.visibleRanking.forEach(entry => {
                 experienceRankingList.append(createRankingRow(entry.rank, entry.score, entry.id === result.player.id));
             });
 
-            if (result.playerRank > 3) {
+            if (result.playerRank > SCORE_RANKING_VISIBLE_LIMIT) {
                 const ellipsis = document.createElement("li");
                 ellipsis.className = "experienceRankingEllipsis";
                 ellipsis.textContent = "⋮";
@@ -2005,7 +2046,9 @@
             return {
                 player,
                 playerRank,
-                topThree: ranking.slice(0, 3).map((entry, index) => ({ ...entry, rank: index + 1 }))
+                visibleRanking: ranking
+                    .slice(0, SCORE_RANKING_VISIBLE_LIMIT)
+                    .map((entry, index) => ({ ...entry, rank: index + 1 }))
             };
         }
 
@@ -2050,9 +2093,9 @@
         }
 
         function updateWorkMusicPlaybackRate(remainingSeconds) {
-            const playbackRate = remainingSeconds <= 10
+            const playbackRate = remainingSeconds <= WORK_MUSIC_URGENT_SECONDS
                 ? WORK_MUSIC_RATE_URGENT
-                : remainingSeconds <= 30
+                : remainingSeconds <= WORK_MUSIC_WARNING_SECONDS
                     ? WORK_MUSIC_RATE_WARNING
                     : WORK_MUSIC_RATE_NORMAL;
             setWorkMusicPlaybackRate(playbackRate);
@@ -2086,7 +2129,11 @@
                 return 0;
             }
 
-            const deltaSeconds = clamp((now - previousMotionSampleAt) / 1000, 1 / 120, 0.1);
+            const deltaSeconds = clamp(
+                (now - previousMotionSampleAt) / MILLISECONDS_PER_SECOND,
+                1 / 120,
+                0.1
+            );
             const strongestMovements = [...currentScores]
                 .map(([categoryName, score]) => Math.abs(score - (previousMotionScores.get(categoryName) ?? score)) / deltaSeconds)
                 .sort((a, b) => b - a)
@@ -2105,11 +2152,11 @@
         }
 
         function scoreForMotion(motionAmount) {
-            let points = 10;
+            let points = SCORE_BASE_POINTS;
             if (motionAmount >= SCORE_LARGE_THRESHOLD) {
-                points = 30;
+                points = SCORE_LARGE_POINTS;
             } else if (motionAmount >= SCORE_MEDIUM_THRESHOLD) {
-                points = 20;
+                points = SCORE_MEDIUM_POINTS;
             }
 
             const shapeName = dominantShapeName;
@@ -2148,7 +2195,10 @@
                 perpendicularX *= -1;
                 perpendicularY *= -1;
             }
-            const arcHeight = Math.min(150, flightDistance * 0.36);
+            const arcHeight = Math.min(
+                SCORE_MAX_ARC_HEIGHT_PX,
+                flightDistance * SCORE_ARC_HEIGHT_RATIO
+            );
             const controlX = (startX + targetX) / 2 + perpendicularX * arcHeight;
             const controlY = (startY + targetY) / 2 + perpendicularY * arcHeight;
             const sessionId = experienceSessionId;
@@ -2203,7 +2253,7 @@
                     { opacity: 1, transform: "translate(-50%, -80%) scale(1.15)", offset: 0.25 },
                     { opacity: 0, transform: "translate(-50%, -180%) scale(1)" }
                 ], {
-                    duration: 720,
+                    duration: SCORE_ARRIVAL_ANIMATION_MS,
                     easing: "ease-out"
                 }).finished
                     .catch(() => { })
@@ -2216,7 +2266,7 @@
                     { transform: "translateX(-50%) scale(1)" },
                     { transform: "translateX(-50%) scale(1.16)", offset: 0.45 },
                     { transform: "translateX(-50%) scale(1)" }
-                ], { duration: 360, easing: "ease-out" });
+                ], { duration: SCORE_VALUE_ANIMATION_MS, easing: "ease-out" });
             }, SCORE_ARRIVAL_DELAY_MS);
         }
 
@@ -2224,7 +2274,7 @@
             const sound = pointGetSound.cloneNode();
             const removeSound = () => sound.remove();
 
-            sound.volume = 0.7;
+            sound.volume = POINT_GET_SOUND_VOLUME;
             sound.addEventListener("ended", removeSound, { once: true });
             sound.addEventListener("error", removeSound, { once: true });
             document.body.append(sound);
@@ -2278,7 +2328,11 @@
             resetMediaSource();
             await setLandmarkerMode("VIDEO");
             video.srcObject = await navigator.mediaDevices.getUserMedia({
-                video: { width: { ideal: VW }, height: { ideal: VH }, aspectRatio: { ideal: 16 / 9 } }
+                video: {
+                    width: { ideal: CAMERA_SOURCE_WIDTH },
+                    height: { ideal: CAMERA_SOURCE_HEIGHT },
+                    aspectRatio: { ideal: CAMERA_SOURCE_ASPECT_RATIO }
+                }
             });
             await video.play();
             setActiveMode("camera");
@@ -2676,7 +2730,7 @@
                     done = true;
                     resolve();
                 };
-                setTimeout(finish, 80);
+                setTimeout(finish, VIDEO_FRAME_FALLBACK_MS);
                 if ("requestVideoFrameCallback" in video) {
                     video.requestVideoFrameCallback(finish);
                     return;
@@ -2941,7 +2995,7 @@
                 type: "motionGainSet",
                 createdAt: new Date().toISOString(),
                 setCount: MOTION_GAIN_SET_COUNT,
-                secondsPerSet: MOTION_GAIN_SAMPLE_MS / 1000,
+                secondsPerSet: MOTION_GAIN_SAMPLE_MS / MILLISECONDS_PER_SECOND,
                 gains: gainSet
             };
 
@@ -3251,7 +3305,10 @@
             if (!motionGainCalibration.active || !base.size) return;
 
             const elapsed = performance.now() - motionGainCalibration.startedAt;
-            const remaining = Math.max(Math.ceil((motionGainCalibration.duration - elapsed) / 1000), 0);
+            const remaining = Math.max(
+                Math.ceil((motionGainCalibration.duration - elapsed) / MILLISECONDS_PER_SECOND),
+                0
+            );
 
             if (!categories.length) {
                 status.textContent = `係数測定 ${motionGainCalibration.setIndex + 1}/${MOTION_GAIN_SET_COUNT}: 顔を検出中 ${remaining}s`;
@@ -3386,7 +3443,7 @@
             const maxSpike = Math.min(width, height) * MAX_VERTEX_DISPLACEMENT_RATIO;
             const calibrated = base.size > 0;
             const ordered = orderedSpectrumCategories(categories);
-            const time = now * 0.001;
+            const time = now / MILLISECONDS_PER_SECOND;
             const springStates = ordered.map(({ categoryName, score }) => {
                 const rawValue = calibrated ? adjustedCalibratedScore(categoryName, score) : 0;
                 const value = Math.abs(rawValue) < SPECTRUM_ZERO_THRESHOLD ? 0 : rawValue;
@@ -3592,7 +3649,11 @@
 
         function currentMaterial(now) {
             const startedAt = visualizeStartedAt || now;
-            const elapsed = clamp((now - startedAt) / 1000, 0, EXPERIENCE_DURATION_SECONDS);
+            const elapsed = clamp(
+                (now - startedAt) / MILLISECONDS_PER_SECOND,
+                0,
+                EXPERIENCE_DURATION_SECONDS
+            );
             let phaseIndex = 0;
 
             while (phaseIndex + 1 < MATERIAL_PHASES.length && elapsed >= MATERIAL_PHASES[phaseIndex + 1].start) {
@@ -3723,8 +3784,8 @@
 
             const media = activeMode === "image-pair" ? sourceImage : video;
             const [sw, sh] = [
-                media.videoWidth || media.naturalWidth || VW,
-                media.videoHeight || media.naturalHeight || VH
+                media.videoWidth || media.naturalWidth || CAMERA_SOURCE_WIDTH,
+                media.videoHeight || media.naturalHeight || CAMERA_SOURCE_HEIGHT
             ];
             const scale = activeMode === "camera"
                 ? Math.max(canvas.width / sw, canvas.height / sh)

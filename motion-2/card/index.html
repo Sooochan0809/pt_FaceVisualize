@@ -446,19 +446,24 @@
     const certificateNumber = document.getElementById("certificateNumber");
     const printButton = document.getElementById("printButton");
     const targetOrigin = location.origin === "null" ? "*" : location.origin;
+    const EMOTION_GRADE_EXCELLENT_THRESHOLD = 0.9;
+    const EMOTION_GRADE_GOOD_THRESHOLD = 0.7;
+    const EMOTION_GRADE_PASS_THRESHOLD = 0.5;
+    const PRINT_RENDER_DELAY_MS = 300;
+    const CERTIFICATE_NUMBER_FALLBACK = "0000000";
 
     printButton.addEventListener("click", () => window.print());
 
     function emotionGrade(score) {
-      if (!Number.isFinite(score) || score < 0.5) return "-";
-      if (score >= 0.9) return "◎";
-      if (score >= 0.7) return "○";
+      if (!Number.isFinite(score) || score < EMOTION_GRADE_PASS_THRESHOLD) return "-";
+      if (score >= EMOTION_GRADE_EXCELLENT_THRESHOLD) return "◎";
+      if (score >= EMOTION_GRADE_GOOD_THRESHOLD) return "○";
       return "△";
     }
 
     async function printAutomatically() {
       if (document.fonts?.ready) await document.fonts.ready;
-      await new Promise(resolve => setTimeout(resolve, 300));
+      await new Promise(resolve => setTimeout(resolve, PRINT_RENDER_DELAY_MS));
       window.focus();
       window.print();
     }
@@ -480,7 +485,9 @@
       lenticularPhoto.src = event.data.imageUrl;
       const score = Math.max(0, Math.round(Number(event.data.score) || 0));
       totalScore.textContent = `総合得点：${score}点`;
-      certificateNumber.textContent = String(event.data.certificateNumber || "0000000");
+      certificateNumber.textContent = String(
+        event.data.certificateNumber || CERTIFICATE_NUMBER_FALLBACK
+      );
       const emotionScores = event.data.emotionScores || {};
       document.querySelectorAll("[data-emotion-grade]").forEach(cell => {
         const emotion = cell.dataset.emotionGrade;

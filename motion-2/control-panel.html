@@ -246,6 +246,7 @@
         }
 
         @media (prefers-reduced-motion: reduce) {
+
             .highlightPanel,
             .highlightCard {
                 animation: none;
@@ -270,7 +271,7 @@
         <div class="highlightConfirmationCard">
             <p id="highlightConfirmationText" class="highlightConfirmationText">本当にこの６枚でいいですか？</p>
             <div class="highlightConfirmationActions">
-                <button id="highlightConfirmYes" type="button">印刷</button>
+                <button id="highlightConfirmYes" type="button">はい</button>
                 <button id="highlightReselect" class="highlightReselect" type="button">選びなおす</button>
             </div>
         </div>
@@ -301,8 +302,14 @@
         const targetOrigin = location.origin === "null" ? "*" : location.origin;
         const THUMBNAIL_MUSIC_VOLUME = 0.55;
         const WORK_MUSIC_VOLUME = 0.7;
+        const EFFECT_SOUND_VOLUME = 0.6;
+        const WORK_MUSIC_RATE_NORMAL = 1;
+        const WORK_MUSIC_RATE_MIN = 0.5;
+        const WORK_MUSIC_RATE_MAX = 2;
         const MUSIC_FADE_MS = 1200;
         const HIGHLIGHT_SELECTION_COUNT = 6;
+        const HIGHLIGHT_DISPLAY_LIMIT = 10;
+        const CARD_POPUP_FEATURES = "popup=yes,width=900,height=700,resizable=yes,scrollbars=yes";
         const audioFadeTokens = new WeakMap();
         let highlightImages = [];
         let selectedHighlightIndexes = [];
@@ -363,7 +370,7 @@
                 });
         }
 
-        function playEffectSound(audio, volume = 0.6) {
+        function playEffectSound(audio, volume = EFFECT_SOUND_VOLUME) {
             audio.currentTime = 0;
             audio.volume = volume;
             audio.play().catch(() => { });
@@ -372,7 +379,7 @@
         function stopWorkMusic(fade = false) {
             const stop = fade ? fadeOutAudio : stopAudio;
             stop(workMusic, WORK_MUSIC_VOLUME);
-            workMusic.playbackRate = 1;
+            workMusic.playbackRate = WORK_MUSIC_RATE_NORMAL;
         }
 
         function send(action) {
@@ -388,6 +395,12 @@
             panelStart.disabled = disabled;
         }
 
+        function isTrustedMessage(event, expectedSource, expectedChannel) {
+            return event.source === expectedSource
+                && event.data?.source === expectedChannel
+                && (location.origin === "null" || event.origin === location.origin);
+        }
+
         function clearHighlights() {
             highlightPanel.hidden = true;
             highlightEmpty.hidden = true;
@@ -397,12 +410,8 @@
             highlightScore = 0;
             highlightCertificateNumber = "";
             highlightEmotionScores = {};
-            highlightDecision.disabled = true;
-            highlightDecision.textContent = "決定";
+            resetCardCreationControls();
             highlightConfirmation.hidden = true;
-            highlightConfirmYes.disabled = false;
-            highlightConfirmYes.textContent = "はい";
-            highlightReselect.disabled = false;
         }
 
         function showHighlightsLoading() {
@@ -416,7 +425,7 @@
         }
 
         function renderHighlights(images, score, certificateNumber, emotionScores) {
-            const selectedImages = images.slice(0, 10);
+            const selectedImages = images.slice(0, HIGHLIGHT_DISPLAY_LIMIT);
             panelStart.hidden = true;
             highlightDecision.hidden = false;
             highlightTitle.textContent = "ハイライト📸";
@@ -467,6 +476,14 @@
             highlightPanel.hidden = false;
         }
 
+        function resetCardCreationControls() {
+            highlightDecision.disabled = true;
+            highlightDecision.textContent = "決定";
+            highlightConfirmYes.disabled = false;
+            highlightConfirmYes.textContent = "はい";
+            highlightReselect.disabled = false;
+        }
+
         function toggleHighlightSelection(index) {
             const selectedIndex = selectedHighlightIndexes.indexOf(index);
             if (selectedIndex >= 0) {
@@ -488,7 +505,8 @@
             });
 
             const selectedCount = selectedHighlightIndexes.length;
-            highlightInstruction.textContent = `6枚選んでください（${selectedCount}/6）`;
+            highlightInstruction.textContent =
+                `${HIGHLIGHT_SELECTION_COUNT}枚選んでください（${selectedCount}/${HIGHLIGHT_SELECTION_COUNT}）`;
             highlightDecision.disabled = selectedCount !== HIGHLIGHT_SELECTION_COUNT;
         }
 
@@ -521,14 +539,13 @@
             cardWindow = window.open(
                 "./card/index.html",
                 "motion2-print-card",
-                "popup=yes,width=900,height=700,resizable=yes,scrollbars=yes"
+                CARD_POPUP_FEATURES
             );
             if (!cardWindow) {
                 highlightConfirmation.hidden = true;
                 highlightTitle.textContent = "印刷画面を開けませんでした";
-                highlightConfirmYes.disabled = false;
-                highlightConfirmYes.textContent = "はい";
-                highlightReselect.disabled = false;
+                resetCardCreationControls();
+                highlightDecision.disabled = false;
                 return;
             }
 
@@ -548,11 +565,8 @@
                 console.error(error);
                 highlightConfirmation.hidden = true;
                 highlightTitle.textContent = "レンチキュラー画像を作成できませんでした";
-                highlightDecision.textContent = "決定";
+                resetCardCreationControls();
                 highlightDecision.disabled = false;
-                highlightConfirmYes.disabled = false;
-                highlightConfirmYes.textContent = "はい";
-                highlightReselect.disabled = false;
             }
         };
 
@@ -566,8 +580,7 @@
         };
 
         window.addEventListener("message", event => {
-            if (event.source !== window.opener || event.data?.source !== "motion-main") return;
-            if (location.origin !== "null" && event.origin !== location.origin) return;
+            if (!isTrustedMessage(event, window.opener, "motion-main")) return;
 
             switch (event.data.type) {
                 case "ready":
@@ -595,7 +608,11 @@
                     break;
                 case "work-music-rate": {
                     const playbackRate = Number(event.data.playbackRate);
-                    if (Number.isFinite(playbackRate) && playbackRate >= 0.5 && playbackRate <= 2) {
+                    if (
+                        Number.isFinite(playbackRate)
+                        && playbackRate >= WORK_MUSIC_RATE_MIN
+                        && playbackRate <= WORK_MUSIC_RATE_MAX
+                    ) {
                         workMusic.playbackRate = playbackRate;
                     }
                     break;
@@ -621,8 +638,7 @@
         });
 
         window.addEventListener("message", event => {
-            if (event.source !== cardWindow || event.data?.source !== "motion-card") return;
-            if (location.origin !== "null" && event.origin !== location.origin) return;
+            if (!isTrustedMessage(event, cardWindow, "motion-card")) return;
 
             if (event.data.type === "card-ready") {
                 cardReady = true;
