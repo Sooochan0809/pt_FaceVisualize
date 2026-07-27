@@ -316,10 +316,12 @@
 
       html,
       body {
-        width: 127mm;
-        height: 89mm;
+        width: 126.8mm;
+        height: 88.8mm;
+        min-height: 0;
         margin: 0;
         padding: 0;
+        overflow: hidden;
         background: #fff;
       }
 
@@ -328,9 +330,15 @@
       }
 
       .certificate-sheet {
-        width: 127mm;
-        height: 89mm;
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 126.8mm;
+        height: 88.8mm;
         max-width: none;
+        margin: 0;
+        break-inside: avoid;
+        page-break-inside: avoid;
       }
 
       * {
@@ -430,7 +438,7 @@
     <div class="association-name">全日本表情協会 会長</div>
   </main>
   <div class="print-actions">
-    <button id="printButton" class="print-button" type="button" disabled>印刷する</button>
+    <button id="printButton" class="print-button" type="button" disabled>印刷</button>
   </div>
   <script>
     const lenticularPhoto = document.getElementById("lenticularPhoto");
