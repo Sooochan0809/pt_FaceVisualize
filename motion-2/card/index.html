@@ -1,0 +1,400 @@
+<!doctype html>
+<html lang="ja">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>表情測定証明証</title>
+  <style>
+    :root {
+      --orange: #f19935;
+      --photo-gray: #d9d9d9;
+      --line: #777;
+      --alternating: #fcefdf;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      margin: 0;
+      min-height: 100%;
+      background: #fff;
+    }
+
+    body {
+      display: grid;
+      place-items: start center;
+      padding: 0;
+      color: #111;
+      font-family:
+        "Hiragino Kaku Gothic ProN",
+        "Yu Gothic",
+        "YuGothic",
+        "Noto Sans JP",
+        sans-serif;
+      -webkit-font-smoothing: antialiased;
+      text-rendering: geometricPrecision;
+    }
+
+    /*
+  The complete white sheet has the same 508:356 aspect ratio as the supplied
+  reference. At print time it is rendered as an L-size landscape sheet
+  (127 mm × 89 mm).
+*/
+    .certificate-sheet {
+      position: relative;
+      width: min(100%, 508px);
+      aspect-ratio: 508 / 356;
+      overflow: hidden;
+      background: #fff;
+      container-type: inline-size;
+    }
+
+    .certificate-card {
+      position: absolute;
+      left: 4.7244%;
+      /* 24 / 508 */
+      top: 7.8652%;
+      /* 28 / 356 */
+      width: 91.3386%;
+      /* 464 / 508 */
+      height: 85.3933%;
+      /* 304 / 356 */
+      overflow: hidden;
+      background: #fff;
+      border: 0.14cqw solid #8f8f8f;
+      border-radius: 5.45cqw;
+    }
+
+    .certificate-title {
+      position: absolute;
+      left: -0.14cqw;
+      top: 7.8947%;
+      /* 24 / 304 */
+      width: calc(100% + 0.28cqw);
+      height: 13.1579%;
+      /* 40 / 304 */
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding-bottom: 0.08cqw;
+      color: #fff;
+      background: var(--orange);
+      font-size: 6.50cqw;
+      font-weight: 700;
+      line-height: 1;
+      letter-spacing: 1.15cqw;
+      white-space: nowrap;
+    }
+
+    .person {
+      position: absolute;
+      left: 8.6614%;
+      /* 44 / 508 */
+      width: 56.69%;
+      height: 7.02%;
+      display: flex;
+      align-items: center;
+      line-height: 1;
+      white-space: nowrap;
+    }
+
+    .person-name {
+      top: 27.8090%;
+      /* 99 / 356 */
+    }
+
+    .person-number {
+      top: 36.5169%;
+      /* 130 / 356 */
+    }
+
+    .person-label {
+      flex: 0 0 47.22%;
+      font-size: 3.24cqw;
+      font-weight: 500;
+      letter-spacing: 0.03cqw;
+    }
+
+    .person-value {
+      font-size: 3.12cqw;
+      font-weight: 400;
+    }
+
+    .number-value {
+      padding-left: 2.0cqw;
+    }
+
+    .photo-area {
+      position: absolute;
+      left: 69.2913%;
+      /* 352 / 508 */
+      top: 28.0899%;
+      /* 100 / 356 */
+      width: 23.0315%;
+      /* 117 / 508 */
+      height: 43.8202%;
+      /* 156 / 356 */
+      background: var(--photo-gray);
+    }
+
+    .total-score {
+      position: absolute;
+      left: 8.6614%;
+      /* 44 / 508 */
+      top: 43.8202%;
+      /* 156 / 356 */
+      width: 57.4803%;
+      /* 292 / 508 */
+      height: 4.4944%;
+      /* 16 / 356 */
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding-bottom: 0.10cqw;
+      color: #fff;
+      background: var(--orange);
+      font-size: 2.35cqw;
+      font-weight: 500;
+      line-height: 1;
+    }
+
+    .result-table-wrap {
+      position: absolute;
+      left: 8.6614%;
+      /* 44 / 508 */
+      top: 50.5618%;
+      /* 180 / 356 */
+      width: 57.4803%;
+      /* 292 / 508 */
+      height: 39.3258%;
+      /* 140 / 356 */
+    }
+
+    .result-table {
+      position: relative;
+      z-index: 1;
+      width: 100%;
+      height: 100%;
+      table-layout: fixed;
+      border-collapse: collapse;
+      background: transparent;
+      font-size: 2.38cqw;
+      line-height: 1;
+    }
+
+    .result-table .col-kind {
+      width: 15.41%;
+    }
+
+    .result-table .col-date {
+      width: 40.75%;
+    }
+
+    .result-table .col-grade {
+      width: 23.63%;
+    }
+
+    .result-table .col-examiner {
+      width: 20.21%;
+    }
+
+    .result-table th,
+    .result-table td {
+      position: relative;
+      z-index: 3;
+      height: 14.2857%;
+      padding: 0;
+      border: 0.12cqw solid var(--line);
+      text-align: center;
+      vertical-align: middle;
+      font-weight: 400;
+      white-space: nowrap;
+    }
+
+    .result-table th {
+      background: rgba(255, 255, 255, 0.74);
+      font-size: 2.23cqw;
+    }
+
+    .result-table tbody td:first-child {
+      background: rgba(255, 255, 255, 0.74);
+    }
+
+    .result-table tbody tr:nth-child(odd) td:not(:first-child) {
+      background: rgba(252, 239, 223, 0.77);
+    }
+
+    .result-table tbody tr:nth-child(even) td:not(:first-child) {
+      background: rgba(255, 255, 255, 0.74);
+    }
+
+    .watermark-logo {
+      position: absolute;
+      z-index: 2;
+      left: 30.82%;
+      top: 2.9%;
+      width: 47.95%;
+      height: auto;
+      pointer-events: none;
+      user-select: none;
+    }
+
+    .validity {
+      position: absolute;
+      left: 69.4882%;
+      /* 353 / 508 */
+      top: 72.1910%;
+      /* 257 / 356 */
+      font-size: 2.38cqw;
+      font-weight: 400;
+      line-height: 1;
+      white-space: nowrap;
+    }
+
+    .association-seal {
+      position: absolute;
+      left: 76.5748%;
+      /* 389 / 508 */
+      top: 76.6854%;
+      /* 273 / 356 */
+      width: 9.0551%;
+      /* 46 / 508 */
+      height: auto;
+      image-rendering: pixelated;
+    }
+
+    .association-name {
+      position: absolute;
+      left: 69.4882%;
+      /* 353 / 508 */
+      top: 85.9551%;
+      /* 306 / 356 */
+      font-size: 2.40cqw;
+      font-weight: 700;
+      line-height: 1;
+      white-space: nowrap;
+    }
+
+
+    @media print {
+      @page {
+        size: 127mm 89mm;
+        margin: 0;
+      }
+
+      html,
+      body {
+        width: 127mm;
+        height: 89mm;
+        margin: 0;
+        padding: 0;
+        background: #fff;
+      }
+
+      body {
+        display: block;
+      }
+
+      .certificate-sheet {
+        width: 127mm;
+        height: 89mm;
+        max-width: none;
+      }
+
+      * {
+        print-color-adjust: exact;
+        -webkit-print-color-adjust: exact;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <main class="certificate-sheet" aria-label="表情測定証明証">
+    <section class="certificate-card">
+      <header class="certificate-title">表情測定証明証</header>
+    </section>
+
+    <div class="person person-name">
+      <span class="person-label">氏　名</span>
+      <span class="person-value">測定　たろう</span>
+    </div>
+
+    <div class="person person-number">
+      <span class="person-label">番　号</span>
+      <span class="person-value number-value">1234567</span>
+    </div>
+
+    <div class="photo-area" aria-label="顔写真欄"></div>
+
+    <div class="total-score">総合得点：〇〇〇〇点</div>
+
+    <div class="result-table-wrap">
+      <table class="result-table">
+        <colgroup>
+          <col class="col-kind" />
+          <col class="col-date" />
+          <col class="col-grade" />
+          <col class="col-examiner" />
+        </colgroup>
+        <thead>
+          <tr>
+            <th>種類</th>
+            <th>測定年月日</th>
+            <th>評定</th>
+            <th>測定者</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>喜び</td>
+            <td>R8. 08. 02</td>
+            <td></td>
+            <td>fEN</td>
+          </tr>
+          <tr>
+            <td>悲しみ</td>
+            <td>R8. 08. 02</td>
+            <td></td>
+            <td>fEN</td>
+          </tr>
+          <tr>
+            <td>怒り</td>
+            <td>R8. 08. 02</td>
+            <td></td>
+            <td>fEN</td>
+          </tr>
+          <tr>
+            <td>驚き</td>
+            <td>R8. 08. 02</td>
+            <td></td>
+            <td>fEN</td>
+          </tr>
+          <tr>
+            <td>恐怖</td>
+            <td>R8. 08. 02</td>
+            <td></td>
+            <td>fEN</td>
+          </tr>
+          <tr>
+            <td>嫌悪</td>
+            <td>R8. 08. 02</td>
+            <td></td>
+            <td>fEN</td>
+          </tr>
+        </tbody>
+      </table>
+      <img class="watermark-logo" src="assets/logo.png" alt="" />
+    </div>
+
+    <div class="validity">測定日より一年有効</div>
+    <img class="association-seal" src="assets/seal.png" alt="全日本表情協会 印鑑" />
+    <div class="association-name">全日本表情協会 会長</div>
+  </main>
+</body>
+
+</html>

@@ -8,6 +8,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@500;700&display=swap" rel="stylesheet">
+    <script defer src="../modules/faceAPI/face-api.min.js"></script>
     <style>
         :root {
             --panel-bg: #1b2026e0;
@@ -990,6 +991,8 @@
         const panelTargetOrigin = location.origin === "null" ? "*" : location.origin;
         const ctx = canvas.getContext("2d");
         const vizCtx = vizCanvas.getContext("2d");
+        const featureFrameCanvas = document.createElement("canvas");
+        const featureFrameCtx = featureFrameCanvas.getContext("2d");
         const shapes = new Map();
         const enabledParams = new Set();
         const spectrum = new Map();
@@ -1069,6 +1072,16 @@
         const EXPERIENCE_RESULTS_DISPLAY_MS = 5000;
         const SCORE_RANKING_STORAGE_KEY = "motion2ScoreRanking";
         const SCORE_RANKING_LIMIT = 30;
+        const FEATURE_FRAME_INTERVAL_MS = 300;
+        const FEATURE_FRAME_MIN_GAP_SECONDS = 0.75;
+        const FEATURE_FRAME_PICK_LIMIT = 10;
+        const FEATURE_FRAME_WIDTH = 360;
+        const FEATURE_FRAME_HEIGHT = 480;
+        const FEATURE_FACE_CROP_Y_SHIFT_RATIO = 0.13;
+        const FEATURE_EMOTION_MODEL_URL = "../modules/faceAPI/models";
+        const FEATURE_EMOTIONS = ["neutral", "happy", "sad", "angry", "fearful", "disgusted", "surprised"];
+        const FEATURE_EMOTION_ANALYSIS_LIMIT = 42;
+        const FEATURE_EMOTION_ANALYSIS_GAP_SECONDS = 0.9;
         const calibration = createCalibrationState();
         const poseCalibration = createPoseCalibrationState();
         const motionGainCalibration = { active: false, startedAt: 0, duration: MOTION_GAIN_SAMPLE_MS, setIndex: 0, stats: new Map(), sets: [] };
@@ -1095,6 +1108,8 @@
         let experienceSessionId = 0;
         let experienceFinished = false;
         let experiencePhaseTimer = 0;
+        let featureFrameSamples = [];
+        let lastFeatureFrameAt = 0;
         let workMusicPlaybackRate = WORK_MUSIC_RATE_NORMAL;
         const previousMotionScores = new Map();
         const discoveredScoreShapes = new Set(["circle"]);
@@ -1111,6 +1126,21 @@
 
         Object.assign(canvas, { width: 720, height: 960 });
         Object.assign(vizCanvas, { width: canvas.width, height: canvas.height });
+
+        const featureEmotionDetectorOptions = new faceapi.TinyFaceDetectorOptions({
+            inputSize: 320,
+            scoreThreshold: 0.35
+        });
+        const featureEmotionModels = Promise.all([
+            faceapi.nets.tinyFaceDetector.loadFromUri(FEATURE_EMOTION_MODEL_URL),
+            faceapi.nets.faceExpressionNet.loadFromUri(FEATURE_EMOTION_MODEL_URL)
+        ]).then(
+            () => true,
+            error => {
+                console.error("感情推定モデルを読み込めませんでした", error);
+                return false;
+            }
+        );
 
         const faceLandmarker = await FaceLandmarker.createFromOptions(
             await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.34/wasm"),
@@ -1455,6 +1485,7 @@
             discoveredScoreShapes.clear();
             discoveredScoreShapes.add("circle");
             resetMotionTracking();
+            resetFeatureFrames();
             scoreEffectLayer.replaceChildren();
             experienceRankingList.replaceChildren();
             experienceResults.hidden = true;
@@ -1463,6 +1494,384 @@
         function resetMotionTracking() {
             previousMotionScores.clear();
             previousMotionSampleAt = 0;
+        }
+
+        function resetFeatureFrames() {
+            featureFrameSamples = [];
+            lastFeatureFrameAt = 0;
+        }
+
+        function collectFeatureFrame(categories, landmarks, now = performance.now()) {
+            if (
+                activeMode !== "camera"
+                || !visualizeStartedAt
+                || experienceFinished
+                || experienceHud.hidden
+                || !categories.length
+                || !landmarks.length
+                || video.readyState < 2
+                || now - lastFeatureFrameAt < FEATURE_FRAME_INTERVAL_MS
+            ) {
+                return;
+            }
+
+            const quality = featureFrameQuality(landmarks);
+            const expression = featureExpressionScore(categories);
+            lastFeatureFrameAt = now;
+            const imageUrl = captureFeatureFrame(landmarks);
+            if (!quality || !expression || !imageUrl) return;
+
+            featureFrameSamples.push({
+                time: Math.max(0, (now - visualizeStartedAt) / 1000),
+                imageUrl,
+                ...quality,
+                ...expression
+            });
+        }
+
+        function featureFrameQuality(landmarks) {
+            const leftEye = averageLandmarks(landmarks, [33, 133]);
+            const rightEye = averageLandmarks(landmarks, [263, 362]);
+            const leftTemple = landmarks[234];
+            const rightTemple = landmarks[454];
+            const leftMouth = landmarks[61];
+            const rightMouth = landmarks[291];
+            const mouthCenter = averageLandmarks(landmarks, [13, 14]);
+            const nose = landmarks[1];
+            const bounds = landmarkBounds(landmarks);
+            if (
+                !leftEye
+                || !rightEye
+                || !leftTemple
+                || !rightTemple
+                || !leftMouth
+                || !rightMouth
+                || !mouthCenter
+                || !nose
+                || !bounds
+            ) {
+                return null;
+            }
+
+            const eyeDistance = featurePointDistance(leftEye, rightEye);
+            const faceWidth = featurePointDistance(leftTemple, rightTemple);
+            if (eyeDistance < 0.001 || faceWidth < 0.001) return null;
+
+            const eyeSymmetry = featureSymmetryScore(
+                featurePointDistance(nose, leftEye),
+                featurePointDistance(nose, rightEye)
+            );
+            const templeSymmetry = featureSymmetryScore(
+                featurePointDistance(nose, leftTemple),
+                featurePointDistance(nose, rightTemple)
+            );
+            const mouthSymmetry = featureSymmetryScore(
+                featurePointDistance(nose, leftMouth),
+                featurePointDistance(nose, rightMouth)
+            );
+            const rollScore = clamp(1 - Math.abs(leftEye.y - rightEye.y) / eyeDistance * 2.2, 0, 1);
+            const pitchScore = clamp(
+                1 - Math.abs((mouthCenter.y - nose.y) / eyeDistance - 0.55),
+                0,
+                1
+            );
+            const boundsCenter = {
+                x: (bounds.minX + bounds.maxX) / 2,
+                y: (bounds.minY + bounds.maxY) / 2
+            };
+            const noseCenterScore = clamp(
+                1 - Math.abs(nose.x - boundsCenter.x) / (faceWidth * 0.18),
+                0,
+                1
+            );
+            const frontalScore = averageValues([
+                eyeSymmetry,
+                templeSymmetry,
+                mouthSymmetry,
+                rollScore,
+                pitchScore,
+                noseCenterScore
+            ]);
+            const faceArea = (bounds.maxX - bounds.minX) * (bounds.maxY - bounds.minY);
+            const sizeScore = clamp((faceArea - 0.035) / 0.18, 0, 1);
+            const centerOffset = Math.hypot(boundsCenter.x - 0.5, boundsCenter.y - 0.5);
+            const centerScore = clamp(1 - centerOffset * 2.4, 0, 1);
+            const qualityScore = frontalScore * 0.55 + sizeScore * 0.2 + centerScore * 0.25;
+
+            return { frontalScore, sizeScore, centerScore, qualityScore };
+        }
+
+        function featureExpressionScore(categories) {
+            const expressionEntries = categories
+                .filter(({ categoryName, score }) =>
+                    categoryName !== "_neutral" && Number.isFinite(score)
+                )
+                .map(({ categoryName, score }) => [categoryName, clamp(score, 0, 1)]);
+            if (!expressionEntries.length) return null;
+
+            const expressionScores = Object.fromEntries(expressionEntries);
+            const strongest = [...expressionEntries]
+                .sort((a, b) => b[1] - a[1])
+                .slice(0, 8);
+            const topScore = strongest[0]?.[1] ?? 0;
+            const topMean = averageValues(strongest.map(([, score]) => score));
+            const expressionScore = topScore * 0.35 + topMean * 0.65;
+
+            return {
+                expressionScores,
+                expressionScore,
+                dominantExpression: strongest[0]?.[0] ?? ""
+            };
+        }
+
+        function captureFeatureFrame(landmarks) {
+            try {
+                const sourceWidth = video.videoWidth;
+                const sourceHeight = video.videoHeight;
+                if (!sourceWidth || !sourceHeight) return "";
+
+                const crop = featureFaceCrop(landmarks, sourceWidth, sourceHeight);
+                if (!crop) return "";
+                const { sourceX, sourceY, cropWidth, cropHeight } = crop;
+
+                featureFrameCanvas.width = FEATURE_FRAME_WIDTH;
+                featureFrameCanvas.height = FEATURE_FRAME_HEIGHT;
+                featureFrameCtx.save();
+                try {
+                    featureFrameCtx.clearRect(0, 0, FEATURE_FRAME_WIDTH, FEATURE_FRAME_HEIGHT);
+                    featureFrameCtx.translate(FEATURE_FRAME_WIDTH, 0);
+                    featureFrameCtx.scale(-1, 1);
+                    featureFrameCtx.drawImage(
+                        video,
+                        sourceX,
+                        sourceY,
+                        cropWidth,
+                        cropHeight,
+                        0,
+                        0,
+                        FEATURE_FRAME_WIDTH,
+                        FEATURE_FRAME_HEIGHT
+                    );
+                } finally {
+                    featureFrameCtx.restore();
+                }
+                return featureFrameCanvas.toDataURL("image/webp", 0.78);
+            } catch {
+                return "";
+            }
+        }
+
+        function featureFaceCrop(landmarks, sourceWidth, sourceHeight) {
+            const bounds = landmarkBounds(landmarks);
+            if (!bounds) return null;
+
+            const targetAspect = FEATURE_FRAME_WIDTH / FEATURE_FRAME_HEIGHT;
+            const faceWidth = (bounds.maxX - bounds.minX) * sourceWidth;
+            const faceHeight = (bounds.maxY - bounds.minY) * sourceHeight;
+            if (faceWidth < 1 || faceHeight < 1) return null;
+
+            let cropWidth = faceWidth * 1.22;
+            let cropHeight = faceHeight * 1.18;
+            if (cropWidth / cropHeight > targetAspect) {
+                cropHeight = cropWidth / targetAspect;
+            } else {
+                cropWidth = cropHeight * targetAspect;
+            }
+
+            const fitScale = Math.min(1, sourceWidth / cropWidth, sourceHeight / cropHeight);
+            cropWidth *= fitScale;
+            cropHeight *= fitScale;
+
+            const centerX = (bounds.minX + bounds.maxX) / 2 * sourceWidth;
+            const centerY = (
+                (bounds.minY + bounds.maxY) / 2
+                - (bounds.maxY - bounds.minY) * FEATURE_FACE_CROP_Y_SHIFT_RATIO
+            ) * sourceHeight;
+            const sourceX = clamp(centerX - cropWidth / 2, 0, sourceWidth - cropWidth);
+            const sourceY = clamp(centerY - cropHeight / 2, 0, sourceHeight - cropHeight);
+
+            return { sourceX, sourceY, cropWidth, cropHeight };
+        }
+
+        async function publishExperienceHighlights(sessionId) {
+            sendControlPanelMessage({ type: "feature-images-loading" });
+            const analyzedFrames = await analyzeFeatureEmotions(featureFrameSamples, sessionId);
+            if (sessionId !== experienceSessionId) return;
+
+            const images = selectFeatureFrames(analyzedFrames).map((frame, index) => ({
+                rank: index + 1,
+                imageUrl: frame.imageUrl,
+                time: frame.time,
+                frontalScore: frame.frontalScore,
+                emotionScore: frame.emotionScore,
+                emotion: frame.dominantEmotion
+            }));
+            sendControlPanelMessage({ type: "feature-images", images });
+        }
+
+        async function analyzeFeatureEmotions(samples, sessionId) {
+            if (!samples.length || !await featureEmotionModels) return [];
+
+            const candidates = featureEmotionAnalysisCandidates(samples);
+            const analyzed = [];
+            for (const frame of candidates) {
+                if (sessionId !== experienceSessionId) return [];
+                let detection;
+                try {
+                    const image = await loadFeatureImage(frame.imageUrl);
+                    detection = await faceapi
+                        .detectSingleFace(image, featureEmotionDetectorOptions)
+                        .withFaceExpressions();
+                } catch (error) {
+                    console.warn("候補画像の感情を推定できませんでした", error);
+                    continue;
+                }
+                if (!detection) continue;
+
+                const emotions = Object.fromEntries(
+                    FEATURE_EMOTIONS.map(emotion => [emotion, detection.expressions[emotion] || 0])
+                );
+                const [dominantEmotion, emotionScore] = FEATURE_EMOTIONS.reduce(
+                    (strongest, emotion) =>
+                        emotions[emotion] > strongest[1]
+                            ? [emotion, emotions[emotion]]
+                            : strongest,
+                    ["neutral", 0]
+                );
+                analyzed.push({ ...frame, emotions, dominantEmotion, emotionScore });
+            }
+            return analyzed.sort((left, right) => left.time - right.time);
+        }
+
+        function featureEmotionAnalysisCandidates(samples) {
+            const ranked = [...samples].sort((left, right) => {
+                const leftScore = left.qualityScore * 0.7 + left.expressionScore * 0.3;
+                const rightScore = right.qualityScore * 0.7 + right.expressionScore * 0.3;
+                return rightScore - leftScore;
+            });
+            const selected = [];
+
+            for (const frame of ranked) {
+                if (selected.length >= FEATURE_EMOTION_ANALYSIS_LIMIT) break;
+                if (selected.every(item =>
+                    Math.abs(item.time - frame.time) >= FEATURE_EMOTION_ANALYSIS_GAP_SECONDS
+                )) {
+                    selected.push(frame);
+                }
+            }
+            for (const frame of ranked) {
+                if (selected.length >= FEATURE_EMOTION_ANALYSIS_LIMIT) break;
+                if (!selected.includes(frame)) selected.push(frame);
+            }
+            return selected.sort((left, right) => left.time - right.time);
+        }
+
+        function loadFeatureImage(imageUrl) {
+            return new Promise((resolve, reject) => {
+                const image = new Image();
+                image.onload = () => resolve(image);
+                image.onerror = reject;
+                image.src = imageUrl;
+            });
+        }
+
+        function selectFeatureFrames(samples) {
+            if (!samples.length) return [];
+
+            const scored = samples.map((frame, index) => {
+                const neighbors = samples.slice(
+                    Math.max(0, index - 2),
+                    Math.min(samples.length, index + 3)
+                );
+                const stabilityScore = clamp(
+                    1 - Math.sqrt(varianceOf(
+                        neighbors.map(item => item.emotions[frame.dominantEmotion] || 0)
+                    )) * 4,
+                    0,
+                    1
+                );
+                const totalScore =
+                    frame.emotionScore * 0.48
+                    + stabilityScore * 0.24
+                    + frame.qualityScore * 0.28;
+                return { ...frame, stabilityScore, totalScore };
+            });
+            const frontal = scored.filter(frame => frame.frontalScore >= 0.55);
+            const candidates = frontal.length >= Math.min(3, FEATURE_FRAME_PICK_LIMIT)
+                ? frontal
+                : scored;
+            return selectEmotionDiverseFrames(candidates);
+        }
+
+        function selectEmotionDiverseFrames(candidates) {
+            const selected = [];
+            const emotionCounts = Object.fromEntries(FEATURE_EMOTIONS.map(emotion => [emotion, 0]));
+
+            const emotionGroups = FEATURE_EMOTIONS
+                .map(emotion => ({
+                    emotion,
+                    frames: candidates
+                        .filter(frame => frame.dominantEmotion === emotion)
+                        .sort((left, right) => right.totalScore - left.totalScore)
+                }))
+                .filter(group => group.frames.length)
+                .sort((left, right) => right.frames[0].totalScore - left.frames[0].totalScore);
+
+            for (const group of emotionGroups) {
+                if (selected.length >= FEATURE_FRAME_PICK_LIMIT) break;
+                const separated = group.frames.find(frame =>
+                    selected.every(item =>
+                        Math.abs(item.time - frame.time) >= FEATURE_FRAME_MIN_GAP_SECONDS
+                    )
+                );
+                const frame = separated || group.frames[0];
+                selected.push(frame);
+                emotionCounts[group.emotion] += 1;
+            }
+
+            while (selected.length < FEATURE_FRAME_PICK_LIMIT) {
+                const available = candidates.filter(candidate =>
+                    !selected.includes(candidate)
+                );
+                if (!available.length) return selected;
+
+                const minimumCount = Math.min(
+                    ...available.map(frame => emotionCounts[frame.dominantEmotion])
+                );
+                const leastRepeated = available.filter(frame =>
+                    emotionCounts[frame.dominantEmotion] === minimumCount
+                );
+                const separated = leastRepeated.filter(frame =>
+                    selected.every(item =>
+                        Math.abs(item.time - frame.time) >= FEATURE_FRAME_MIN_GAP_SECONDS
+                    )
+                );
+                const pool = separated.length ? separated : leastRepeated;
+                const best = pool.reduce((winner, frame) =>
+                    !winner || frame.totalScore > winner.totalScore ? frame : winner
+                , null);
+                selected.push(best);
+                emotionCounts[best.dominantEmotion] += 1;
+            }
+            return selected;
+        }
+
+        function featureSymmetryScore(left, right) {
+            const average = Math.max((left + right) / 2, 0.001);
+            return clamp(1 - Math.abs(left - right) / average * 1.5, 0, 1);
+        }
+
+        function featurePointDistance(left, right) {
+            return Math.hypot(left.x - right.x, left.y - right.y);
+        }
+
+        function averageValues(values) {
+            return values.reduce((sum, value) => sum + value, 0) / Math.max(1, values.length);
+        }
+
+        function varianceOf(values) {
+            const average = averageValues(values);
+            return averageValues(values.map(value => (value - average) ** 2));
         }
 
         function updateExperienceHud(categories, now = performance.now()) {
@@ -1495,8 +1904,14 @@
         function finishExperience() {
             experienceFinished = true;
             stopWorkMusic();
-            sendControlPanelMessage({ type: "finish" });
             const sessionId = experienceSessionId;
+            publishExperienceHighlights(sessionId).catch(error => {
+                console.error("ハイライト画像を選別できませんでした", error);
+                if (sessionId === experienceSessionId) {
+                    sendControlPanelMessage({ type: "feature-images", images: [] });
+                }
+            });
+            sendControlPanelMessage({ type: "finish" });
 
             experiencePhaseTimer = window.setTimeout(() => {
                 if (sessionId !== experienceSessionId || !experienceFinished) return;
@@ -1967,6 +2382,7 @@
             const displayCategories = categories.length ? categories : zeroDisplayCategories();
             const activeCategories = selectedCategories(displayCategories);
             updateExperienceHud(categories);
+            collectFeatureFrame(categories, landmarks);
             if (!visualize.hidden) drawSpectrum(updateSpectrumFrame(activeCategories, displayCategories));
         }
 

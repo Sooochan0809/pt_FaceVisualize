@@ -23,14 +23,17 @@
             margin: 0;
             min-height: 100vh;
             display: grid;
-            place-items: center;
+            place-items: start center;
             padding: 24px;
             background: #F0F0F0;
             color: #2f2250;
         }
 
         main {
-            width: min(100%, 320px);
+            width: min(100%, 348px);
+            display: grid;
+            gap: 30px;
+            margin-block: auto;
         }
 
         button {
@@ -61,12 +64,108 @@
             cursor: wait;
             opacity: 0.55;
         }
+
+        [hidden] {
+            display: none !important;
+        }
+
+        .highlightPanel {
+            display: grid;
+            gap: 16px;
+            animation: highlightPanelIn 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
+        }
+
+        .highlightTitle {
+            margin: 0;
+            color: #2f2250;
+            font-size: 24px;
+            line-height: 1.35;
+            text-align: center;
+        }
+
+        .highlightGrid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 12px;
+        }
+
+        .highlightCard {
+            position: relative;
+            overflow: hidden;
+            margin: 0;
+            border: 4px solid #fff;
+            border-radius: 20px;
+            aspect-ratio: 3 / 4;
+            background: #dedbe9;
+            box-shadow: 0 5px 14px rgb(47 34 80 / 13%);
+            animation: highlightCardIn 450ms cubic-bezier(0.22, 1, 0.36, 1) both;
+            animation-delay: calc(var(--highlight-index) * 55ms);
+        }
+
+        .highlightCard img {
+            width: 100%;
+            height: 100%;
+            display: block;
+            object-fit: cover;
+        }
+
+        .highlightRank {
+            position: absolute;
+            top: 8px;
+            left: 8px;
+            min-width: 30px;
+            height: 30px;
+            border-radius: 999px;
+            display: grid;
+            place-items: center;
+            padding-inline: 7px;
+            background: rgb(47 34 80 / 88%);
+            color: #fff;
+            font-size: 14px;
+            line-height: 1;
+        }
+
+        .highlightEmpty {
+            margin: 0;
+            border-radius: 20px;
+            padding: 28px 18px;
+            background: #fff;
+            color: #756d88;
+            text-align: center;
+            line-height: 1.7;
+        }
+
+        @keyframes highlightPanelIn {
+            from {
+                opacity: 0;
+                transform: translateY(14px);
+            }
+        }
+
+        @keyframes highlightCardIn {
+            from {
+                opacity: 0;
+                transform: scale(0.92);
+            }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .highlightPanel,
+            .highlightCard {
+                animation: none;
+            }
+        }
     </style>
 </head>
 
 <body>
     <main>
         <button id="panelStart" type="button" disabled>準備中...</button>
+        <section id="highlightPanel" class="highlightPanel" aria-live="polite" hidden>
+            <h1 class="highlightTitle">体験のハイライト</h1>
+            <p id="highlightEmpty" class="highlightEmpty" hidden>特徴的な画像を取得できませんでした</p>
+            <div id="highlightGrid" class="highlightGrid"></div>
+        </section>
     </main>
     <audio id="thumbnailMusic" src="./assets/audio/thumbnail.mp3" preload="auto" loop></audio>
     <audio id="workMusic" src="./assets/audio/work.mp3" preload="auto" loop></audio>
@@ -81,6 +180,9 @@
         const startSound = document.getElementById("startSound");
         const calibrationSound = document.getElementById("calibrationSound");
         const finishSound = document.getElementById("finishSound");
+        const highlightPanel = document.getElementById("highlightPanel");
+        const highlightGrid = document.getElementById("highlightGrid");
+        const highlightEmpty = document.getElementById("highlightEmpty");
         const targetOrigin = location.origin === "null" ? "*" : location.origin;
         const THUMBNAIL_MUSIC_VOLUME = 0.55;
         const WORK_MUSIC_VOLUME = 0.7;
@@ -161,7 +263,53 @@
             panelStart.disabled = disabled;
         }
 
+        function clearHighlights() {
+            highlightPanel.hidden = true;
+            highlightEmpty.hidden = true;
+            highlightGrid.replaceChildren();
+        }
+
+        function showHighlightsLoading() {
+            highlightGrid.replaceChildren();
+            highlightEmpty.textContent = "特徴的な表情を選んでいます...";
+            highlightEmpty.hidden = false;
+            highlightPanel.hidden = false;
+        }
+
+        function renderHighlights(images) {
+            const selectedImages = images.slice(0, 10);
+            highlightGrid.replaceChildren();
+            highlightEmpty.textContent = "特徴的な画像を取得できませんでした";
+            highlightEmpty.hidden = selectedImages.length > 0;
+
+            selectedImages.forEach((item, index) => {
+                const card = document.createElement("figure");
+                const image = document.createElement("img");
+                const rank = document.createElement("figcaption");
+                const time = Number(item.time);
+                const frontal = Number(item.frontalScore);
+                const emotionScore = Number(item.emotionScore);
+
+                card.className = "highlightCard";
+                card.style.setProperty("--highlight-index", index);
+                image.src = item.imageUrl;
+                image.alt = `特徴的な瞬間 ${index + 1}`;
+                image.loading = "lazy";
+                rank.className = "highlightRank";
+                rank.textContent = String(index + 1).padStart(2, "0");
+
+                if (Number.isFinite(time)) {
+                    card.title = `${item.emotion} / ${time.toFixed(1)}秒 / 正面度 ${Math.round(frontal * 100)}% / 感情度 ${Math.round(emotionScore * 100)}%`;
+                }
+                card.append(image, rank);
+                highlightGrid.append(card);
+            });
+
+            highlightPanel.hidden = false;
+        }
+
         panelStart.onclick = () => {
+            clearHighlights();
             setButton("体験中...", true);
             playEffectSound(startSound);
             unlockWorkMusic();
@@ -203,6 +351,12 @@
                 }
                 case "calibration-complete":
                     playEffectSound(calibrationSound);
+                    break;
+                case "feature-images-loading":
+                    showHighlightsLoading();
+                    break;
+                case "feature-images":
+                    renderHighlights(Array.isArray(event.data.images) ? event.data.images : []);
                     break;
                 case "finish":
                     playEffectSound(finishSound);
