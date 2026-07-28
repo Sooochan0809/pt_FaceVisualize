@@ -92,6 +92,13 @@
             animation: highlightPanelIn 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
         }
 
+        .highlightPanel.is-loading {
+            position: fixed;
+            inset: 0;
+            place-content: center;
+            padding: clamp(24px, 3vw, 40px);
+        }
+
         .highlightTitle {
             margin: 0;
             color: #2f2250;
@@ -402,6 +409,7 @@
         }
 
         function clearHighlights() {
+            highlightPanel.classList.remove("is-loading");
             highlightPanel.hidden = true;
             highlightEmpty.hidden = true;
             highlightGrid.replaceChildren();
@@ -418,14 +426,16 @@
             panelStart.hidden = true;
             highlightGrid.replaceChildren();
             highlightDecision.hidden = true;
-            highlightTitle.textContent = "素敵な表情を選んでいます";
+            highlightTitle.textContent = "素敵な表情を選んでいます...";
             highlightInstruction.hidden = true;
             highlightEmpty.hidden = true;
+            highlightPanel.classList.add("is-loading");
             highlightPanel.hidden = false;
         }
 
         function renderHighlights(images, score, certificateNumber, emotionScores) {
             const selectedImages = images.slice(0, HIGHLIGHT_DISPLAY_LIMIT);
+            highlightPanel.classList.remove("is-loading");
             panelStart.hidden = true;
             highlightDecision.hidden = false;
             highlightTitle.textContent = "ハイライト📸";
