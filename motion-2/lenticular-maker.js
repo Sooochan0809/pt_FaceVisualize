@@ -4,8 +4,8 @@
     const MM_PER_INCH = 25.4;
     const REQUIRED_IMAGE_COUNT = 6;
     const SETTINGS = Object.freeze({
-        widthMm: 29.25,
-        heightMm: 39,
+        widthMm: 36,
+        heightMm: 48,
         ppi: 600,
         lpi: 50,
         phase: 0,

@@ -320,9 +320,6 @@
         const audioFadeTokens = new WeakMap();
         let highlightImages = [];
         let selectedHighlightIndexes = [];
-        let highlightScore = 0;
-        let highlightCertificateNumber = "";
-        let highlightEmotionScores = {};
         let cardWindow = null;
         let cardReady = false;
         let pendingCardPayload = null;
@@ -415,9 +412,6 @@
             highlightGrid.replaceChildren();
             highlightImages = [];
             selectedHighlightIndexes = [];
-            highlightScore = 0;
-            highlightCertificateNumber = "";
-            highlightEmotionScores = {};
             resetCardCreationControls();
             highlightConfirmation.hidden = true;
         }
@@ -433,7 +427,7 @@
             highlightPanel.hidden = false;
         }
 
-        function renderHighlights(images, score, certificateNumber, emotionScores) {
+        function renderHighlights(images) {
             const selectedImages = images.slice(0, HIGHLIGHT_DISPLAY_LIMIT);
             highlightPanel.classList.remove("is-loading");
             panelStart.hidden = true;
@@ -442,11 +436,6 @@
             highlightInstruction.hidden = false;
             highlightImages = selectedImages;
             selectedHighlightIndexes = [];
-            highlightScore = Number.isFinite(Number(score)) ? Number(score) : 0;
-            highlightCertificateNumber = String(certificateNumber || "");
-            highlightEmotionScores = emotionScores && typeof emotionScores === "object"
-                ? emotionScores
-                : {};
             highlightGrid.replaceChildren();
             updateHighlightSelection();
             highlightEmpty.textContent = "表情を取得できませんでした";
@@ -564,12 +553,7 @@
             try {
                 const imageUrls = selectedHighlightIndexes.map(index => highlightImages[index].imageUrl);
                 const result = await MotionLenticular.create(imageUrls);
-                pendingCardPayload = {
-                    imageUrl: result.imageUrl,
-                    score: highlightScore,
-                    certificateNumber: highlightCertificateNumber,
-                    emotionScores: highlightEmotionScores
-                };
+                pendingCardPayload = { imageUrl: result.imageUrl };
                 sendCardPayload();
             } catch (error) {
                 console.error(error);
@@ -634,12 +618,7 @@
                     showHighlightsLoading();
                     break;
                 case "feature-images":
-                    renderHighlights(
-                        Array.isArray(event.data.images) ? event.data.images : [],
-                        event.data.score,
-                        event.data.certificateNumber,
-                        event.data.emotionScores
-                    );
+                    renderHighlights(Array.isArray(event.data.images) ? event.data.images : []);
                     break;
                 case "finish":
                     playEffectSound(finishSound);

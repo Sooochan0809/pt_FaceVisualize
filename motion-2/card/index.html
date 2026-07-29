@@ -2,15 +2,22 @@
 <html lang="ja">
 
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>表情測定証明証</title>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>顔あそび｜L判印刷</title>
   <style>
     :root {
-      --orange: #f19935;
-      --photo-gray: #d9d9d9;
-      --line: #777;
-      --alternating: #fcefdf;
+      --paper-width: 89mm;
+      --paper-height: 127mm;
+      --visual-width: 65mm;
+      --visual-height: 100mm;
+      --visual-left: 12mm;
+      --visual-top: 13.5mm;
+      --photo-width: 36mm;
+      --photo-height: 48mm;
+      --photo-left: 14.5mm;
+      --photo-top: 16.875mm;
+      --accent: #f19935;
     }
 
     * {
@@ -20,139 +27,74 @@
     html,
     body {
       margin: 0;
-      min-height: 100%;
-      background: #fff;
+      padding: 0;
     }
 
     body {
+      min-height: 100vh;
+      min-height: 100dvh;
       display: grid;
-      place-items: start center;
-      padding: 0;
-      color: #111;
+      place-items: center;
+      background: #eeeeee;
       font-family:
         "Hiragino Kaku Gothic ProN",
         "Yu Gothic",
         "YuGothic",
         "Noto Sans JP",
         sans-serif;
-      -webkit-font-smoothing: antialiased;
-      text-rendering: geometricPrecision;
     }
 
-    /*
-  The complete white sheet has the same 508:356 aspect ratio as the supplied
-  reference. At print time it is rendered as an L-size landscape sheet
-  (127 mm × 89 mm).
-*/
-    .certificate-sheet {
+    [hidden] {
+      display: none !important;
+    }
+
+    .print-sheet {
       position: relative;
-      width: min(100%, 508px);
-      aspect-ratio: 508 / 356;
+      width: var(--paper-width);
+      height: var(--paper-height);
       overflow: hidden;
-      background: #fff;
-      container-type: inline-size;
+      background: #ffffff;
+      box-shadow: 0 3mm 8mm rgb(0 0 0 / 18%);
     }
 
-    .certificate-card {
+    .visual-card {
       position: absolute;
-      left: 4.7244%;
-      /* 24 / 508 */
-      top: 7.8652%;
-      /* 28 / 356 */
-      width: 91.3386%;
-      /* 464 / 508 */
-      height: 85.3933%;
-      /* 304 / 356 */
+      left: var(--visual-left);
+      top: var(--visual-top);
+      width: var(--visual-width);
+      height: var(--visual-height);
       overflow: hidden;
-      background: #fff;
-      border: 0.14cqw solid #8f8f8f;
-      border-radius: 5.45cqw;
     }
 
-    .certificate-title {
+    .card-art {
       position: absolute;
-      left: -0.14cqw;
-      top: 7.8947%;
-      /* 24 / 304 */
-      width: calc(100% + 0.28cqw);
-      height: 13.1579%;
-      /* 40 / 304 */
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding-bottom: 0.08cqw;
-      color: #fff;
-      background: var(--orange);
-      font-size: 6.50cqw;
-      font-weight: 700;
-      line-height: 1;
-      letter-spacing: 1.15cqw;
-      white-space: nowrap;
-    }
-
-    .person {
-      position: absolute;
-      left: 8.6614%;
-      /* 44 / 508 */
-      width: 56.69%;
-      height: 7.02%;
-      display: flex;
-      align-items: center;
-      line-height: 1;
-      white-space: nowrap;
-    }
-
-    .person-name {
-      top: 27.8090%;
-      /* 99 / 356 */
-    }
-
-    .person-number {
-      top: 36.5169%;
-      /* 130 / 356 */
-    }
-
-    .person-label {
-      flex: 0 0 47.22%;
-      font-size: 3.24cqw;
-      font-weight: 500;
-      letter-spacing: 0.03cqw;
-    }
-
-    .person-value {
-      font-size: 3.12cqw;
-      font-weight: 400;
-    }
-
-    .number-value {
-      padding-left: 2.0cqw;
-    }
-
-    .photo-area {
-      position: absolute;
-      left: 69.2913%;
-      /* 352 / 508 */
-      top: 28.0899%;
-      /* 100 / 356 */
-      width: 23.0315%;
-      /* 117 / 508 */
-      height: 43.8202%;
-      /* 156 / 356 */
-      background: var(--photo-gray);
-    }
-
-    .photo-area img {
+      inset: 0;
+      z-index: 1;
+      display: block;
       width: 100%;
       height: 100%;
+      object-fit: fill;
+      user-select: none;
+      -webkit-user-drag: none;
+    }
+
+    .photo-slot {
+      position: absolute;
+      left: var(--photo-left);
+      top: var(--photo-top);
+      z-index: 2;
       display: block;
+      width: var(--photo-width);
+      height: var(--photo-height);
       object-fit: cover;
+      object-position: center;
     }
 
     .print-actions {
       position: fixed;
-      z-index: 10;
       right: 20px;
       bottom: 20px;
+      z-index: 10;
     }
 
     .print-button {
@@ -161,187 +103,45 @@
       border: 0;
       border-radius: 16px;
       padding: 10px 22px;
-      background: var(--orange);
+      background: var(--accent);
       box-shadow: 0 5px 12px rgb(0 0 0 / 16%);
-      color: #fff;
+      color: #ffffff;
       font: inherit;
       font-weight: 700;
       cursor: pointer;
     }
 
-    .total-score {
-      position: absolute;
-      left: 8.6614%;
-      /* 44 / 508 */
-      top: 43.8202%;
-      /* 156 / 356 */
-      width: 57.4803%;
-      /* 292 / 508 */
-      height: 4.4944%;
-      /* 16 / 356 */
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding-bottom: 0.10cqw;
-      color: #fff;
-      background: var(--orange);
-      font-size: 2.35cqw;
-      font-weight: 500;
-      line-height: 1;
+    .print-button:disabled {
+      cursor: wait;
+      opacity: 0.55;
     }
 
-    .result-table-wrap {
-      position: absolute;
-      left: 8.6614%;
-      /* 44 / 508 */
-      top: 50.5618%;
-      /* 180 / 356 */
-      width: 57.4803%;
-      /* 292 / 508 */
-      height: 39.3258%;
-      /* 140 / 356 */
+    @page {
+      size: 89mm 127mm;
+      margin: 0;
     }
-
-    .result-table {
-      position: relative;
-      z-index: 1;
-      width: 100%;
-      height: 100%;
-      table-layout: fixed;
-      border-collapse: collapse;
-      background: transparent;
-      font-size: 2.38cqw;
-      line-height: 1;
-    }
-
-    .result-table .col-kind {
-      width: 15.41%;
-    }
-
-    .result-table .col-date {
-      width: 40.75%;
-    }
-
-    .result-table .col-grade {
-      width: 23.63%;
-    }
-
-    .result-table .col-examiner {
-      width: 20.21%;
-    }
-
-    .result-table th,
-    .result-table td {
-      position: relative;
-      z-index: 3;
-      height: 14.2857%;
-      padding: 0;
-      border: 0.12cqw solid var(--line);
-      text-align: center;
-      vertical-align: middle;
-      font-weight: 400;
-      white-space: nowrap;
-    }
-
-    .result-table th {
-      background: rgba(255, 255, 255, 0.74);
-      font-size: 2.23cqw;
-    }
-
-    .result-table tbody td:first-child {
-      background: rgba(255, 255, 255, 0.74);
-    }
-
-    .result-table tbody tr:nth-child(odd) td:not(:first-child) {
-      background: rgba(252, 239, 223, 0.77);
-    }
-
-    .result-table tbody tr:nth-child(even) td:not(:first-child) {
-      background: rgba(255, 255, 255, 0.74);
-    }
-
-    .watermark-logo {
-      position: absolute;
-      z-index: 2;
-      left: 30.82%;
-      top: 2.9%;
-      width: 47.95%;
-      height: auto;
-      pointer-events: none;
-      user-select: none;
-    }
-
-    .validity {
-      position: absolute;
-      left: 69.4882%;
-      /* 353 / 508 */
-      top: 72.1910%;
-      /* 257 / 356 */
-      font-size: 2.38cqw;
-      font-weight: 400;
-      line-height: 1;
-      white-space: nowrap;
-    }
-
-    .association-seal {
-      position: absolute;
-      left: 76.5748%;
-      /* 389 / 508 */
-      top: 76.6854%;
-      /* 273 / 356 */
-      width: 9.0551%;
-      /* 46 / 508 */
-      height: auto;
-      image-rendering: pixelated;
-    }
-
-    .association-name {
-      position: absolute;
-      left: 69.4882%;
-      /* 353 / 508 */
-      top: 85.9551%;
-      /* 306 / 356 */
-      font-size: 2.40cqw;
-      font-weight: 700;
-      line-height: 1;
-      white-space: nowrap;
-    }
-
 
     @media print {
-      @page {
-        size: 127mm 89mm;
-        margin: 0;
-      }
-
       html,
       body {
-        width: 126.8mm;
-        height: 88.8mm;
+        width: var(--paper-width);
+        height: var(--paper-height);
         min-height: 0;
-        margin: 0;
-        padding: 0;
         overflow: hidden;
-        background: #fff;
+        background: #ffffff;
       }
 
       body {
         display: block;
       }
 
-      .certificate-sheet {
-        position: absolute;
-        top: 0;
-        left: 0;
-        width: 126.8mm;
-        height: 88.8mm;
-        max-width: none;
+      .print-sheet {
         margin: 0;
-        break-inside: avoid;
-        page-break-inside: avoid;
+        box-shadow: none;
       }
 
-      * {
+      .card-art,
+      .photo-slot {
         print-color-adjust: exact;
         -webkit-print-color-adjust: exact;
       }
@@ -354,112 +154,33 @@
 </head>
 
 <body>
-  <main class="certificate-sheet" aria-label="表情測定証明証">
-    <section class="certificate-card">
-      <header class="certificate-title">表情測定証明証</header>
+  <main class="print-sheet">
+    <section class="visual-card" aria-label="顔あそび記念カード">
+      <img
+        class="card-art"
+        src="./assets/card-art.png"
+        alt="Suitopia ぷちフェス 顔あそび 2026年8月2日"
+      >
+      <img
+        id="lenticularPhoto"
+        class="photo-slot"
+        alt="選択した6枚の表情から生成したレンチキュラー画像"
+        hidden
+      >
     </section>
-
-    <div class="person person-name">
-      <span class="person-label">氏　名</span>
-      <span class="person-value"></span>
-    </div>
-
-    <div class="person person-number">
-      <span class="person-label">番　号</span>
-      <span id="certificateNumber" class="person-value number-value">0000000</span>
-    </div>
-
-    <div class="photo-area" aria-label="顔写真欄">
-      <img id="lenticularPhoto" alt="選択した表情のレンチキュラー画像" hidden />
-    </div>
-
-    <div id="totalScore" class="total-score">総合得点：0点</div>
-
-    <div class="result-table-wrap">
-      <table class="result-table">
-        <colgroup>
-          <col class="col-kind" />
-          <col class="col-date" />
-          <col class="col-grade" />
-          <col class="col-examiner" />
-        </colgroup>
-        <thead>
-          <tr>
-            <th>種類</th>
-            <th>測定年月日</th>
-            <th>評定</th>
-            <th>測定者</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td>喜び</td>
-            <td>R8. 08. 02</td>
-            <td data-emotion-grade="happy">-</td>
-            <td>fEN</td>
-          </tr>
-          <tr>
-            <td>悲しみ</td>
-            <td>R8. 08. 02</td>
-            <td data-emotion-grade="sad">-</td>
-            <td>fEN</td>
-          </tr>
-          <tr>
-            <td>怒り</td>
-            <td>R8. 08. 02</td>
-            <td data-emotion-grade="angry">-</td>
-            <td>fEN</td>
-          </tr>
-          <tr>
-            <td>驚き</td>
-            <td>R8. 08. 02</td>
-            <td data-emotion-grade="surprised">-</td>
-            <td>fEN</td>
-          </tr>
-          <tr>
-            <td>恐怖</td>
-            <td>R8. 08. 02</td>
-            <td data-emotion-grade="fearful">-</td>
-            <td>fEN</td>
-          </tr>
-          <tr>
-            <td>嫌悪</td>
-            <td>R8. 08. 02</td>
-            <td data-emotion-grade="disgusted">-</td>
-            <td>fEN</td>
-          </tr>
-        </tbody>
-      </table>
-      <img class="watermark-logo" src="assets/logo.png" alt="" />
-    </div>
-
-    <div class="validity">測定日より 一生 有効</div>
-    <img class="association-seal" src="assets/seal.png" alt="全日本表情協会 印鑑" />
-    <div class="association-name">全日本表情協会 会長</div>
   </main>
+
   <div class="print-actions">
     <button id="printButton" class="print-button" type="button" disabled>印刷</button>
   </div>
+
   <script>
     const lenticularPhoto = document.getElementById("lenticularPhoto");
-    const totalScore = document.getElementById("totalScore");
-    const certificateNumber = document.getElementById("certificateNumber");
     const printButton = document.getElementById("printButton");
     const targetOrigin = location.origin === "null" ? "*" : location.origin;
-    const EMOTION_GRADE_EXCELLENT_THRESHOLD = 0.9;
-    const EMOTION_GRADE_GOOD_THRESHOLD = 0.7;
-    const EMOTION_GRADE_PASS_THRESHOLD = 0.5;
     const PRINT_RENDER_DELAY_MS = 300;
-    const CERTIFICATE_NUMBER_FALLBACK = "0000000";
 
     printButton.addEventListener("click", () => window.print());
-
-    function emotionGrade(score) {
-      if (!Number.isFinite(score) || score < EMOTION_GRADE_PASS_THRESHOLD) return "-";
-      if (score >= EMOTION_GRADE_EXCELLENT_THRESHOLD) return "◎";
-      if (score >= EMOTION_GRADE_GOOD_THRESHOLD) return "○";
-      return "△";
-    }
 
     async function printAutomatically() {
       if (document.fonts?.ready) await document.fonts.ready;
@@ -483,16 +204,6 @@
         printAutomatically();
       };
       lenticularPhoto.src = event.data.imageUrl;
-      const score = Math.max(0, Math.round(Number(event.data.score) || 0));
-      totalScore.textContent = `総合得点：${score}点`;
-      certificateNumber.textContent = String(
-        event.data.certificateNumber || CERTIFICATE_NUMBER_FALLBACK
-      );
-      const emotionScores = event.data.emotionScores || {};
-      document.querySelectorAll("[data-emotion-grade]").forEach(cell => {
-        const emotion = cell.dataset.emotionGrade;
-        cell.textContent = emotionGrade(Number(emotionScores[emotion]));
-      });
     });
 
     window.opener?.postMessage(
