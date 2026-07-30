@@ -10,6 +10,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@700&display=swap" rel="stylesheet">
     <style>
         :root {
+            --page-inset: clamp(24px, 3vw, 40px);
             color-scheme: light;
             font-family: "Zen Maru Gothic", sans-serif;
             font-weight: 700;
@@ -23,13 +24,13 @@
             margin: 0;
             min-height: 100vh;
             min-height: 100dvh;
-            padding: clamp(24px, 3vw, 40px);
+            padding: var(--page-inset);
             background: #F0F0F0;
             color: #2f2250;
         }
 
         main {
-            width: min(100%, 1200px);
+            width: min(100%, 1320px);
             display: grid;
             gap: 30px;
             margin-inline: auto;
@@ -259,6 +260,48 @@
                 animation: none;
             }
         }
+
+        @media (orientation: landscape) and (min-width: 1000px) {
+            :root {
+                --page-inset: clamp(20px, 2vw, 28px);
+            }
+
+            main {
+                min-height:
+                    calc(100dvh - var(--page-inset) - var(--page-inset));
+            }
+
+            .highlightPanel:not(.is-loading) {
+                min-height:
+                    calc(100dvh - var(--page-inset) - var(--page-inset));
+                grid-template-rows: auto auto minmax(0, 1fr) auto;
+                gap: clamp(12px, 1.5vh, 18px);
+            }
+
+            .highlightTitle {
+                font-size: clamp(36px, 3.2vw, 46px);
+            }
+
+            .highlightInstruction {
+                font-size: clamp(22px, 2vw, 28px);
+            }
+
+            .highlightGrid {
+                align-self: center;
+                gap: clamp(12px, 1.35vw, 20px);
+            }
+
+            .highlightCard {
+                width: min(100%, 25dvh);
+                justify-self: center;
+            }
+
+            .highlightDecision {
+                width: min(100%, 720px);
+                min-height: 88px;
+                font-size: 28px;
+            }
+        }
     </style>
 </head>
 
@@ -266,8 +309,8 @@
     <main>
         <button id="panelStart" type="button" disabled>準備中...</button>
         <section id="highlightPanel" class="highlightPanel" aria-live="polite" hidden>
-            <h1 id="highlightTitle" class="highlightTitle">ハイライト📸</h1>
-            <p id="highlightInstruction" class="highlightInstruction">6枚選んでください（0/6）</p>
+            <h1 id="highlightTitle" class="highlightTitle">ベストショット！📸</h1>
+            <p id="highlightInstruction" class="highlightInstruction">6枚 えらんでね（0/6）</p>
             <p id="highlightEmpty" class="highlightEmpty" hidden>画像を取得できませんでした</p>
             <div id="highlightGrid" class="highlightGrid"></div>
             <button id="highlightDecision" class="highlightDecision" type="button" disabled>決定</button>
@@ -437,7 +480,7 @@
             highlightPanel.classList.remove("is-loading");
             panelStart.hidden = true;
             highlightDecision.hidden = false;
-            highlightTitle.textContent = "ハイライト📸";
+            highlightTitle.textContent = "ベストショット！📸";
             highlightInstruction.hidden = false;
             highlightImages = selectedImages;
             selectedHighlightIndexes = [];
@@ -511,7 +554,7 @@
 
             const selectedCount = selectedHighlightIndexes.length;
             highlightInstruction.textContent =
-                `${HIGHLIGHT_SELECTION_COUNT}枚選んでください（${selectedCount}/${HIGHLIGHT_SELECTION_COUNT}）`;
+                `${HIGHLIGHT_SELECTION_COUNT}枚 えらべるよ（${selectedCount}/${HIGHLIGHT_SELECTION_COUNT}）`;
             highlightDecision.disabled = selectedCount !== HIGHLIGHT_SELECTION_COUNT;
         }
 
