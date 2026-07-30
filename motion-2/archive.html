@@ -25,9 +25,7 @@
             margin: 0;
             min-height: 100dvh;
             padding: clamp(20px, 4vw, 48px);
-            background:
-                linear-gradient(rgb(255 255 255 / 42%), rgb(255 255 255 / 42%)),
-                url("./assets/images/background.png") center / cover fixed;
+            background: linear-gradient(rgb(255 255 255 / 42%), rgb(255 255 255 / 42%));
             color: var(--ink);
             font-family: "Zen Maru Gothic", sans-serif;
             font-weight: 700;
@@ -121,6 +119,14 @@
             background: #eee;
         }
 
+        .experience-video {
+            display: block;
+            width: 100%;
+            margin-top: 14px;
+            border-radius: 14px;
+            background: #111;
+        }
+
         .archive-meta {
             display: grid;
             align-content: start;
@@ -195,13 +201,21 @@
         <p id="archiveStatus" class="archive-status" role="status"></p>
 
         <section id="archiveCard" class="archive-card" hidden>
-            <img id="lenticularPreview" class="lenticular-preview" alt="レンチキュラー画像">
+            <div>
+                <img id="lenticularPreview" class="lenticular-preview" alt="レンチキュラー画像">
+                <video id="experienceVideo" class="experience-video" controls muted playsinline hidden></video>
+            </div>
             <div class="archive-meta">
                 <h2 id="archiveId"></h2>
                 <p id="archiveCreatedAt"></p>
                 <p id="archiveSettings"></p>
+                <p id="archiveVideoMeta"></p>
                 <h3 class="selected-title">選択した6枚</h3>
                 <div id="selectedGrid" class="selected-grid"></div>
+                <div id="unselectedSection">
+                    <h3 class="selected-title">選択されなかった表情</h3>
+                    <div id="unselectedGrid" class="selected-grid"></div>
+                </div>
                 <button id="printArchive" class="print-button" type="button">再印刷</button>
             </div>
         </section>
@@ -216,8 +230,12 @@
         const archiveId = document.getElementById("archiveId");
         const archiveCreatedAt = document.getElementById("archiveCreatedAt");
         const archiveSettings = document.getElementById("archiveSettings");
+        const archiveVideoMeta = document.getElementById("archiveVideoMeta");
         const lenticularPreview = document.getElementById("lenticularPreview");
+        const experienceVideo = document.getElementById("experienceVideo");
         const selectedGrid = document.getElementById("selectedGrid");
+        const unselectedSection = document.getElementById("unselectedSection");
+        const unselectedGrid = document.getElementById("unselectedGrid");
         const printArchive = document.getElementById("printArchive");
         const targetOrigin = location.origin === "null" ? "*" : location.origin;
         const CARD_POPUP_FEATURES =
@@ -249,13 +267,27 @@
                 loadedArchive = nextArchive;
                 const { manifest } = loadedArchive;
                 const settings = manifest.lenticular.settings;
+                const video = manifest.experienceVideo;
 
                 archiveId.textContent = manifest.archiveId;
                 archiveCreatedAt.textContent = formatCreatedAt(manifest.createdAt);
                 archiveSettings.textContent =
                     `${settings.widthMm}mm × ${settings.heightMm}mm`
                     + ` / ${settings.ppi}ppi / ${settings.lpi}lpi`;
+                archiveVideoMeta.textContent = video
+                    ? `動画 ${video.durationSeconds.toFixed(1)}秒`
+                        + ` / ${video.width}×${video.height}`
+                    : "体験動画なし";
                 lenticularPreview.src = loadedArchive.lenticularImageUrl;
+                if (loadedArchive.experienceVideoUrl) {
+                    experienceVideo.src = loadedArchive.experienceVideoUrl;
+                    experienceVideo.hidden = false;
+                } else {
+                    experienceVideo.pause();
+                    experienceVideo.removeAttribute("src");
+                    experienceVideo.load();
+                    experienceVideo.hidden = true;
+                }
                 selectedGrid.replaceChildren(
                     ...loadedArchive.selectedImages.map((item, index) => {
                         const image = document.createElement("img");
@@ -267,6 +299,18 @@
                         return image;
                     })
                 );
+                unselectedGrid.replaceChildren(
+                    ...loadedArchive.unselectedImages.map((item, index) => {
+                        const image = document.createElement("img");
+                        image.src = item.imageUrl;
+                        image.alt = `未選択画像 ${index + 1}`;
+                        image.title = item.emotion
+                            ? `${item.emotion} / ${item.capturedAtSeconds.toFixed(1)}秒`
+                            : `${item.capturedAtSeconds.toFixed(1)}秒`;
+                        return image;
+                    })
+                );
+                unselectedSection.hidden = !loadedArchive.unselectedImages.length;
                 archiveCard.hidden = false;
                 printArchive.disabled = false;
                 setStatus(`${file.name}を読み込みました`);

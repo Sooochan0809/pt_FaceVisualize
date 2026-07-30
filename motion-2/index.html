@@ -1171,6 +1171,13 @@
         const STAGE_CANVAS_WIDTH = 720;
         const STAGE_CANVAS_HEIGHT = 960;
         const VIDEO_FRAME_FALLBACK_MS = 80;
+        const EXPERIENCE_VIDEO_MIME_TYPES = [
+            "video/webm;codecs=vp9",
+            "video/webm;codecs=vp8",
+            "video/webm"
+        ];
+        const EXPERIENCE_VIDEO_BITS_PER_SECOND = 3000000;
+        const EXPERIENCE_VIDEO_TIMESLICE_MS = 1000;
 
         const calibration = createCalibrationState();
         const poseCalibration = createPoseCalibrationState();
@@ -1199,6 +1206,7 @@
         let experiencePhaseTimer = 0;
         let featureFrameSamples = [];
         let lastFeatureFrameAt = 0;
+        let experienceRecording = null;
         let workMusicPlaybackRate = WORK_MUSIC_RATE_NORMAL;
         const previousMotionScores = new Map();
         const discoveredScoreShapes = new Set(["circle"]);
@@ -1546,6 +1554,7 @@
                     if (step.startsExperienceAfter) {
                         visualizeStartedAt = performance.now();
                         resetMotionTracking();
+                        startExperienceRecording();
                         startWorkMusic();
                     }
                     showNextStep();
@@ -1566,6 +1575,7 @@
         function hideExperienceHud() {
             hideExperienceAnnouncement();
             stopWorkMusic();
+            discardExperienceRecording();
             experienceSessionId++;
             experienceHud.hidden = true;
             resetScoreState();
@@ -1849,9 +1859,12 @@
             return { sourceX, sourceY, cropWidth, cropHeight };
         }
 
-        async function publishExperienceHighlights(sessionId) {
+        async function publishExperienceHighlights(sessionId, recordingPromise) {
             sendControlPanelMessage({ type: "feature-images-loading" });
-            const analyzedFrames = await analyzeFeatureEmotions(featureFrameSamples, sessionId);
+            const [analyzedFrames, experienceVideo] = await Promise.all([
+                analyzeFeatureEmotions(featureFrameSamples, sessionId),
+                recordingPromise
+            ]);
             if (sessionId !== experienceSessionId) return;
 
             const images = selectFeatureFrames(analyzedFrames).map(frame => ({
@@ -1863,7 +1876,75 @@
             }));
             sendControlPanelMessage({
                 type: "feature-images",
-                images
+                images,
+                experienceVideo
+            });
+        }
+
+        function supportedExperienceVideoMimeType() {
+            if (!globalThis.MediaRecorder) return "";
+            return EXPERIENCE_VIDEO_MIME_TYPES.find(type =>
+                MediaRecorder.isTypeSupported(type)
+            ) ?? "";
+        }
+
+        function startExperienceRecording() {
+            discardExperienceRecording();
+            const stream = video.srcObject instanceof MediaStream
+                ? video.srcObject
+                : null;
+            const mimeType = supportedExperienceVideoMimeType();
+            if (activeMode !== "camera" || !stream || !mimeType) {
+                console.warn("体験動画を録画できる環境ではありません");
+                return;
+            }
+
+            try {
+                const chunks = [];
+                const recorder = new MediaRecorder(stream, {
+                    mimeType,
+                    videoBitsPerSecond: EXPERIENCE_VIDEO_BITS_PER_SECOND
+                });
+                const startedAt = performance.now();
+                const width = video.videoWidth;
+                const height = video.videoHeight;
+                const completion = new Promise((resolve, reject) => {
+                    recorder.addEventListener("dataavailable", event => {
+                        if (event.data.size) chunks.push(event.data);
+                    });
+                    recorder.addEventListener("error", event => {
+                        reject(event.error ?? new Error("体験動画を録画できませんでした"));
+                    }, { once: true });
+                    recorder.addEventListener("stop", () => {
+                        const blob = new Blob(chunks, { type: recorder.mimeType });
+                        resolve({
+                            blob,
+                            mimeType: recorder.mimeType,
+                            durationMs: Math.max(0, performance.now() - startedAt),
+                            width,
+                            height
+                        });
+                    }, { once: true });
+                });
+                experienceRecording = { recorder, completion };
+                recorder.start(EXPERIENCE_VIDEO_TIMESLICE_MS);
+            } catch (error) {
+                experienceRecording = null;
+                console.warn("体験動画の録画を開始できませんでした", error);
+            }
+        }
+
+        function stopExperienceRecording() {
+            const recording = experienceRecording;
+            experienceRecording = null;
+            if (!recording) return Promise.resolve(null);
+            if (recording.recorder.state !== "inactive") recording.recorder.stop();
+            return recording.completion;
+        }
+
+        function discardExperienceRecording() {
+            stopExperienceRecording().catch(error => {
+                console.warn("体験動画を破棄できませんでした", error);
             });
         }
 
@@ -2108,7 +2189,11 @@
             experienceFinished = true;
             stopWorkMusic();
             const sessionId = experienceSessionId;
-            publishExperienceHighlights(sessionId).catch(error => {
+            const recordingPromise = stopExperienceRecording().catch(error => {
+                console.warn("体験動画を保存できませんでした", error);
+                return null;
+            });
+            publishExperienceHighlights(sessionId, recordingPromise).catch(error => {
                 console.error("ハイライト画像を選別できませんでした", error);
                 if (sessionId === experienceSessionId) {
                     sendControlPanelMessage({ type: "feature-images", images: [] });
@@ -2785,6 +2870,7 @@
         }
 
         function resetMediaSource({ resetImageInputs = true } = {}) {
+            discardExperienceRecording();
             stopLoop();
             stopCameraStream();
             clearImportedFile();

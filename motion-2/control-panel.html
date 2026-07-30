@@ -323,6 +323,7 @@
         const audioFadeTokens = new WeakMap();
         let highlightImages = [];
         let selectedHighlightIndexes = [];
+        let experienceVideo = null;
         let cardWindow = null;
         let cardReady = false;
         let pendingCardPayload = null;
@@ -415,6 +416,7 @@
             highlightGrid.replaceChildren();
             highlightImages = [];
             selectedHighlightIndexes = [];
+            experienceVideo = null;
             resetCardCreationControls();
             highlightConfirmation.hidden = true;
         }
@@ -430,7 +432,7 @@
             highlightPanel.hidden = false;
         }
 
-        function renderHighlights(images) {
+        function renderHighlights(images, video) {
             const selectedImages = images.slice(0, HIGHLIGHT_DISPLAY_LIMIT);
             highlightPanel.classList.remove("is-loading");
             panelStart.hidden = true;
@@ -439,6 +441,7 @@
             highlightInstruction.hidden = false;
             highlightImages = selectedImages;
             selectedHighlightIndexes = [];
+            experienceVideo = video?.blob instanceof Blob ? video : null;
             highlightGrid.replaceChildren();
             updateHighlightSelection();
             highlightEmpty.textContent = "表情を取得できませんでした";
@@ -582,6 +585,10 @@
                 const selectedImages = selectedHighlightIndexes.map(
                     index => highlightImages[index]
                 );
+                const selectedIndexSet = new Set(selectedHighlightIndexes);
+                const unselectedImages = highlightImages.filter(
+                    (_, index) => !selectedIndexSet.has(index)
+                );
                 const imageUrls = selectedImages.map(item => item.imageUrl);
                 const result = await MotionLenticular.create(imageUrls);
                 const archiveId = nextArchiveId();
@@ -590,6 +597,8 @@
                     archiveId,
                     lenticular: result,
                     selectedImages,
+                    unselectedImages,
+                    experienceVideo,
                     cardArtUrl: ARCHIVE_CARD_ART_URL
                 });
                 MotionFacecardArchive.download(archive.blob, archive.fileName);
@@ -661,7 +670,10 @@
                     showHighlightsLoading();
                     break;
                 case "feature-images":
-                    renderHighlights(Array.isArray(data.images) ? data.images : []);
+                    renderHighlights(
+                        Array.isArray(data.images) ? data.images : [],
+                        data.experienceVideo
+                    );
                     break;
                 case "finish":
                     playEffectSound(finishSound);

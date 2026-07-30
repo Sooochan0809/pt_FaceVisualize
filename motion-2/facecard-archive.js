@@ -143,7 +143,10 @@
     async function urlEntry(name, url) {
         const response = await fetch(url);
         if (!response.ok) throw new Error(`${name}を読み込めませんでした。`);
-        const blob = await response.blob();
+        return blobEntry(name, await response.blob());
+    }
+
+    async function blobEntry(name, blob) {
         return {
             name,
             bytes: new Uint8Array(await blob.arrayBuffer()),
@@ -155,6 +158,7 @@
         if (/\.png$/i.test(name)) return "image/png";
         if (/\.webp$/i.test(name)) return "image/webp";
         if (/\.jpe?g$/i.test(name)) return "image/jpeg";
+        if (/\.webm$/i.test(name)) return "video/webm";
         if (/\.json$/i.test(name)) return "application/json";
         return "application/octet-stream";
     }
@@ -176,6 +180,8 @@
         createdAt = new Date(),
         lenticular,
         selectedImages,
+        unselectedImages = [],
+        experienceVideo = null,
         cardArtUrl
     }) {
         const safeId = safeArchiveId(archiveId);
@@ -191,21 +197,38 @@
             lenticular.imageUrl
         );
         const cardArtEntry = await urlEntry(`${root}card-art.png`, cardArtUrl);
-        const selectedEntries = await Promise.all(
-            selectedImages.map(async (item, index) => {
+        const createImageEntries = (folder, images) => Promise.all(
+            images.map(async (item, index) => {
                 const source = await urlEntry(
-                    `${root}selected/${String(index + 1).padStart(2, "0")}.webp`,
+                    `${root}${folder}/${String(index + 1).padStart(2, "0")}.webp`,
                     item.imageUrl
                 );
                 const extension = imageExtension(source.type);
                 return {
                     ...source,
                     name:
-                        `${root}selected/`
+                        `${root}${folder}/`
                         + `${String(index + 1).padStart(2, "0")}.${extension}`
                 };
             })
         );
+        const [selectedEntries, unselectedEntries] = await Promise.all([
+            createImageEntries("highlights/selected", selectedImages),
+            createImageEntries("highlights/unselected", unselectedImages)
+        ]);
+        const videoEntry = experienceVideo?.blob instanceof Blob
+            ? await blobEntry(`${root}experience.webm`, experienceVideo.blob)
+            : null;
+        const imageManifest = (images, entries, selected) =>
+            images.map((item, index) => ({
+                file: entries[index].name.slice(root.length),
+                selected,
+                selectionOrder: selected ? index + 1 : null,
+                capturedAtSeconds: Number(item.time) || 0,
+                emotion: item.emotion || "",
+                emotionScore: Number(item.emotionScore) || 0,
+                frontalScore: Number(item.frontalScore) || 0
+            }));
         const manifest = {
             schemaVersion: ARCHIVE_SCHEMA_VERSION,
             archiveId: safeId,
@@ -218,14 +241,24 @@
                 height: lenticular.height,
                 settings: lenticular.settings
             },
-            selectedImages: selectedImages.map((item, index) => ({
-                file: selectedEntries[index].name.slice(root.length),
-                selectionOrder: index + 1,
-                capturedAtSeconds: Number(item.time) || 0,
-                emotion: item.emotion || "",
-                emotionScore: Number(item.emotionScore) || 0,
-                frontalScore: Number(item.frontalScore) || 0
-            }))
+            experienceVideo: videoEntry ? {
+                file: "experience.webm",
+                mimeType: experienceVideo.mimeType || videoEntry.type,
+                durationSeconds: Math.max(0, Number(experienceVideo.durationMs) || 0) / 1000,
+                width: Number(experienceVideo.width) || 0,
+                height: Number(experienceVideo.height) || 0,
+                audio: false
+            } : null,
+            selectedImages: imageManifest(
+                selectedImages,
+                selectedEntries,
+                true
+            ),
+            unselectedImages: imageManifest(
+                unselectedImages,
+                unselectedEntries,
+                false
+            )
         };
         const manifestEntry = {
             name: `${root}manifest.json`,
@@ -233,7 +266,14 @@
         };
         return {
             blob: createZip(
-                [manifestEntry, lenticularEntry, cardArtEntry, ...selectedEntries],
+                [
+                    manifestEntry,
+                    lenticularEntry,
+                    cardArtEntry,
+                    ...(videoEntry ? [videoEntry] : []),
+                    ...selectedEntries,
+                    ...unselectedEntries
+                ],
                 createdAt
             ),
             fileName: `${safeId}${ARCHIVE_FILE_SUFFIX}`,
@@ -354,12 +394,21 @@
             ...item,
             imageUrl: entryUrl(item.file)
         }));
+        const unselectedImages = (manifest.unselectedImages ?? []).map(item => ({
+            ...item,
+            imageUrl: entryUrl(item.file)
+        }));
+        const experienceVideoUrl = manifest.experienceVideo
+            ? entryUrl(manifest.experienceVideo.file)
+            : "";
 
         return {
             manifest,
             lenticularImageUrl,
             cardArtUrl,
             selectedImages,
+            unselectedImages,
+            experienceVideoUrl,
             revoke() {
                 urls.forEach(url => URL.revokeObjectURL(url));
             }
