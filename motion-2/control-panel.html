@@ -444,7 +444,7 @@
             selectedImages.forEach((item, index) => {
                 const card = document.createElement("figure");
                 const image = document.createElement("img");
-                const rank = document.createElement("figcaption");
+                const selectionBadge = document.createElement("figcaption");
                 const time = Number(item.time);
                 const frontal = Number(item.frontalScore);
                 const emotionScore = Number(item.emotionScore);
@@ -454,7 +454,7 @@
                 image.src = item.imageUrl;
                 image.alt = `特徴的な瞬間 ${index + 1}`;
                 image.loading = "lazy";
-                rank.className = "highlightRank";
+                selectionBadge.className = "highlightRank";
                 card.tabIndex = 0;
                 card.setAttribute("role", "checkbox");
                 card.setAttribute("aria-checked", "false");
@@ -468,7 +468,7 @@
                 if (Number.isFinite(time)) {
                     card.title = `${item.emotion} / ${time.toFixed(1)}秒 / 正面度 ${Math.round(frontal * 100)}% / 感情度 ${Math.round(emotionScore * 100)}%`;
                 }
-                card.append(image, rank);
+                card.append(image, selectionBadge);
                 highlightGrid.append(card);
             });
 
@@ -573,10 +573,8 @@
             send("camera");
         };
 
-        window.addEventListener("message", event => {
-            if (!isTrustedMessage(event, window.opener, "motion-main")) return;
-
-            switch (event.data.type) {
+        function handleMainWindowMessage(data) {
+            switch (data.type) {
                 case "ready":
                     setButton("スタート", false);
                     break;
@@ -601,7 +599,7 @@
                     stopWorkMusic(true);
                     break;
                 case "work-music-rate": {
-                    const playbackRate = Number(event.data.playbackRate);
+                    const playbackRate = Number(data.playbackRate);
                     if (
                         Number.isFinite(playbackRate)
                         && playbackRate >= WORK_MUSIC_RATE_MIN
@@ -618,26 +616,32 @@
                     showHighlightsLoading();
                     break;
                 case "feature-images":
-                    renderHighlights(Array.isArray(event.data.images) ? event.data.images : []);
+                    renderHighlights(Array.isArray(data.images) ? data.images : []);
                     break;
                 case "finish":
                     playEffectSound(finishSound);
                     break;
             }
-        });
+        }
 
-        window.addEventListener("message", event => {
-            if (!isTrustedMessage(event, cardWindow, "motion-card")) return;
-
-            if (event.data.type === "card-ready") {
+        function handleCardWindowMessage(data) {
+            if (data.type === "card-ready") {
                 cardReady = true;
                 sendCardPayload();
-            } else if (event.data.type === "card-received") {
+            } else if (data.type === "card-received") {
                 clearHighlights();
                 if (thumbnailReady) {
                     panelStart.hidden = false;
                     setButton("スタート", false);
                 }
+            }
+        }
+
+        window.addEventListener("message", event => {
+            if (isTrustedMessage(event, window.opener, "motion-main")) {
+                handleMainWindowMessage(event.data);
+            } else if (isTrustedMessage(event, cardWindow, "motion-card")) {
+                handleCardWindowMessage(event.data);
             }
         });
 

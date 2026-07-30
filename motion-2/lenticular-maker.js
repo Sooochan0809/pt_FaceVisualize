@@ -3,6 +3,18 @@
 
     const MM_PER_INCH = 25.4;
     const REQUIRED_IMAGE_COUNT = 6;
+    const FULL_CIRCLE_RADIANS = Math.PI * 2;
+    const REGISTRATION_MARK = Object.freeze({
+        insetMm: 1.6,
+        minimumRadiusMm: 1.05,
+        maximumRadiusMm: 1.4,
+        lensPitchRadiusScale: 1.5,
+        insetRadiusScale: 0.75,
+        innerCircleScale: 0.78,
+        columnOffsetScale: 0.36,
+        rowOffsetScale: 0.42,
+        dotRadiusScale: 0.16
+    });
     const SETTINGS = Object.freeze({
         widthMm: 36,
         heightMm: 48,
@@ -78,9 +90,9 @@
     }
 
     function drawSixDotMark(ctx, centerX, centerY, radius) {
-        const columnOffset = radius * 0.36;
-        const rowOffset = radius * 0.42;
-        const dotRadius = radius * 0.16;
+        const columnOffset = radius * REGISTRATION_MARK.columnOffsetScale;
+        const rowOffset = radius * REGISTRATION_MARK.rowOffsetScale;
+        const dotRadius = radius * REGISTRATION_MARK.dotRadiusScale;
         const offsets = [
             [-columnOffset, -rowOffset],
             [columnOffset, -rowOffset],
@@ -91,17 +103,29 @@
         ];
 
         ctx.beginPath();
-        ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+        ctx.arc(centerX, centerY, radius, 0, FULL_CIRCLE_RADIANS);
         ctx.fillStyle = "black";
         ctx.fill();
         ctx.beginPath();
-        ctx.arc(centerX, centerY, radius * 0.78, 0, Math.PI * 2);
+        ctx.arc(
+            centerX,
+            centerY,
+            radius * REGISTRATION_MARK.innerCircleScale,
+            0,
+            FULL_CIRCLE_RADIANS
+        );
         ctx.fillStyle = "white";
         ctx.fill();
         ctx.beginPath();
         offsets.forEach(([offsetX, offsetY]) => {
             ctx.moveTo(centerX + offsetX + dotRadius, centerY + offsetY);
-            ctx.arc(centerX + offsetX, centerY + offsetY, dotRadius, 0, Math.PI * 2);
+            ctx.arc(
+                centerX + offsetX,
+                centerY + offsetY,
+                dotRadius,
+                0,
+                FULL_CIRCLE_RADIANS
+            );
         });
         ctx.fillStyle = "black";
         ctx.fill();
@@ -109,12 +133,19 @@
 
     function drawRegistrationMarks(ctx, width, height, axisMap, imageCount) {
         const pixelsPerMm = SETTINGS.ppi / MM_PER_INCH;
-        const inset = Math.min(1.6 * pixelsPerMm, width / 4, height / 4);
+        const inset = Math.min(
+            REGISTRATION_MARK.insetMm * pixelsPerMm,
+            width / 4,
+            height / 4
+        );
         const lensPitch = SETTINGS.ppi / SETTINGS.lpi;
         const radius = Math.min(
-            Math.max(1.05 * pixelsPerMm, lensPitch * 1.5),
-            1.4 * pixelsPerMm,
-            inset * 0.75,
+            Math.max(
+                REGISTRATION_MARK.minimumRadiusMm * pixelsPerMm,
+                lensPitch * REGISTRATION_MARK.lensPitchRadiusScale
+            ),
+            REGISTRATION_MARK.maximumRadiusMm * pixelsPerMm,
+            inset * REGISTRATION_MARK.insetRadiusScale,
             width / 8,
             height / 8
         );
