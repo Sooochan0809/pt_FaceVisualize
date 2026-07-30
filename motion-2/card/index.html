@@ -17,6 +17,9 @@
       --photo-height: 48mm;
       --photo-left: 14.5mm;
       --photo-top: 16.875mm;
+      --crop-mark-length: 5mm;
+      --crop-mark-gap: 2mm;
+      --crop-mark-width: 0.15mm;
       --accent: #f19935;
     }
 
@@ -90,6 +93,66 @@
       object-position: center;
     }
 
+    .crop-mark {
+      position: absolute;
+      left: var(--crop-x);
+      top: var(--crop-y);
+      z-index: 3;
+      pointer-events: none;
+    }
+
+    .crop-mark::before,
+    .crop-mark::after {
+      content: "";
+      position: absolute;
+      display: block;
+      background: #000000;
+    }
+
+    .crop-mark::before {
+      top: calc(var(--crop-mark-width) / -2);
+      width: var(--crop-mark-length);
+      height: var(--crop-mark-width);
+    }
+
+    .crop-mark::after {
+      left: calc(var(--crop-mark-width) / -2);
+      width: var(--crop-mark-width);
+      height: var(--crop-mark-length);
+    }
+
+    .crop-mark.is-left {
+      --crop-x: var(--visual-left);
+    }
+
+    .crop-mark.is-right {
+      --crop-x: calc(var(--visual-left) + var(--visual-width));
+    }
+
+    .crop-mark.is-top {
+      --crop-y: var(--visual-top);
+    }
+
+    .crop-mark.is-bottom {
+      --crop-y: calc(var(--visual-top) + var(--visual-height));
+    }
+
+    .crop-mark.is-left::before {
+      right: var(--crop-mark-gap);
+    }
+
+    .crop-mark.is-right::before {
+      left: var(--crop-mark-gap);
+    }
+
+    .crop-mark.is-top::after {
+      bottom: var(--crop-mark-gap);
+    }
+
+    .crop-mark.is-bottom::after {
+      top: var(--crop-mark-gap);
+    }
+
     .print-actions {
       position: fixed;
       right: 20px;
@@ -141,7 +204,8 @@
       }
 
       .card-art,
-      .photo-slot {
+      .photo-slot,
+      .crop-mark {
         print-color-adjust: exact;
         -webkit-print-color-adjust: exact;
       }
@@ -169,6 +233,12 @@
         hidden
       >
     </section>
+    <div aria-hidden="true">
+      <span class="crop-mark is-left is-top"></span>
+      <span class="crop-mark is-right is-top"></span>
+      <span class="crop-mark is-left is-bottom"></span>
+      <span class="crop-mark is-right is-bottom"></span>
+    </div>
   </main>
 
   <div class="print-actions">
