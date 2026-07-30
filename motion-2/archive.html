@@ -1,0 +1,350 @@
+<!doctype html>
+<html lang="ja">
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>再印刷用</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@500;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            color-scheme: light;
+            --accent: #f19935;
+            --ink: #27231f;
+            --muted: #766f68;
+            --panel: rgb(255 255 255 / 88%);
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            min-height: 100dvh;
+            padding: clamp(20px, 4vw, 48px);
+            background:
+                linear-gradient(rgb(255 255 255 / 42%), rgb(255 255 255 / 42%)),
+                url("./assets/images/background.png") center / cover fixed;
+            color: var(--ink);
+            font-family: "Zen Maru Gothic", sans-serif;
+            font-weight: 700;
+        }
+
+        button,
+        input {
+            font: inherit;
+        }
+
+        [hidden] {
+            display: none !important;
+        }
+
+        .archive-shell {
+            width: min(1040px, 100%);
+            margin: 0 auto;
+        }
+
+        h1 {
+            margin: 0 0 20px;
+            font-size: clamp(1.7rem, 3.8vw, 2.8rem);
+        }
+
+        .archive-drop {
+            display: grid;
+            min-height: 180px;
+            place-items: center;
+            border: 4px dashed rgb(241 153 53 / 62%);
+            border-radius: 28px;
+            padding: 24px;
+            background: var(--panel);
+            text-align: center;
+            transition: border-color 0.2s ease, transform 0.2s ease;
+        }
+
+        .archive-drop.is-dragging {
+            border-color: var(--accent);
+            transform: scale(1.01);
+        }
+
+        .archive-file-label,
+        .print-button {
+            display: inline-grid;
+            min-height: 52px;
+            place-items: center;
+            border: 0;
+            border-radius: 16px;
+            padding: 10px 24px;
+            background: var(--accent);
+            color: #fff;
+            cursor: pointer;
+        }
+
+        #archiveFile {
+            position: absolute;
+            inline-size: 1px;
+            block-size: 1px;
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .archive-hint {
+            margin: 14px 0 0;
+            color: var(--muted);
+            font-weight: 500;
+        }
+
+        .archive-status {
+            min-height: 1.5em;
+            margin: 14px 4px;
+            color: var(--muted);
+        }
+
+        .archive-card {
+            display: grid;
+            grid-template-columns: minmax(220px, 320px) 1fr;
+            gap: clamp(22px, 4vw, 44px);
+            border-radius: 28px;
+            padding: clamp(20px, 4vw, 40px);
+            background: var(--panel);
+            box-shadow: 0 18px 46px rgb(74 53 31 / 12%);
+        }
+
+        .lenticular-preview {
+            display: block;
+            width: 100%;
+            aspect-ratio: 3 / 4;
+            border-radius: 14px;
+            object-fit: cover;
+            background: #eee;
+        }
+
+        .archive-meta {
+            display: grid;
+            align-content: start;
+            gap: 8px;
+        }
+
+        .archive-meta h2 {
+            margin: 0;
+            font-size: clamp(1.5rem, 3vw, 2.2rem);
+        }
+
+        .archive-meta p {
+            margin: 0;
+            color: var(--muted);
+        }
+
+        .selected-title {
+            margin: 20px 0 10px;
+            font-size: 1rem;
+        }
+
+        .selected-grid {
+            display: grid;
+            grid-template-columns: repeat(6, minmax(0, 1fr));
+            gap: 8px;
+        }
+
+        .selected-grid img {
+            display: block;
+            width: 100%;
+            aspect-ratio: 3 / 4;
+            border-radius: 8px;
+            object-fit: cover;
+        }
+
+        .print-button {
+            width: fit-content;
+            margin-top: 22px;
+        }
+
+        .print-button:disabled {
+            cursor: wait;
+            opacity: 0.55;
+        }
+
+        @media (max-width: 720px) {
+            .archive-card {
+                grid-template-columns: 1fr;
+            }
+
+            .lenticular-preview {
+                width: min(320px, 100%);
+                margin: 0 auto;
+            }
+
+            .selected-grid {
+                grid-template-columns: repeat(3, minmax(0, 1fr));
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <main class="archive-shell">
+        <section id="archiveDrop" class="archive-drop">
+            <div>
+                <label class="archive-file-label" for="archiveFile">アーカイブを選択</label>
+                <input id="archiveFile" type="file" accept=".zip,.facecard.zip,application/zip">
+                <p class="archive-hint">facecard.zipをここへドラッグ＆ドロップ</p>
+            </div>
+        </section>
+        <p id="archiveStatus" class="archive-status" role="status"></p>
+
+        <section id="archiveCard" class="archive-card" hidden>
+            <img id="lenticularPreview" class="lenticular-preview" alt="レンチキュラー画像">
+            <div class="archive-meta">
+                <h2 id="archiveId"></h2>
+                <p id="archiveCreatedAt"></p>
+                <p id="archiveSettings"></p>
+                <h3 class="selected-title">選択した6枚</h3>
+                <div id="selectedGrid" class="selected-grid"></div>
+                <button id="printArchive" class="print-button" type="button">再印刷</button>
+            </div>
+        </section>
+    </main>
+
+    <script src="./facecard-archive.js"></script>
+    <script>
+        const archiveDrop = document.getElementById("archiveDrop");
+        const archiveFile = document.getElementById("archiveFile");
+        const archiveStatus = document.getElementById("archiveStatus");
+        const archiveCard = document.getElementById("archiveCard");
+        const archiveId = document.getElementById("archiveId");
+        const archiveCreatedAt = document.getElementById("archiveCreatedAt");
+        const archiveSettings = document.getElementById("archiveSettings");
+        const lenticularPreview = document.getElementById("lenticularPreview");
+        const selectedGrid = document.getElementById("selectedGrid");
+        const printArchive = document.getElementById("printArchive");
+        const targetOrigin = location.origin === "null" ? "*" : location.origin;
+        const CARD_POPUP_FEATURES =
+            "popup=yes,width=900,height=700,resizable=yes,scrollbars=yes";
+        let loadedArchive = null;
+        let cardWindow = null;
+
+        function setStatus(message) {
+            archiveStatus.textContent = message;
+        }
+
+        function formatCreatedAt(value) {
+            const date = new Date(value);
+            return Number.isNaN(date.getTime())
+                ? value
+                : new Intl.DateTimeFormat("ja-JP", {
+                    dateStyle: "long",
+                    timeStyle: "medium"
+                }).format(date);
+        }
+
+        async function loadArchive(file) {
+            if (!file) return;
+            setStatus("アーカイブを読み込んでいます...");
+            printArchive.disabled = true;
+            try {
+                const nextArchive = await MotionFacecardArchive.read(file);
+                loadedArchive?.revoke();
+                loadedArchive = nextArchive;
+                const { manifest } = loadedArchive;
+                const settings = manifest.lenticular.settings;
+
+                archiveId.textContent = manifest.archiveId;
+                archiveCreatedAt.textContent = formatCreatedAt(manifest.createdAt);
+                archiveSettings.textContent =
+                    `${settings.widthMm}mm × ${settings.heightMm}mm`
+                    + ` / ${settings.ppi}ppi / ${settings.lpi}lpi`;
+                lenticularPreview.src = loadedArchive.lenticularImageUrl;
+                selectedGrid.replaceChildren(
+                    ...loadedArchive.selectedImages.map((item, index) => {
+                        const image = document.createElement("img");
+                        image.src = item.imageUrl;
+                        image.alt = `選択画像 ${index + 1}`;
+                        image.title = item.emotion
+                            ? `${item.emotion} / ${item.capturedAtSeconds.toFixed(1)}秒`
+                            : `${item.capturedAtSeconds.toFixed(1)}秒`;
+                        return image;
+                    })
+                );
+                archiveCard.hidden = false;
+                printArchive.disabled = false;
+                setStatus(`${file.name}を読み込みました`);
+            } catch (error) {
+                console.error(error);
+                archiveCard.hidden = true;
+                setStatus(`読み込めませんでした: ${error.message}`);
+            }
+        }
+
+        function sendCardPayload() {
+            if (!loadedArchive || !cardWindow || cardWindow.closed) return;
+            cardWindow.postMessage({
+                source: "motion-archive",
+                type: "lenticular-card",
+                imageUrl: loadedArchive.lenticularImageUrl,
+                cardArtUrl: loadedArchive.cardArtUrl,
+                archiveId: loadedArchive.manifest.archiveId
+            }, targetOrigin);
+        }
+
+        archiveFile.addEventListener("change", () => {
+            loadArchive(archiveFile.files[0]);
+            archiveFile.value = "";
+        });
+
+        for (const eventName of ["dragenter", "dragover"]) {
+            archiveDrop.addEventListener(eventName, event => {
+                event.preventDefault();
+                archiveDrop.classList.add("is-dragging");
+            });
+        }
+        for (const eventName of ["dragleave", "drop"]) {
+            archiveDrop.addEventListener(eventName, event => {
+                event.preventDefault();
+                archiveDrop.classList.remove("is-dragging");
+            });
+        }
+        archiveDrop.addEventListener("drop", event => {
+            loadArchive(event.dataTransfer.files[0]);
+        });
+
+        printArchive.addEventListener("click", () => {
+            if (!loadedArchive) return;
+            printArchive.disabled = true;
+            setStatus("印刷画面を開いています...");
+            cardWindow = window.open(
+                "./card/index.html",
+                "motion2-archive-print-card",
+                CARD_POPUP_FEATURES
+            );
+            if (!cardWindow) {
+                printArchive.disabled = false;
+                setStatus("印刷画面を開けませんでした");
+            }
+        });
+
+        window.addEventListener("message", event => {
+            if (
+                event.source !== cardWindow
+                || event.data?.source !== "motion-card"
+                || (location.origin !== "null" && event.origin !== location.origin)
+            ) {
+                return;
+            }
+            if (event.data.type === "card-ready") {
+                sendCardPayload();
+            } else if (event.data.type === "card-received") {
+                printArchive.disabled = false;
+                setStatus(`${loadedArchive.manifest.archiveId}を印刷画面へ送りました`);
+            } else if (event.data.type === "card-error") {
+                printArchive.disabled = false;
+                setStatus("印刷画像を準備できませんでした");
+            }
+        });
+
+        window.addEventListener("beforeunload", () => loadedArchive?.revoke());
+    </script>
+</body>
+
+</html>

@@ -950,6 +950,7 @@
         </div>
         <div id="sourceControls" hidden>
             <button id="cameraButton" type="button">WebCam</button>
+            <button id="archiveButton" type="button">カードアーカイブ</button>
             <label for="fileInput"><span>動画</span>
                 <input id="fileInput" type="file" accept="video/*">
             </label>
@@ -993,12 +994,12 @@
 
         const $ = id => document.getElementById(id);
         const ids = [
-            "stage", "startScreen", "thumbnailReturnBackground", "video", "sourceImage", "canvas", "vizCanvas", "cameraButton", "fileInput", "neutralImageInput", "expressionImageInput",
+            "stage", "startScreen", "thumbnailReturnBackground", "video", "sourceImage", "canvas", "vizCanvas", "cameraButton", "archiveButton", "fileInput", "neutralImageInput", "expressionImageInput",
             "calibrate", "measureMotionGain", "clearBaseline", "toggleShapes", "status", "paramSetSelect", "saveParamSet", "motionGainSetSelect", "saveMotionGainSet", "shapesPanel", "layerControls", "sourceControls", "out",
             "visualizeToggle", "visualizeVeilToggle", "visualizeVeilOpacity", "visualizeVeilOpacityValue", "visualize_01", "calibrationGuide", "calibrationGuideText", "calibrationPoint", "experienceAnnouncement", "experienceHud", "experienceTimer", "experienceTimerValue", "experienceScore", "experienceScoreNumber", "experienceScoreValue", "scoreEffectLayer", "experienceResults", "experienceResultScoreValue", "experienceRankingList", "pointGetSound"
         ];
         const {
-            stage, startScreen, thumbnailReturnBackground, video, sourceImage, canvas, vizCanvas, cameraButton, fileInput, neutralImageInput, expressionImageInput,
+            stage, startScreen, thumbnailReturnBackground, video, sourceImage, canvas, vizCanvas, cameraButton, archiveButton, fileInput, neutralImageInput, expressionImageInput,
             calibrate, measureMotionGain, clearBaseline, toggleShapes, status, paramSetSelect, saveParamSet, motionGainSetSelect, saveMotionGainSet, shapesPanel, layerControls, sourceControls, out,
             visualizeToggle, visualizeVeilToggle, visualizeVeilOpacity, visualizeVeilOpacityValue, visualize_01: visualize, calibrationGuide, calibrationGuideText, calibrationPoint, experienceAnnouncement, experienceHud, experienceTimer, experienceTimerValue, experienceScore: experienceScorePanel, experienceScoreNumber, experienceScoreValue, scoreEffectLayer, experienceResults, experienceResultScoreValue, experienceRankingList, pointGetSound
         } = Object.fromEntries(ids.map(id => [id, $(id)]));
@@ -1266,6 +1267,13 @@
         visualizeVeilToggle.onchange = syncVisualizeVeilControls;
         visualizeVeilOpacity.oninput = syncVisualizeVeilControls;
         syncVisualizeVeilControls();
+        archiveButton.onclick = () => {
+            window.open(
+                "./archive.html",
+                "motion2-card-archive",
+                "popup=yes,width=1100,height=820,resizable=yes,scrollbars=yes"
+            );
+        };
 
         calibrate.onclick = async () => {
             if (activeMode === "image-pair") return;

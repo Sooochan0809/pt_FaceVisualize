@@ -157,6 +157,7 @@
   <main class="print-sheet">
     <section class="visual-card" aria-label="顔あそび記念カード">
       <img
+        id="cardArt"
         class="card-art"
         src="./assets/card-art.png"
         alt="Suitopia ぷちフェス 顔あそび 2026年8月2日"
@@ -176,9 +177,14 @@
 
   <script>
     const lenticularPhoto = document.getElementById("lenticularPhoto");
+    const cardArt = document.getElementById("cardArt");
     const printButton = document.getElementById("printButton");
     const targetOrigin = location.origin === "null" ? "*" : location.origin;
     const PRINT_RENDER_DELAY_MS = 300;
+    const ALLOWED_MESSAGE_SOURCES = new Set([
+      "motion-control-panel",
+      "motion-archive"
+    ]);
 
     printButton.addEventListener("click", () => window.print());
 
@@ -189,12 +195,30 @@
       window.print();
     }
 
-    window.addEventListener("message", event => {
-      if (event.source !== window.opener || event.data?.source !== "motion-control-panel") return;
+    function loadImage(image, source) {
+      return new Promise((resolve, reject) => {
+        image.onload = () => resolve();
+        image.onerror = reject;
+        image.src = source;
+        if (image.complete && image.naturalWidth) resolve();
+      });
+    }
+
+    window.addEventListener("message", async event => {
+      if (
+        event.source !== window.opener
+        || !ALLOWED_MESSAGE_SOURCES.has(event.data?.source)
+      ) return;
       if (location.origin !== "null" && event.origin !== location.origin) return;
       if (event.data.type !== "lenticular-card" || !event.data.imageUrl) return;
 
-      lenticularPhoto.onload = () => {
+      try {
+        await Promise.all([
+          event.data.cardArtUrl
+            ? loadImage(cardArt, event.data.cardArtUrl)
+            : cardArt.decode(),
+          loadImage(lenticularPhoto, event.data.imageUrl)
+        ]);
         lenticularPhoto.hidden = false;
         printButton.disabled = false;
         window.opener?.postMessage(
@@ -202,8 +226,13 @@
           targetOrigin
         );
         printAutomatically();
-      };
-      lenticularPhoto.src = event.data.imageUrl;
+      } catch (error) {
+        console.error("印刷画像を読み込めませんでした", error);
+        window.opener?.postMessage(
+          { source: "motion-card", type: "card-error" },
+          targetOrigin
+        );
+      }
     });
 
     window.opener?.postMessage(

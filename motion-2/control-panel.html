@@ -289,6 +289,7 @@
     <audio id="calibrationSound" src="./assets/audio/calibration.mp3" preload="auto"></audio>
     <audio id="finishSound" src="./assets/audio/finish.mp3" preload="auto"></audio>
     <script src="./lenticular-maker.js"></script>
+    <script src="./facecard-archive.js"></script>
 
     <script>
         const panelStart = document.getElementById("panelStart");
@@ -317,6 +318,8 @@
         const HIGHLIGHT_SELECTION_COUNT = 6;
         const HIGHLIGHT_DISPLAY_LIMIT = 10;
         const CARD_POPUP_FEATURES = "popup=yes,width=900,height=700,resizable=yes,scrollbars=yes";
+        const ARCHIVE_COUNTER_STORAGE_KEY = "motion2FacecardArchiveCounter";
+        const ARCHIVE_CARD_ART_URL = "./card/assets/card-art.png";
         const audioFadeTokens = new WeakMap();
         let highlightImages = [];
         let selectedHighlightIndexes = [];
@@ -518,6 +521,31 @@
             pendingCardPayload = null;
         }
 
+        function nextArchiveId(now = new Date()) {
+            const year = String(now.getFullYear());
+            const month = String(now.getMonth() + 1).padStart(2, "0");
+            const day = String(now.getDate()).padStart(2, "0");
+            const dateKey = `${year}${month}${day}`;
+            let count = 1;
+
+            try {
+                const saved = JSON.parse(
+                    localStorage.getItem(ARCHIVE_COUNTER_STORAGE_KEY) ?? "null"
+                );
+                if (saved?.dateKey === dateKey && Number.isInteger(saved.count)) {
+                    count = saved.count + 1;
+                }
+                localStorage.setItem(
+                    ARCHIVE_COUNTER_STORAGE_KEY,
+                    JSON.stringify({ dateKey, count })
+                );
+            } catch (error) {
+                console.warn("アーカイブ連番を保存できませんでした", error);
+                return `${month}${day}-${String(now.getTime()).slice(-6)}`;
+            }
+            return `${month}${day}-${String(count).padStart(3, "0")}`;
+        }
+
         highlightDecision.onclick = () => {
             if (selectedHighlightIndexes.length !== HIGHLIGHT_SELECTION_COUNT) return;
             highlightConfirmation.hidden = false;
@@ -551,14 +579,31 @@
             highlightDecision.disabled = true;
             highlightDecision.textContent = "作成中...";
             try {
-                const imageUrls = selectedHighlightIndexes.map(index => highlightImages[index].imageUrl);
+                const selectedImages = selectedHighlightIndexes.map(
+                    index => highlightImages[index]
+                );
+                const imageUrls = selectedImages.map(item => item.imageUrl);
                 const result = await MotionLenticular.create(imageUrls);
-                pendingCardPayload = { imageUrl: result.imageUrl };
+                const archiveId = nextArchiveId();
+                highlightTitle.textContent = "カードを保存しています...";
+                const archive = await MotionFacecardArchive.create({
+                    archiveId,
+                    lenticular: result,
+                    selectedImages,
+                    cardArtUrl: ARCHIVE_CARD_ART_URL
+                });
+                MotionFacecardArchive.download(archive.blob, archive.fileName);
+                pendingCardPayload = {
+                    imageUrl: result.imageUrl,
+                    archiveId
+                };
                 sendCardPayload();
             } catch (error) {
                 console.error(error);
+                if (cardWindow && !cardWindow.closed) cardWindow.close();
+                cardWindow = null;
                 highlightConfirmation.hidden = true;
-                highlightTitle.textContent = "レンチキュラー画像を作成できませんでした";
+                highlightTitle.textContent = "カードを保存できませんでした";
                 resetCardCreationControls();
                 highlightDecision.disabled = false;
             }
@@ -634,6 +679,11 @@
                     panelStart.hidden = false;
                     setButton("スタート", false);
                 }
+            } else if (data.type === "card-error") {
+                highlightConfirmation.hidden = true;
+                highlightTitle.textContent = "印刷画像を準備できませんでした";
+                resetCardCreationControls();
+                highlightDecision.disabled = false;
             }
         }
 
