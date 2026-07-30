@@ -277,6 +277,10 @@
           <button id="reverseImages" type="button">順番を反転</button>
           <button id="clearImages" type="button">すべて削除</button>
         </div>
+        <label class="check-label">
+          <input id="headAlignment" type="checkbox" checked />
+          頭部位置を自動で合わせる
+        </label>
       </fieldset>
 
       <fieldset>
@@ -408,11 +412,18 @@
     const MAX_PITCH_VALUES = 60;
     const PREVIEW_DELAY_MS = 250;
     const MM_PER_INCH = 25.4;
+    const MEDIAPIPE_TASKS_URL = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest";
+    const FACE_MODEL_URL = "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/latest/face_landmarker.task";
+    const MEDIAPIPE_WASM_URL = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm";
+    const ALIGN_LANDMARKS = [
+      33, 133, 362, 263, 1, 4, 61, 291, 199, 152
+    ];
 
     const state = {
       images: [],
       lastRenderMode: "interlace"
     };
+    let faceLandmarkerPromise = null;
 
     const $ = (id) => document.getElementById(id);
 
@@ -421,6 +432,7 @@
       imagesList: $("imagesList"),
       reverseImages: $("reverseImages"),
       clearImages: $("clearImages"),
+      headAlignment: $("headAlignment"),
       paperPreset: $("paperPreset"),
       orientation: $("orientation"),
       paperWidth: $("paperWidth"),
@@ -487,6 +499,7 @@
         previewScale,
         fitMode: els.fitMode.value,
         brightness,
+        headAlignment: els.headAlignment.checked,
         registrationMarks: els.registrationMarks.checked,
         lensDirection: els.lensDirection.value,
         reverseOrder: els.reverseOrder.checked
@@ -505,6 +518,42 @@
       return Math.min(1, Math.max(settings.previewScale, scaleForEveryImage));
     }
 
+    async function getFaceLandmarker() {
+      if (!faceLandmarkerPromise) {
+        faceLandmarkerPromise = import(MEDIAPIPE_TASKS_URL)
+          .then(({ FaceLandmarker, FilesetResolver }) => FilesetResolver
+            .forVisionTasks(MEDIAPIPE_WASM_URL)
+            .then((vision) => FaceLandmarker.createFromOptions(vision, {
+              baseOptions: {
+                modelAssetPath: FACE_MODEL_URL
+              },
+              runningMode: "IMAGE",
+              numFaces: 1
+            })))
+          .catch((error) => {
+            faceLandmarkerPromise = null;
+            throw error;
+          });
+      }
+      return faceLandmarkerPromise;
+    }
+
+    async function detectFaceLandmarks(image) {
+      try {
+        const faceLandmarker = await getFaceLandmarker();
+        const result = faceLandmarker.detect(image);
+        const landmarks = result.faceLandmarks?.[0];
+        if (!landmarks) return null;
+        return landmarks.map((point) => ({
+          x: point.x * image.naturalWidth,
+          y: point.y * image.naturalHeight
+        }));
+      } catch (error) {
+        console.warn("Face landmark detection failed.", error);
+        return null;
+      }
+    }
+
     async function loadImageFile(file) {
       const url = URL.createObjectURL(file);
       try {
@@ -512,11 +561,13 @@
         image.decoding = "async";
         image.src = url;
         await image.decode();
+        const landmarks = await detectFaceLandmarks(image);
         return {
           name: file.name,
           image,
           width: image.naturalWidth,
           height: image.naturalHeight,
+          landmarks,
           thumbUrl: url
         };
       } catch (error) {
@@ -658,24 +709,120 @@
       schedulePreview();
     }
 
-    function drawFittedImageContent(ctx, image, targetWidth, targetHeight, fitMode) {
+    function getFittedImageTransform(image, targetWidth, targetHeight, fitMode) {
       const sourceWidth = image.naturalWidth;
       const sourceHeight = image.naturalHeight;
 
       if (fitMode === "stretch") {
-        ctx.drawImage(image, 0, 0, targetWidth, targetHeight);
-        return;
+        return {
+          a: targetWidth / sourceWidth,
+          b: 0,
+          c: 0,
+          d: targetHeight / sourceHeight,
+          e: 0,
+          f: 0
+        };
       }
 
       const scale = fitMode === "contain"
         ? Math.min(targetWidth / sourceWidth, targetHeight / sourceHeight)
         : Math.max(targetWidth / sourceWidth, targetHeight / sourceHeight);
 
-      const drawWidth = sourceWidth * scale;
-      const drawHeight = sourceHeight * scale;
-      const dx = (targetWidth - drawWidth) / 2;
-      const dy = (targetHeight - drawHeight) / 2;
-      ctx.drawImage(image, dx, dy, drawWidth, drawHeight);
+      return {
+        a: scale,
+        b: 0,
+        c: 0,
+        d: scale,
+        e: (targetWidth - sourceWidth * scale) / 2,
+        f: (targetHeight - sourceHeight * scale) / 2
+      };
+    }
+
+    function transformPoint(point, transform) {
+      return {
+        x: transform.a * point.x + transform.c * point.y + transform.e,
+        y: transform.b * point.x + transform.d * point.y + transform.f
+      };
+    }
+
+    function averagePoint(points) {
+      const sum = points.reduce((total, point) => ({
+        x: total.x + point.x,
+        y: total.y + point.y
+      }), { x: 0, y: 0 });
+      return {
+        x: sum.x / points.length,
+        y: sum.y / points.length
+      };
+    }
+
+    function getSimilarityTransform(sourceLandmarks, targetLandmarks) {
+      const pairs = ALIGN_LANDMARKS
+        .filter((index) => sourceLandmarks[index] && targetLandmarks[index])
+        .map((index) => ({
+          source: sourceLandmarks[index],
+          target: targetLandmarks[index]
+        }));
+      if (pairs.length < 2) return null;
+
+      const sourceCenter = averagePoint(pairs.map((pair) => pair.source));
+      const targetCenter = averagePoint(pairs.map((pair) => pair.target));
+      const fit = pairs.reduce((sum, pair) => {
+        const sx = pair.source.x - sourceCenter.x;
+        const sy = pair.source.y - sourceCenter.y;
+        const tx = pair.target.x - targetCenter.x;
+        const ty = pair.target.y - targetCenter.y;
+        return {
+          dot: sum.dot + sx * tx + sy * ty,
+          cross: sum.cross + sx * ty - sy * tx,
+          size: sum.size + sx * sx + sy * sy
+        };
+      }, { dot: 0, cross: 0, size: 0 });
+      if (fit.size === 0) return null;
+
+      const a = fit.dot / fit.size;
+      const b = fit.cross / fit.size;
+      return {
+        a,
+        b,
+        c: -b,
+        d: a,
+        e: targetCenter.x - a * sourceCenter.x + b * sourceCenter.y,
+        f: targetCenter.y - b * sourceCenter.x - a * sourceCenter.y
+      };
+    }
+
+    function getImageTransforms(settings, targetWidth, targetHeight) {
+      const fittedTransforms = state.images.map((item) => (
+        getFittedImageTransform(item.image, targetWidth, targetHeight, settings.fitMode)
+      ));
+      if (!settings.headAlignment) return fittedTransforms;
+
+      const referenceIndex = state.images.findIndex((item) => item.landmarks);
+      if (referenceIndex < 0) return fittedTransforms;
+
+      const reference = state.images[referenceIndex];
+      const referenceLandmarks = reference.landmarks.map((point) => (
+        transformPoint(point, fittedTransforms[referenceIndex])
+      ));
+      return state.images.map((item, index) => {
+        if (index === referenceIndex || !item.landmarks) return fittedTransforms[index];
+        return getSimilarityTransform(item.landmarks, referenceLandmarks) || fittedTransforms[index];
+      });
+    }
+
+    function drawTransformedImage(ctx, image, transform) {
+      ctx.save();
+      ctx.transform(
+        transform.a,
+        transform.b,
+        transform.c,
+        transform.d,
+        transform.e,
+        transform.f
+      );
+      ctx.drawImage(image, 0, 0);
+      ctx.restore();
     }
 
     function prepareCanvas(canvas, width, height) {
@@ -826,6 +973,7 @@
       const vertical = settings.lensDirection === "vertical";
       const axisLength = vertical ? width : height;
       const axisMap = createAxisImageMap(axisLength, settings, effectivePpi, count);
+      const imageTransforms = getImageTransforms(settings, width, height);
 
       // 画像ごとの縞領域をクリップし、元画像を1回だけ描画する。
       // 出力Canvas以外の巨大なCanvasやImageDataを保持しない。
@@ -837,7 +985,7 @@
         ctx.imageSmoothingEnabled = true;
         ctx.imageSmoothingQuality = "high";
         ctx.filter = `brightness(${settings.brightness / 100})`;
-        drawFittedImageContent(ctx, item.image, width, height, settings.fitMode);
+        drawTransformedImage(ctx, item.image, imageTransforms[imageIndex]);
         ctx.restore();
       });
 
@@ -1130,6 +1278,7 @@
       els.ppi,
       els.fitMode,
       els.brightness,
+      els.headAlignment,
       els.registrationMarks,
       els.lpi,
       els.lensDirection,
