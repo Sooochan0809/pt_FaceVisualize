@@ -257,6 +257,28 @@
                 }).format(date);
         }
 
+        function createArchiveImage(item, index, label) {
+            const image = document.createElement("img");
+            const capturedAt = Number(item.capturedAtSeconds);
+            const capturedAtText = Number.isFinite(capturedAt)
+                ? `${capturedAt.toFixed(1)}秒`
+                : "時刻不明";
+            image.src = item.imageUrl;
+            image.alt = `${label} ${index + 1}`;
+            image.title = item.emotion
+                ? `${item.emotion} / ${capturedAtText}`
+                : capturedAtText;
+            return image;
+        }
+
+        function renderArchiveImages(container, items, label) {
+            container.replaceChildren(
+                ...items.map((item, index) =>
+                    createArchiveImage(item, index, label)
+                )
+            );
+        }
+
         async function loadArchive(file) {
             if (!file) return;
             setStatus("アーカイブを読み込んでいます...");
@@ -288,27 +310,15 @@
                     experienceVideo.load();
                     experienceVideo.hidden = true;
                 }
-                selectedGrid.replaceChildren(
-                    ...loadedArchive.selectedImages.map((item, index) => {
-                        const image = document.createElement("img");
-                        image.src = item.imageUrl;
-                        image.alt = `選択画像 ${index + 1}`;
-                        image.title = item.emotion
-                            ? `${item.emotion} / ${item.capturedAtSeconds.toFixed(1)}秒`
-                            : `${item.capturedAtSeconds.toFixed(1)}秒`;
-                        return image;
-                    })
+                renderArchiveImages(
+                    selectedGrid,
+                    loadedArchive.selectedImages,
+                    "選択画像"
                 );
-                unselectedGrid.replaceChildren(
-                    ...loadedArchive.unselectedImages.map((item, index) => {
-                        const image = document.createElement("img");
-                        image.src = item.imageUrl;
-                        image.alt = `未選択画像 ${index + 1}`;
-                        image.title = item.emotion
-                            ? `${item.emotion} / ${item.capturedAtSeconds.toFixed(1)}秒`
-                            : `${item.capturedAtSeconds.toFixed(1)}秒`;
-                        return image;
-                    })
+                renderArchiveImages(
+                    unselectedGrid,
+                    loadedArchive.unselectedImages,
+                    "未選択画像"
                 );
                 unselectedSection.hidden = !loadedArchive.unselectedImages.length;
                 archiveCard.hidden = false;

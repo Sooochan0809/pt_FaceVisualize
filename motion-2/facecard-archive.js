@@ -175,6 +175,41 @@
         return safe;
     }
 
+    function archiveImagePath(folder, index, extension) {
+        const fileNumber = String(index + 1).padStart(2, "0");
+        return `${folder}/${fileNumber}.${extension}`;
+    }
+
+    async function createImageEntries(root, folder, images) {
+        return Promise.all(images.map(async (item, index) => {
+            const provisionalPath = archiveImagePath(folder, index, "webp");
+            const source = await urlEntry(
+                `${root}${provisionalPath}`,
+                item.imageUrl
+            );
+            return {
+                ...source,
+                name: `${root}${archiveImagePath(
+                    folder,
+                    index,
+                    imageExtension(source.type)
+                )}`
+            };
+        }));
+    }
+
+    function createImageManifest(root, images, entries, selected) {
+        return images.map((item, index) => ({
+            file: entries[index].name.slice(root.length),
+            selected,
+            selectionOrder: selected ? index + 1 : null,
+            capturedAtSeconds: Number(item.time) || 0,
+            emotion: item.emotion || "",
+            emotionScore: Number(item.emotionScore) || 0,
+            frontalScore: Number(item.frontalScore) || 0
+        }));
+    }
+
     async function create({
         archiveId,
         createdAt = new Date(),
@@ -197,38 +232,13 @@
             lenticular.imageUrl
         );
         const cardArtEntry = await urlEntry(`${root}card-art.png`, cardArtUrl);
-        const createImageEntries = (folder, images) => Promise.all(
-            images.map(async (item, index) => {
-                const source = await urlEntry(
-                    `${root}${folder}/${String(index + 1).padStart(2, "0")}.webp`,
-                    item.imageUrl
-                );
-                const extension = imageExtension(source.type);
-                return {
-                    ...source,
-                    name:
-                        `${root}${folder}/`
-                        + `${String(index + 1).padStart(2, "0")}.${extension}`
-                };
-            })
-        );
         const [selectedEntries, unselectedEntries] = await Promise.all([
-            createImageEntries("highlights/selected", selectedImages),
-            createImageEntries("highlights/unselected", unselectedImages)
+            createImageEntries(root, "highlights/selected", selectedImages),
+            createImageEntries(root, "highlights/unselected", unselectedImages)
         ]);
         const videoEntry = experienceVideo?.blob instanceof Blob
             ? await blobEntry(`${root}experience.webm`, experienceVideo.blob)
             : null;
-        const imageManifest = (images, entries, selected) =>
-            images.map((item, index) => ({
-                file: entries[index].name.slice(root.length),
-                selected,
-                selectionOrder: selected ? index + 1 : null,
-                capturedAtSeconds: Number(item.time) || 0,
-                emotion: item.emotion || "",
-                emotionScore: Number(item.emotionScore) || 0,
-                frontalScore: Number(item.frontalScore) || 0
-            }));
         const manifest = {
             schemaVersion: ARCHIVE_SCHEMA_VERSION,
             archiveId: safeId,
@@ -249,12 +259,14 @@
                 height: Number(experienceVideo.height) || 0,
                 audio: false
             } : null,
-            selectedImages: imageManifest(
+            selectedImages: createImageManifest(
+                root,
                 selectedImages,
                 selectedEntries,
                 true
             ),
-            unselectedImages: imageManifest(
+            unselectedImages: createImageManifest(
+                root,
                 unselectedImages,
                 unselectedEntries,
                 false
@@ -390,14 +402,12 @@
         };
         const lenticularImageUrl = entryUrl(manifest.lenticular.file);
         const cardArtUrl = entryUrl(manifest.cardArt);
-        const selectedImages = manifest.selectedImages.map(item => ({
+        const restoreImages = items => items.map(item => ({
             ...item,
             imageUrl: entryUrl(item.file)
         }));
-        const unselectedImages = (manifest.unselectedImages ?? []).map(item => ({
-            ...item,
-            imageUrl: entryUrl(item.file)
-        }));
+        const selectedImages = restoreImages(manifest.selectedImages);
+        const unselectedImages = restoreImages(manifest.unselectedImages ?? []);
         const experienceVideoUrl = manifest.experienceVideo
             ? entryUrl(manifest.experienceVideo.file)
             : "";

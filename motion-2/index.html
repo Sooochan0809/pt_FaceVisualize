@@ -1289,8 +1289,7 @@
             if (activeMode === "image-pair") return;
             if (activeMode === "video-file") {
                 stopLoop();
-                calibrate.disabled = true;
-                measureMotionGain.disabled = true;
+                setCalibrationControlsDisabled(true);
                 try {
                     await calibrateFromVideoStart();
                     await seekVideo(0);
@@ -1298,16 +1297,14 @@
                     await video.play();
                     startLoop();
                 } catch (error) {
-                    calibrate.disabled = false;
-                    measureMotionGain.disabled = false;
+                    setCalibrationControlsDisabled(false);
                     status.textContent = `動画キャリブレーション失敗: ${error.message}`;
                 }
                 return;
             }
             resetCalibration({ warmup: WARMUP_FRAMES, frames: CALIBRATION_FRAMES });
             showCalibrationGuide(GUIDE_MESSAGE);
-            calibrate.disabled = true;
-            measureMotionGain.disabled = true;
+            setCalibrationControlsDisabled(true);
         };
 
         measureMotionGain.onclick = () => {
@@ -1317,8 +1314,7 @@
         clearBaseline.onclick = () => {
             resetCalibration({ clearGains: true });
             hideCalibrationGuide();
-            calibrate.disabled = false;
-            measureMotionGain.disabled = false;
+            setCalibrationControlsDisabled(false);
         };
 
         cameraButton.onclick = () => startCameraExperience().catch(report("カメラを開始できません"));
@@ -1376,6 +1372,11 @@
             for (const panel of debugPanels) {
                 panel.hidden = hidden;
             }
+        }
+
+        function setCalibrationControlsDisabled(disabled) {
+            calibrate.disabled = disabled;
+            measureMotionGain.disabled = disabled;
         }
 
         function syncCalibrationGuideVisibility() {
@@ -1493,8 +1494,7 @@
             resetCalibration({ warmup: WARMUP_FRAMES, frames: CALIBRATION_FRAMES });
             showCalibrationGuide(GUIDE_MESSAGE, "recording");
             updateCalibrationPoint();
-            calibrate.disabled = true;
-            measureMotionGain.disabled = true;
+            setCalibrationControlsDisabled(true);
         }
 
         function beginCalibrationIntro() {
@@ -2940,8 +2940,7 @@
             sourceImage.hidden = mode !== "image-pair";
             video.controls = video.loop = mode === "video-file";
             const imageMode = mode === "image-pair";
-            calibrate.disabled = imageMode;
-            measureMotionGain.disabled = imageMode;
+            setCalibrationControlsDisabled(imageMode);
             clearBaseline.disabled = imageMode;
         }
 
@@ -3337,8 +3336,7 @@
             base.clear();
             writeCalibrationBase(base, calibration.stats, calibration.samples);
             finishPoseCalibration();
-            calibrate.disabled = false;
-            measureMotionGain.disabled = false;
+            setCalibrationControlsDisabled(false);
             calibrationStage = "complete";
             resetMotionVisualState();
             hideCalibrationGuide();
@@ -3403,8 +3401,7 @@
                 base.set(categoryName, { mean, min, max, dead });
             }
             finishPoseCalibration();
-            calibrate.disabled = false;
-            measureMotionGain.disabled = false;
+            setCalibrationControlsDisabled(false);
             hideCalibrationGuide();
             status.textContent = `キャリブ済み (${VIDEO_BASELINE_SECONDS * VIDEO_BASELINE_PASSES}s)`;
         }
@@ -3573,8 +3570,7 @@
             renderMotionGainSetOptions();
             resetMotionVisualState();
             showCalibrationGuide(`${MOTION_GAIN_MESSAGE}\n1/${MOTION_GAIN_SET_COUNT}`);
-            calibrate.disabled = true;
-            measureMotionGain.disabled = true;
+            setCalibrationControlsDisabled(true);
             updateCalibrationPoint(0);
         }
 
@@ -3626,8 +3622,7 @@
 
             if (!amplitudes.length) {
                 resetMotionGainCalibration();
-                calibrate.disabled = false;
-                measureMotionGain.disabled = false;
+                setCalibrationControlsDisabled(false);
                 hideCalibrationGuide();
                 status.textContent = "係数測定: 変動を検出できません";
                 return;
@@ -3669,8 +3664,7 @@
             }
 
             resetMotionGainCalibration();
-            calibrate.disabled = false;
-            measureMotionGain.disabled = false;
+            setCalibrationControlsDisabled(false);
             hideCalibrationGuide();
             status.textContent = `係数測定済み (${MOTION_GAIN_SET_COUNT}セット平均): 動きやすい ${classifications.easy}, 動きにくい ${classifications.hard}`;
         }

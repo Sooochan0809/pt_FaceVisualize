@@ -475,51 +475,57 @@
             highlightPanel.hidden = false;
         }
 
+        function createHighlightCard(item, index) {
+            const card = document.createElement("figure");
+            const image = document.createElement("img");
+            const selectionBadge = document.createElement("figcaption");
+            const time = Number(item.time);
+            const frontal = Number(item.frontalScore);
+            const emotionScore = Number(item.emotionScore);
+
+            card.className = "highlightCard";
+            card.style.setProperty("--highlight-index", index);
+            card.tabIndex = 0;
+            card.setAttribute("role", "checkbox");
+            card.setAttribute("aria-checked", "false");
+            card.addEventListener("click", () => toggleHighlightSelection(index));
+            card.addEventListener("keydown", event => {
+                if (event.key !== "Enter" && event.key !== " ") return;
+                event.preventDefault();
+                toggleHighlightSelection(index);
+            });
+
+            image.src = item.imageUrl;
+            image.alt = `特徴的な瞬間 ${index + 1}`;
+            image.loading = "lazy";
+            selectionBadge.className = "highlightRank";
+
+            if (Number.isFinite(time)) {
+                card.title =
+                    `${item.emotion} / ${time.toFixed(1)}秒`
+                    + ` / 正面度 ${Math.round(frontal * 100)}%`
+                    + ` / 感情度 ${Math.round(emotionScore * 100)}%`;
+            }
+            card.append(image, selectionBadge);
+            return card;
+        }
+
         function renderHighlights(images, video) {
-            const selectedImages = images.slice(0, HIGHLIGHT_DISPLAY_LIMIT);
+            const displayImages = images.slice(0, HIGHLIGHT_DISPLAY_LIMIT);
             highlightPanel.classList.remove("is-loading");
             panelStart.hidden = true;
             highlightDecision.hidden = false;
             highlightTitle.textContent = "ベストショット！📸";
             highlightInstruction.hidden = false;
-            highlightImages = selectedImages;
+            highlightImages = displayImages;
             selectedHighlightIndexes = [];
             experienceVideo = video?.blob instanceof Blob ? video : null;
-            highlightGrid.replaceChildren();
+            highlightGrid.replaceChildren(
+                ...displayImages.map(createHighlightCard)
+            );
             updateHighlightSelection();
             highlightEmpty.textContent = "表情を取得できませんでした";
-            highlightEmpty.hidden = selectedImages.length > 0;
-
-            selectedImages.forEach((item, index) => {
-                const card = document.createElement("figure");
-                const image = document.createElement("img");
-                const selectionBadge = document.createElement("figcaption");
-                const time = Number(item.time);
-                const frontal = Number(item.frontalScore);
-                const emotionScore = Number(item.emotionScore);
-
-                card.className = "highlightCard";
-                card.style.setProperty("--highlight-index", index);
-                image.src = item.imageUrl;
-                image.alt = `特徴的な瞬間 ${index + 1}`;
-                image.loading = "lazy";
-                selectionBadge.className = "highlightRank";
-                card.tabIndex = 0;
-                card.setAttribute("role", "checkbox");
-                card.setAttribute("aria-checked", "false");
-                card.addEventListener("click", () => toggleHighlightSelection(index));
-                card.addEventListener("keydown", event => {
-                    if (event.key !== "Enter" && event.key !== " ") return;
-                    event.preventDefault();
-                    toggleHighlightSelection(index);
-                });
-
-                if (Number.isFinite(time)) {
-                    card.title = `${item.emotion} / ${time.toFixed(1)}秒 / 正面度 ${Math.round(frontal * 100)}% / 感情度 ${Math.round(emotionScore * 100)}%`;
-                }
-                card.append(image, selectionBadge);
-                highlightGrid.append(card);
-            });
+            highlightEmpty.hidden = displayImages.length > 0;
 
             highlightPanel.hidden = false;
         }
@@ -530,6 +536,17 @@
             highlightConfirmYes.disabled = false;
             highlightConfirmYes.textContent = "はい";
             highlightReselect.disabled = false;
+        }
+
+        function showCardCreationError(message, closeCardWindow = false) {
+            if (closeCardWindow && cardWindow && !cardWindow.closed) {
+                cardWindow.close();
+            }
+            if (closeCardWindow) cardWindow = null;
+            highlightConfirmation.hidden = true;
+            highlightTitle.textContent = message;
+            resetCardCreationControls();
+            highlightDecision.disabled = false;
         }
 
         function toggleHighlightSelection(index) {
@@ -615,10 +632,7 @@
                 CARD_POPUP_FEATURES
             );
             if (!cardWindow) {
-                highlightConfirmation.hidden = true;
-                highlightTitle.textContent = "印刷画面を開けませんでした";
-                resetCardCreationControls();
-                highlightDecision.disabled = false;
+                showCardCreationError("印刷画面を開けませんでした");
                 return;
             }
 
@@ -652,12 +666,7 @@
                 sendCardPayload();
             } catch (error) {
                 console.error(error);
-                if (cardWindow && !cardWindow.closed) cardWindow.close();
-                cardWindow = null;
-                highlightConfirmation.hidden = true;
-                highlightTitle.textContent = "カードを保存できませんでした";
-                resetCardCreationControls();
-                highlightDecision.disabled = false;
+                showCardCreationError("カードを保存できませんでした", true);
             }
         };
 
@@ -735,10 +744,7 @@
                     setButton("スタート", false);
                 }
             } else if (data.type === "card-error") {
-                highlightConfirmation.hidden = true;
-                highlightTitle.textContent = "印刷画像を準備できませんでした";
-                resetCardCreationControls();
-                highlightDecision.disabled = false;
+                showCardCreationError("印刷画像を準備できませんでした");
             }
         }
 
