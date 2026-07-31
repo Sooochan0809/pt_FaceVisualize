@@ -915,7 +915,7 @@
         <div id="experienceAnnouncement" hidden>さぁ！顔を大きく動かしてみよう！</div>
         <div id="experienceHud" hidden>
             <div id="scoreEffectLayer"></div>
-            <div id="experienceTimer" aria-label="残り60秒">残り <span id="experienceTimerValue">60</span> 秒</div>
+            <div id="experienceTimer" aria-label="残り30秒">残り <span id="experienceTimerValue">30</span> 秒</div>
             <div id="experienceScore">
                 <span id="experienceScoreLabel">スコア</span>
                 <span id="experienceScoreNumber">
@@ -1027,6 +1027,7 @@
         const PARAM_SET_DIR = "../parameter";
 
         const MATERIAL_TRANSITION_SECONDS = 2.5;
+        const MATERIAL_TIMELINE_SECONDS = 60;
         const POSITIONING_VEIL_OPACITY_RATIO = 0.32 / 0.9;
         const SHAPE_POINT_COUNT = 48;
         const SHAPE_CENTER_Y_RATIO = 0.4;
@@ -1080,18 +1081,20 @@
         const CALIBRATION_OUTLINE_STAGES = new Set(["positioning", "intro", "waiting", "recording"]);
         const CALIBRATION_INTRO_MS = 2000;
 
-        const EXPERIENCE_DURATION_SECONDS = 60;
-        const EXPERIENCE_DURATION_MS = EXPERIENCE_DURATION_SECONDS * MILLISECONDS_PER_SECOND;
+        const EXPERIENCE_DISPLAY_SECONDS = 30;
+        const EXPERIENCE_COUNTDOWN_TICK_MS = 1300;
+        const EXPERIENCE_DURATION_MS =
+            EXPERIENCE_DISPLAY_SECONDS * EXPERIENCE_COUNTDOWN_TICK_MS;
         const EXPERIENCE_INTRO_STEP_MS = 3000;
         const EXPERIENCE_INTRO_STEPS = [
             { message: "顔を動かすとスコアが増えるよ！", guide: "score" },
             { message: "違う形を作ると高得点！", guide: "score" },
-            { message: `制限時間は${EXPERIENCE_DURATION_SECONDS}秒！`, guide: "timer" },
+            { message: `制限時間は${EXPERIENCE_DISPLAY_SECONDS}秒！`, guide: "timer" },
             { message: "さぁ！顔を大きく動かしてみよう！", startsExperienceAfter: true }
         ];
 
-        const WORK_MUSIC_WARNING_SECONDS = 30;
-        const WORK_MUSIC_URGENT_SECONDS = 10;
+        const EXPERIENCE_WARNING_SECONDS = Math.floor(EXPERIENCE_DISPLAY_SECONDS / 2);
+        const EXPERIENCE_URGENT_SECONDS = 10;
         const WORK_MUSIC_RATE_NORMAL = 1;
         const WORK_MUSIC_RATE_WARNING = 1.2;
         const WORK_MUSIC_RATE_URGENT = 2;
@@ -1613,7 +1616,7 @@
             experienceSessionId++;
             resetScoreState();
             experienceScoreValue.textContent = "0";
-            renderExperienceTimer(EXPERIENCE_DURATION_SECONDS, false);
+            renderExperienceTimer(EXPERIENCE_DISPLAY_SECONDS, false);
             experienceHud.hidden = false;
         }
 
@@ -2662,7 +2665,9 @@
 
             const elapsed = now - visualizeStartedAt;
             const remaining = Math.max(0, EXPERIENCE_DURATION_MS - elapsed);
-            const remainingSeconds = Math.ceil(remaining / MILLISECONDS_PER_SECOND);
+            const remainingSeconds = Math.ceil(
+                remaining / EXPERIENCE_COUNTDOWN_TICK_MS
+            );
             renderExperienceTimer(remainingSeconds);
             updateWorkMusicPlaybackRate(remainingSeconds);
 
@@ -2685,11 +2690,11 @@
             experienceTimerValue.textContent = String(remainingSeconds);
             experienceTimerValue.classList.toggle(
                 "is-warning",
-                showAlerts && remainingSeconds === WORK_MUSIC_WARNING_SECONDS
+                showAlerts && remainingSeconds === EXPERIENCE_WARNING_SECONDS
             );
             experienceTimerValue.classList.toggle(
                 "is-urgent",
-                showAlerts && remainingSeconds <= WORK_MUSIC_URGENT_SECONDS
+                showAlerts && remainingSeconds <= EXPERIENCE_URGENT_SECONDS
             );
             experienceTimer.setAttribute("aria-label", `残り${remainingSeconds}秒`);
         }
@@ -2811,9 +2816,9 @@
         }
 
         function updateWorkMusicPlaybackRate(remainingSeconds) {
-            const playbackRate = remainingSeconds <= WORK_MUSIC_URGENT_SECONDS
+            const playbackRate = remainingSeconds <= EXPERIENCE_URGENT_SECONDS
                 ? WORK_MUSIC_RATE_URGENT
-                : remainingSeconds <= WORK_MUSIC_WARNING_SECONDS
+                : remainingSeconds <= EXPERIENCE_WARNING_SECONDS
                     ? WORK_MUSIC_RATE_WARNING
                     : WORK_MUSIC_RATE_NORMAL;
             setWorkMusicPlaybackRate(playbackRate);
@@ -4362,11 +4367,12 @@
 
         function currentMaterial(now) {
             const startedAt = visualizeStartedAt || now;
-            const elapsed = clamp(
-                (now - startedAt) / MILLISECONDS_PER_SECOND,
+            const experienceProgress = clamp(
+                (now - startedAt) / EXPERIENCE_DURATION_MS,
                 0,
-                EXPERIENCE_DURATION_SECONDS
+                1
             );
+            const elapsed = experienceProgress * MATERIAL_TIMELINE_SECONDS;
             let phaseIndex = 0;
 
             while (phaseIndex + 1 < MATERIAL_PHASES.length && elapsed >= MATERIAL_PHASES[phaseIndex + 1].start) {
