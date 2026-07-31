@@ -330,6 +330,7 @@
     <audio id="workMusic" src="./assets/audio/work.mp3" preload="auto" loop></audio>
     <audio id="startSound" src="./assets/audio/start.mp3" preload="auto"></audio>
     <audio id="calibrationSound" src="./assets/audio/calibration.mp3" preload="auto"></audio>
+    <audio id="countdownSound" src="./assets/audio/countdown.mp3" preload="auto"></audio>
     <audio id="finishSound" src="./assets/audio/finish.mp3" preload="auto"></audio>
     <script src="./lenticular-maker.js"></script>
     <script src="./facecard-archive.js"></script>
@@ -340,6 +341,7 @@
         const workMusic = document.getElementById("workMusic");
         const startSound = document.getElementById("startSound");
         const calibrationSound = document.getElementById("calibrationSound");
+        const countdownSound = document.getElementById("countdownSound");
         const finishSound = document.getElementById("finishSound");
         const highlightPanel = document.getElementById("highlightPanel");
         const highlightTitle = document.getElementById("highlightTitle");
@@ -731,6 +733,9 @@
                 }
                 case "calibration-complete":
                     playEffectSound(calibrationSound);
+                    break;
+                case "countdown-start":
+                    playEffectSound(countdownSound);
                     break;
                 case "feature-images-loading":
                     showHighlightsLoading();

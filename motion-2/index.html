@@ -1086,11 +1086,23 @@
         const EXPERIENCE_DURATION_MS =
             EXPERIENCE_DISPLAY_SECONDS * MILLISECONDS_PER_SECOND;
         const EXPERIENCE_INTRO_STEP_MS = 3000;
+        const EXPERIENCE_COUNTDOWN_STEP_MS = 1000;
         const EXPERIENCE_INTRO_STEPS = [
             { message: "顔を動かすとスコアが増えるよ！", guide: "score" },
             { message: "違う形を作ると高得点！", guide: "score" },
             { message: `制限時間は${EXPERIENCE_DISPLAY_SECONDS}秒！`, guide: "timer" },
-            { message: "さぁ！顔を大きく動かしてみよう！", startsExperienceAfter: true }
+            {
+                message: "３",
+                durationMs: EXPERIENCE_COUNTDOWN_STEP_MS,
+                startsCountdownSound: true
+            },
+            { message: "２", durationMs: EXPERIENCE_COUNTDOWN_STEP_MS },
+            { message: "１", durationMs: EXPERIENCE_COUNTDOWN_STEP_MS },
+            {
+                message: "スタート！",
+                durationMs: EXPERIENCE_COUNTDOWN_STEP_MS,
+                startsExperience: true
+            }
         ];
 
         const EXPERIENCE_WARNING_SECONDS = Math.floor(EXPERIENCE_DISPLAY_SECONDS / 2);
@@ -1597,16 +1609,19 @@
                 }
 
                 showExperienceAnnouncement(step.message, step.guide);
+                if (step.startsCountdownSound) {
+                    sendControlPanelMessage({ type: "countdown-start" });
+                }
+                if (step.startsExperience) {
+                    visualizeStartedAt = performance.now();
+                    resetMotionTracking();
+                    startExperienceRecording();
+                    startWorkMusic();
+                }
                 experienceAnnouncementTimer = window.setTimeout(() => {
                     if (sequenceId !== experienceIntroSequenceId) return;
-                    if (step.startsExperienceAfter) {
-                        visualizeStartedAt = performance.now();
-                        resetMotionTracking();
-                        startExperienceRecording();
-                        startWorkMusic();
-                    }
                     showNextStep();
-                }, EXPERIENCE_INTRO_STEP_MS);
+                }, step.durationMs ?? EXPERIENCE_INTRO_STEP_MS);
             };
 
             showNextStep();
