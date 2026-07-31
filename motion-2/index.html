@@ -1083,9 +1083,8 @@
         const CALIBRATION_INTRO_MS = 2000;
 
         const EXPERIENCE_DISPLAY_SECONDS = 30;
-        const EXPERIENCE_COUNTDOWN_TICK_MS = 1300;
         const EXPERIENCE_DURATION_MS =
-            EXPERIENCE_DISPLAY_SECONDS * EXPERIENCE_COUNTDOWN_TICK_MS;
+            EXPERIENCE_DISPLAY_SECONDS * MILLISECONDS_PER_SECOND;
         const EXPERIENCE_INTRO_STEP_MS = 3000;
         const EXPERIENCE_INTRO_STEPS = [
             { message: "顔を動かすとスコアが増えるよ！", guide: "score" },
@@ -2667,7 +2666,7 @@
             const elapsed = now - visualizeStartedAt;
             const remaining = Math.max(0, EXPERIENCE_DURATION_MS - elapsed);
             const remainingSeconds = Math.ceil(
-                remaining / EXPERIENCE_COUNTDOWN_TICK_MS
+                remaining / MILLISECONDS_PER_SECOND
             );
             renderExperienceTimer(remainingSeconds);
             updateWorkMusicPlaybackRate(remainingSeconds);
