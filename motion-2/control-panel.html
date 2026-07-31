@@ -370,6 +370,7 @@
         let cardWindow = null;
         let cardReady = false;
         let pendingCardPayload = null;
+        let pendingArchivePayload = null;
         let thumbnailReady = true;
 
         function playLoopMusic(audio, volume) {
@@ -584,6 +585,19 @@
             pendingCardPayload = null;
         }
 
+        async function createPendingArchive() {
+            if (!pendingArchivePayload) return;
+            const payload = pendingArchivePayload;
+            pendingArchivePayload = null;
+
+            try {
+                const archive = await MotionFacecardArchive.create(payload);
+                MotionFacecardArchive.download(archive.blob, archive.fileName);
+            } catch (error) {
+                console.error("カードのアーカイブを保存できませんでした", error);
+            }
+        }
+
         function nextArchiveId(now = new Date()) {
             const year = String(now.getFullYear());
             const month = String(now.getMonth() + 1).padStart(2, "0");
@@ -623,6 +637,7 @@
         highlightConfirmYes.onclick = async () => {
             cardReady = false;
             pendingCardPayload = null;
+            pendingArchivePayload = null;
             highlightConfirmYes.disabled = true;
             highlightConfirmYes.textContent = "作成中...";
             highlightReselect.disabled = true;
@@ -649,20 +664,19 @@
                 const imageUrls = selectedImages.map(item => item.imageUrl);
                 const result = await MotionLenticular.create(imageUrls);
                 const archiveId = nextArchiveId();
-                highlightTitle.textContent = "カードを保存しています...";
-                const archive = await MotionFacecardArchive.create({
+                pendingArchivePayload = {
                     archiveId,
                     lenticular: result,
                     selectedImages,
                     unselectedImages,
                     experienceVideo,
                     cardArtUrl: ARCHIVE_CARD_ART_URL
-                });
-                MotionFacecardArchive.download(archive.blob, archive.fileName);
+                };
                 pendingCardPayload = {
                     imageUrl: result.imageUrl,
                     archiveId
                 };
+                highlightTitle.textContent = "印刷を準備しています...";
                 sendCardPayload();
             } catch (error) {
                 console.error(error);
@@ -737,6 +751,8 @@
             if (data.type === "card-ready") {
                 cardReady = true;
                 sendCardPayload();
+            } else if (data.type === "card-print-started") {
+                createPendingArchive();
             } else if (data.type === "card-received") {
                 clearHighlights();
                 if (thumbnailReady) {

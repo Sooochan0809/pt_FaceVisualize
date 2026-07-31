@@ -262,6 +262,10 @@
       if (document.fonts?.ready) await document.fonts.ready;
       await new Promise(resolve => setTimeout(resolve, PRINT_RENDER_DELAY_MS));
       window.focus();
+      window.opener?.postMessage(
+        { source: "motion-card", type: "card-print-started" },
+        targetOrigin
+      );
       window.print();
     }
 
