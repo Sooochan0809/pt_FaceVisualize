@@ -567,56 +567,6 @@
             font-size: 0.42em;
         }
 
-        #experienceRankingTitle {
-            margin: 0 0 0.45em;
-            font-size: clamp(1.25rem, 3.5vw, 2rem);
-        }
-
-        #experienceRankingList {
-            margin: 0;
-            display: grid;
-            gap: 0.3em;
-            padding: 0;
-            list-style: none;
-            font-size: clamp(1.35rem, 4vw, 2.3rem);
-        }
-
-        .experienceRankingRow {
-            display: grid;
-            grid-template-columns: 3.6em 1fr;
-            align-items: center;
-            padding: 0.28em 0.7em 0.36em;
-            border-radius: 999px;
-            background: #f3f0ff;
-            font-variant-numeric: tabular-nums;
-        }
-
-        .experienceRankingRow.is-player {
-            background: #2fcf83;
-            box-shadow: 0 7px 0 rgb(20 123 78 / 20%);
-            color: #fff;
-            transform: scale(1.06);
-            animation:
-                experiencePlayerRankReveal 0.85s cubic-bezier(0.2, 1.55, 0.45, 1) both,
-                experiencePlayerRankGlow 1s ease-in-out 0.85s infinite alternate;
-        }
-
-        .experienceRankingPosition {
-            text-align: left;
-        }
-
-        .experienceRankingScore {
-            text-align: right;
-        }
-
-        .experienceRankingEllipsis {
-            margin-bottom: 0.22em;
-            color: #8b829e;
-            font-size: 1.6em;
-            line-height: 0.75;
-            text-align: center;
-        }
-
         @keyframes experienceResultsPop {
             from {
                 opacity: 0;
@@ -626,37 +576,6 @@
             to {
                 opacity: 1;
                 transform: translateY(0) scale(1);
-            }
-        }
-
-        @keyframes experiencePlayerRankReveal {
-            from {
-                opacity: 0;
-                transform: scale(0.68) rotate(-3deg);
-            }
-
-            68% {
-                opacity: 1;
-                transform: scale(1.12) rotate(1deg);
-            }
-
-            to {
-                opacity: 1;
-                transform: scale(1.06) rotate(0);
-            }
-        }
-
-        @keyframes experiencePlayerRankGlow {
-            from {
-                box-shadow:
-                    0 7px 0 rgb(20 123 78 / 20%),
-                    0 0 0 rgb(47 207 131 / 0%);
-            }
-
-            to {
-                box-shadow:
-                    0 7px 0 rgb(20 123 78 / 20%),
-                    0 0 26px rgb(47 207 131 / 72%);
             }
         }
 
@@ -918,20 +837,18 @@
             <div id="scoreEffectLayer"></div>
             <div id="experienceTimer" aria-label="残り30秒">残り <span id="experienceTimerValue">30</span> 秒</div>
             <div id="experienceScore">
-                <span id="experienceScoreLabel">スコア</span>
+                <span id="experienceScoreLabel">あつめた動き</span>
                 <span id="experienceScoreNumber">
-                    <span id="experienceScoreValue">0</span><span id="experienceScoreUnit">点</span>
+                    <span id="experienceScoreValue">0</span><span id="experienceScoreUnit">個</span>
                 </span>
             </div>
         </div>
         <section id="experienceResults" aria-labelledby="experienceResultsTitle" hidden>
             <div id="experienceResultsCard">
-                <h2 id="experienceResultsTitle">あなたのスコア</h2>
+                <h2 id="experienceResultsTitle">集まった顔の動き</h2>
                 <p id="experienceResultScore">
-                    <span id="experienceResultScoreValue">0</span><span id="experienceResultScoreUnit">点</span>
+                    <span id="experienceResultScoreValue">0</span><span id="experienceResultScoreUnit">個</span>
                 </p>
-                <h3 id="experienceRankingTitle">ランキング</h3>
-                <ol id="experienceRankingList"></ol>
             </div>
         </section>
         <div id="layerControls" hidden>
@@ -997,12 +914,12 @@
         const ids = [
             "stage", "startScreen", "thumbnailReturnBackground", "video", "sourceImage", "canvas", "vizCanvas", "cameraButton", "archiveButton", "fileInput", "neutralImageInput", "expressionImageInput",
             "calibrate", "measureMotionGain", "clearBaseline", "toggleShapes", "status", "paramSetSelect", "saveParamSet", "motionGainSetSelect", "saveMotionGainSet", "shapesPanel", "layerControls", "sourceControls", "out",
-            "visualizeToggle", "visualizeVeilToggle", "visualizeVeilOpacity", "visualizeVeilOpacityValue", "visualize_01", "calibrationGuide", "calibrationGuideText", "calibrationPoint", "experienceAnnouncement", "experienceHud", "experienceTimer", "experienceTimerValue", "experienceScore", "experienceScoreNumber", "experienceScoreValue", "scoreEffectLayer", "experienceResults", "experienceResultScoreValue", "experienceRankingList", "pointGetSound"
+            "visualizeToggle", "visualizeVeilToggle", "visualizeVeilOpacity", "visualizeVeilOpacityValue", "visualize_01", "calibrationGuide", "calibrationGuideText", "calibrationPoint", "experienceAnnouncement", "experienceHud", "experienceTimer", "experienceTimerValue", "experienceScore", "experienceScoreNumber", "experienceScoreValue", "scoreEffectLayer", "experienceResults", "experienceResultScoreValue", "pointGetSound"
         ];
         const {
             stage, startScreen, thumbnailReturnBackground, video, sourceImage, canvas, vizCanvas, cameraButton, archiveButton, fileInput, neutralImageInput, expressionImageInput,
             calibrate, measureMotionGain, clearBaseline, toggleShapes, status, paramSetSelect, saveParamSet, motionGainSetSelect, saveMotionGainSet, shapesPanel, layerControls, sourceControls, out,
-            visualizeToggle, visualizeVeilToggle, visualizeVeilOpacity, visualizeVeilOpacityValue, visualize_01: visualize, calibrationGuide, calibrationGuideText, calibrationPoint, experienceAnnouncement, experienceHud, experienceTimer, experienceTimerValue, experienceScore: experienceScorePanel, experienceScoreNumber, experienceScoreValue, scoreEffectLayer, experienceResults, experienceResultScoreValue, experienceRankingList, pointGetSound
+            visualizeToggle, visualizeVeilToggle, visualizeVeilOpacity, visualizeVeilOpacityValue, visualize_01: visualize, calibrationGuide, calibrationGuideText, calibrationPoint, experienceAnnouncement, experienceHud, experienceTimer, experienceTimerValue, experienceScore: experienceScorePanel, experienceScoreNumber, experienceScoreValue, scoreEffectLayer, experienceResults, experienceResultScoreValue, pointGetSound
         } = Object.fromEntries(ids.map(id => [id, $(id)]));
         const debugPanels = [layerControls, sourceControls, out];
         const panelTargetOrigin = location.origin === "null" ? "*" : location.origin;
@@ -1088,8 +1005,8 @@
         const EXPERIENCE_INTRO_STEP_MS = 3000;
         const EXPERIENCE_COUNTDOWN_STEP_MS = 1000;
         const EXPERIENCE_INTRO_STEPS = [
-            { message: "顔を動かすとスコアが増えるよ！", guide: "score" },
-            { message: "違う形を作ると高得点！", guide: "score" },
+            { message: "顔を動かして、いろんな形を作ってみよう！", guide: "score" },
+            { message: "たくさん顔を動かすと 「顔の動き」が集まるよ！", guide: "score" },
             { message: `制限時間は${EXPERIENCE_DISPLAY_SECONDS}秒！`, guide: "timer" },
             {
                 message: "３",
@@ -1131,10 +1048,6 @@
 
         const EXPERIENCE_RESULT_DELAY_MS = SCORE_ARRIVAL_DELAY_MS + 200;
         const EXPERIENCE_RESULTS_DISPLAY_MS = 10000;
-        const SCORE_RANKING_STORAGE_KEY = "motion2ScoreRanking";
-        const SCORE_RANKING_LIMIT = 30;
-        const SCORE_RANKING_VISIBLE_LIMIT = 3;
-
         const FEATURE_SAMPLE_INTERVAL_MS = 100;
         const FEATURE_FRAME_PICK_LIMIT = 10;
         const FEATURE_FRAME_WIDTH = 360;
@@ -1658,7 +1571,6 @@
             resetFeatureFrames();
             experienceHighlightsPromise = Promise.resolve();
             scoreEffectLayer.replaceChildren();
-            experienceRankingList.replaceChildren();
             experienceResults.hidden = true;
         }
 
@@ -2740,27 +2652,10 @@
         }
 
         function showExperienceResults(sessionId) {
-            const finalScore = experienceScore;
-            const result = saveScoreRanking(finalScore);
             if (sessionId !== experienceSessionId || !experienceFinished) return;
 
             experienceHud.hidden = true;
-            experienceResultScoreValue.textContent = String(finalScore);
-            experienceRankingList.replaceChildren();
-
-            result.visibleRanking.forEach(entry => {
-                experienceRankingList.append(createRankingRow(entry.rank, entry.score, entry.id === result.player.id));
-            });
-
-            if (result.playerRank > SCORE_RANKING_VISIBLE_LIMIT) {
-                const ellipsis = document.createElement("li");
-                ellipsis.className = "experienceRankingEllipsis";
-                ellipsis.textContent = "⋮";
-                experienceRankingList.append(
-                    ellipsis,
-                    createRankingRow(result.playerRank, result.player.score, true)
-                );
-            }
+            experienceResultScoreValue.textContent = String(experienceScore);
 
             experienceResults.hidden = false;
             experiencePhaseTimer = window.setTimeout(async () => {
@@ -2768,66 +2663,6 @@
                 if (sessionId !== experienceSessionId || !experienceFinished) return;
                 playReturnTransition();
             }, EXPERIENCE_RESULTS_DISPLAY_MS);
-        }
-
-        function saveScoreRanking(score) {
-            const player = {
-                id: globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`,
-                score,
-                completedAt: Date.now()
-            };
-            const ranking = [...loadScoreRanking(), player]
-                .sort((a, b) => b.score - a.score || a.completedAt - b.completedAt);
-            const playerRank = ranking.findIndex(entry => entry.id === player.id) + 1;
-            writeScoreRanking(ranking.slice(0, SCORE_RANKING_LIMIT));
-
-            return {
-                player,
-                playerRank,
-                visibleRanking: ranking
-                    .slice(0, SCORE_RANKING_VISIBLE_LIMIT)
-                    .map((entry, index) => ({ ...entry, rank: index + 1 }))
-            };
-        }
-
-        function loadScoreRanking() {
-            try {
-                return normalizeScoreRanking(
-                    JSON.parse(localStorage.getItem(SCORE_RANKING_STORAGE_KEY) ?? "[]")
-                );
-            } catch {
-                return [];
-            }
-        }
-
-        function writeScoreRanking(ranking) {
-            try {
-                localStorage.setItem(SCORE_RANKING_STORAGE_KEY, JSON.stringify(ranking));
-            } catch { }
-        }
-
-        function normalizeScoreRanking(value) {
-            if (!Array.isArray(value)) return [];
-            return value.filter(entry =>
-                entry
-                && typeof entry.id === "string"
-                && Number.isFinite(entry.score)
-                && Number.isFinite(entry.completedAt)
-            );
-        }
-
-        function createRankingRow(rank, score, isPlayer) {
-            const row = document.createElement("li");
-            const position = document.createElement("span");
-            const scoreText = document.createElement("span");
-
-            row.className = `experienceRankingRow${isPlayer ? " is-player" : ""}`;
-            position.className = "experienceRankingPosition";
-            scoreText.className = "experienceRankingScore";
-            position.textContent = `${rank}位`;
-            scoreText.textContent = `${score}点`;
-            row.append(position, scoreText);
-            return row;
         }
 
         function updateWorkMusicPlaybackRate(remainingSeconds) {

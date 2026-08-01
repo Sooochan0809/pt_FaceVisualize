@@ -698,10 +698,13 @@
         function handleMainWindowMessage(data) {
             switch (data.type) {
                 case "ready":
+                    clearHighlights();
+                    panelStart.hidden = false;
                     setButton("スタート", false);
                     break;
                 case "error":
                     playLoopMusic(thumbnailMusic, THUMBNAIL_MUSIC_VOLUME);
+                    panelStart.hidden = false;
                     setButton("スタート", false);
                     break;
                 case "thumbnail-fade-out":
