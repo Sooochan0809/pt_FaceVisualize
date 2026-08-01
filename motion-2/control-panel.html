@@ -96,8 +96,15 @@
         .highlightPanel.is-loading {
             position: fixed;
             inset: 0;
-            place-content: center;
+            grid-template-columns: minmax(0, 1320px);
+            grid-template-rows: auto auto;
+            align-content: center;
+            justify-content: center;
             padding: clamp(24px, 3vw, 40px);
+        }
+
+        .highlightPanel.is-loading .highlightGrid {
+            width: 100%;
         }
 
         .highlightTitle {
@@ -153,6 +160,40 @@
             height: 100%;
             display: block;
             object-fit: cover;
+        }
+
+        .highlightPlaceholder {
+            cursor: default;
+            background: linear-gradient(145deg, #e8e5f1, #d8d3e5);
+        }
+
+        .highlightLoader {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: clamp(42px, 5vw, 66px);
+            aspect-ratio: 1;
+            transform: translate(-50%, -50%);
+            animation: highlightLoaderSpin 2.4s linear infinite;
+        }
+
+        .highlightLoaderDot {
+            position: absolute;
+            inset: 0;
+            transform: rotate(var(--loader-angle));
+        }
+
+        .highlightLoaderDot::before {
+            content: "";
+            position: absolute;
+            top: 0;
+            left: 50%;
+            width: clamp(6px, 0.8vw, 10px);
+            aspect-ratio: 1;
+            border-radius: 50%;
+            background: #6251d6;
+            opacity: var(--loader-opacity);
+            transform: translateX(-50%);
         }
 
         .highlightRank {
@@ -253,10 +294,17 @@
             }
         }
 
+        @keyframes highlightLoaderSpin {
+            to {
+                transform: translate(-50%, -50%) rotate(1turn);
+            }
+        }
+
         @media (prefers-reduced-motion: reduce) {
 
             .highlightPanel,
-            .highlightCard {
+            .highlightCard,
+            .highlightLoader {
                 animation: none;
             }
         }
@@ -309,7 +357,7 @@
     <main>
         <button id="panelStart" type="button" disabled>準備中...</button>
         <section id="highlightPanel" class="highlightPanel" aria-live="polite" hidden>
-            <h1 id="highlightTitle" class="highlightTitle">ベストショット！📸</h1>
+            <h1 id="highlightTitle" class="highlightTitle">ベストショット📸</h1>
             <p id="highlightInstruction" class="highlightInstruction">6枚 えらんでね（0/6）</p>
             <p id="highlightEmpty" class="highlightEmpty" hidden>画像を取得できませんでした</p>
             <div id="highlightGrid" class="highlightGrid"></div>
@@ -460,6 +508,7 @@
             highlightPanel.hidden = true;
             highlightEmpty.hidden = true;
             highlightGrid.replaceChildren();
+            highlightGrid.removeAttribute("aria-busy");
             highlightImages = [];
             selectedHighlightIndexes = [];
             experienceVideo = null;
@@ -469,13 +518,37 @@
 
         function showHighlightsLoading() {
             panelStart.hidden = true;
-            highlightGrid.replaceChildren();
+            highlightGrid.replaceChildren(
+                ...Array.from(
+                    { length: HIGHLIGHT_DISPLAY_LIMIT },
+                    (_, index) => createHighlightPlaceholder(index)
+                )
+            );
+            highlightGrid.setAttribute("aria-busy", "true");
             highlightDecision.hidden = true;
             highlightTitle.textContent = "素敵な表情を選んでいます...";
             highlightInstruction.hidden = true;
             highlightEmpty.hidden = true;
             highlightPanel.classList.add("is-loading");
             highlightPanel.hidden = false;
+        }
+
+        function createHighlightPlaceholder(index) {
+            const placeholder = document.createElement("figure");
+            const loader = document.createElement("span");
+            placeholder.className = "highlightCard highlightPlaceholder";
+            placeholder.style.setProperty("--highlight-index", index);
+            placeholder.setAttribute("aria-hidden", "true");
+            loader.className = "highlightLoader";
+            loader.append(...Array.from({ length: 8 }, (_, dotIndex) => {
+                const dot = document.createElement("span");
+                dot.className = "highlightLoaderDot";
+                dot.style.setProperty("--loader-angle", `${dotIndex * 45}deg`);
+                dot.style.setProperty("--loader-opacity", 0.3 + dotIndex * 0.09);
+                return dot;
+            }));
+            placeholder.append(loader);
+            return placeholder;
         }
 
         function createHighlightCard(item, index) {
@@ -516,9 +589,10 @@
         function renderHighlights(images, video) {
             const displayImages = images.slice(0, HIGHLIGHT_DISPLAY_LIMIT);
             highlightPanel.classList.remove("is-loading");
+            highlightGrid.removeAttribute("aria-busy");
             panelStart.hidden = true;
             highlightDecision.hidden = false;
-            highlightTitle.textContent = "ベストショット！📸";
+            highlightTitle.textContent = "ベストショット📸";
             highlightInstruction.hidden = false;
             highlightImages = displayImages;
             selectedHighlightIndexes = [];
