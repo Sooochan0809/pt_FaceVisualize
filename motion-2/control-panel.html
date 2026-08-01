@@ -11,6 +11,9 @@
     <style>
         :root {
             --page-inset: clamp(24px, 3vw, 40px);
+            --thumbnail-exit-duration: 1.3s;
+            --thumbnail-transition-easing: cubic-bezier(0.55, 0, 0.3, 1);
+            --highlight-reveal-delay: 650ms;
             color-scheme: light;
             font-family: "Zen Maru Gothic", sans-serif;
             font-weight: 700;
@@ -74,7 +77,73 @@
             display: none !important;
         }
 
+        .panelThumbnail {
+            position: fixed;
+            inset: 0;
+            z-index: 1;
+            display: grid;
+            place-items: center;
+            overflow: hidden;
+            background: #f0f0f0;
+            pointer-events: none;
+        }
+
+        .panelThumbnailFrame {
+            position: relative;
+            width: 100dvw;
+            height: 100dvh;
+            overflow: hidden;
+        }
+
+        .panelThumbnailBackground,
+        .panelThumbnailLayer {
+            position: absolute;
+            display: block;
+            user-select: none;
+            -webkit-user-drag: none;
+        }
+
+        .panelThumbnailBackground {
+            inset: 0;
+            width: 100%;
+            height: 100%;
+        }
+
+        .panelThumbnailTitle {
+            --thumbnail-exit-y: -55vh;
+            top: 27%;
+            left: 50%;
+            width: min(62dvw, 82dvh);
+            transform: translateX(-50%);
+        }
+
+        .panelThumbnailDetail {
+            --thumbnail-exit-y: 55vh;
+            top: 57%;
+            left: 50%;
+            width: min(52dvw, 70dvh);
+            transform: translateX(-50%);
+        }
+
+        .panelThumbnail.is-content-exiting .panelThumbnailLayer {
+            animation:
+                exitPanelThumbnailLayer
+                var(--thumbnail-exit-duration)
+                var(--thumbnail-transition-easing)
+                forwards;
+        }
+
+        .panelThumbnail.is-content-returning .panelThumbnailLayer {
+            animation:
+                exitPanelThumbnailLayer
+                var(--thumbnail-exit-duration)
+                var(--thumbnail-transition-easing)
+                reverse both;
+        }
+
         .highlightPanel {
+            position: relative;
+            z-index: 2;
             display: grid;
             gap: 16px;
             animation: highlightPanelIn 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
@@ -88,6 +157,23 @@
             align-content: center;
             justify-content: center;
             padding: clamp(24px, 3vw, 40px);
+            animation:
+                highlightPanelIn
+                420ms
+                cubic-bezier(0.22, 1, 0.36, 1)
+                var(--highlight-reveal-delay)
+                both;
+        }
+
+        .highlightPanel.is-printing {
+            position: fixed;
+            inset: 0;
+            place-content: center;
+            padding: clamp(24px, 3vw, 40px);
+        }
+
+        .highlightPanel.is-printing .highlightTitle {
+            animation: printingStatusPulse 1.6s ease-in-out infinite;
         }
 
         .highlightPanel.is-loading .highlightGrid {
@@ -274,6 +360,18 @@
             }
         }
 
+        @keyframes exitPanelThumbnailLayer {
+            from {
+                opacity: 1;
+                transform: translateX(-50%) translateY(0);
+            }
+
+            to {
+                opacity: 0;
+                transform: translateX(-50%) translateY(var(--thumbnail-exit-y));
+            }
+        }
+
         @keyframes highlightCardIn {
             from {
                 opacity: 0;
@@ -287,12 +385,25 @@
             }
         }
 
+        @keyframes printingStatusPulse {
+            50% {
+                opacity: 0.55;
+                transform: scale(0.97);
+            }
+        }
+
         @media (prefers-reduced-motion: reduce) {
 
             .highlightPanel,
             .highlightCard,
-            .highlightLoader {
+            .highlightLoader,
+            .highlightPanel.is-printing .highlightTitle,
+            .panelThumbnailLayer {
                 animation: none;
+            }
+
+            .panelThumbnail.is-content-exiting .panelThumbnailLayer {
+                opacity: 0;
             }
         }
 
@@ -341,6 +452,15 @@
 </head>
 
 <body>
+    <section id="panelThumbnail" class="panelThumbnail" aria-label="Suitopiaぷちフェス 顔あそび">
+        <div class="panelThumbnailFrame">
+            <img class="panelThumbnailBackground" src="./assets/images/background.png" alt="" aria-hidden="true">
+            <img class="panelThumbnailLayer panelThumbnailTitle" src="./assets/images/title_block.png"
+                alt="Suitopiaぷちフェス！ 顔あそび">
+            <img class="panelThumbnailLayer panelThumbnailDetail" src="./assets/images/detail_block.png"
+                alt="顔をたくさん動かして、いろんな形を作ってみよう！">
+        </div>
+    </section>
     <main>
         <section id="highlightPanel" class="highlightPanel" aria-live="polite" hidden>
             <h1 id="highlightTitle" class="highlightTitle">ベストショット📸</h1>
@@ -376,6 +496,7 @@
         const calibrationSound = document.getElementById("calibrationSound");
         const countdownSound = document.getElementById("countdownSound");
         const finishSound = document.getElementById("finishSound");
+        const panelThumbnail = document.getElementById("panelThumbnail");
         const highlightPanel = document.getElementById("highlightPanel");
         const highlightTitle = document.getElementById("highlightTitle");
         const highlightInstruction = document.getElementById("highlightInstruction");
@@ -393,6 +514,7 @@
         const WORK_MUSIC_RATE_MIN = 0.5;
         const WORK_MUSIC_RATE_MAX = 2;
         const MUSIC_FADE_MS = 1200;
+        const PRINTING_STATUS_MIN_MS = 4000;
         const HIGHLIGHT_SELECTION_COUNT = 6;
         const HIGHLIGHT_DISPLAY_LIMIT = 10;
         const CARD_POPUP_FEATURES = "popup=yes,width=900,height=700,resizable=yes,scrollbars=yes";
@@ -407,6 +529,8 @@
         let pendingCardPayload = null;
         let pendingArchivePayload = null;
         let thumbnailReady = true;
+        let printingStatusStartedAt = 0;
+        let printingReturnTimer = 0;
 
         function playLoopMusic(audio, volume) {
             audioFadeTokens.set(audio, (audioFadeTokens.get(audio) ?? 0) + 1);
@@ -481,10 +605,14 @@
         }
 
         function clearHighlights() {
-            highlightPanel.classList.remove("is-loading");
+            window.clearTimeout(printingReturnTimer);
+            printingReturnTimer = 0;
+            printingStatusStartedAt = 0;
+            highlightPanel.classList.remove("is-loading", "is-printing");
             highlightPanel.hidden = true;
             highlightEmpty.hidden = true;
             highlightGrid.replaceChildren();
+            highlightGrid.hidden = false;
             highlightGrid.removeAttribute("aria-busy");
             highlightImages = [];
             selectedHighlightIndexes = [];
@@ -493,7 +621,25 @@
             highlightConfirmation.hidden = true;
         }
 
+        function exitPanelThumbnailContent() {
+            panelThumbnail.hidden = false;
+            panelThumbnail.classList.remove("is-content-exiting", "is-content-returning");
+            void panelThumbnail.offsetWidth;
+            panelThumbnail.classList.add("is-content-exiting");
+        }
+
+        function restorePanelThumbnailContent(animate = false) {
+            panelThumbnail.hidden = false;
+            panelThumbnail.classList.remove("is-content-exiting", "is-content-returning");
+            if (!animate) return;
+            void panelThumbnail.offsetWidth;
+            panelThumbnail.classList.add("is-content-returning");
+        }
+
         function showHighlightsLoading() {
+            exitPanelThumbnailContent();
+            highlightPanel.classList.remove("is-printing");
+            highlightGrid.hidden = false;
             highlightGrid.replaceChildren(
                 ...Array.from(
                     { length: HIGHLIGHT_DISPLAY_LIMIT },
@@ -564,8 +710,10 @@
 
         function renderHighlights(images, video) {
             const displayImages = images.slice(0, HIGHLIGHT_DISPLAY_LIMIT);
-            highlightPanel.classList.remove("is-loading");
+            panelThumbnail.hidden = false;
+            highlightPanel.classList.remove("is-loading", "is-printing");
             highlightGrid.removeAttribute("aria-busy");
+            highlightGrid.hidden = false;
             highlightDecision.hidden = false;
             highlightTitle.textContent = "ベストショット📸";
             highlightInstruction.hidden = false;
@@ -591,6 +739,13 @@
         }
 
         function showCardCreationError(message, closeCardWindow = false) {
+            window.clearTimeout(printingReturnTimer);
+            printingReturnTimer = 0;
+            printingStatusStartedAt = 0;
+            highlightPanel.classList.remove("is-printing");
+            highlightGrid.hidden = false;
+            highlightInstruction.hidden = false;
+            highlightDecision.hidden = false;
             if (closeCardWindow && cardWindow && !cardWindow.closed) {
                 cardWindow.close();
             }
@@ -599,6 +754,34 @@
             highlightTitle.textContent = message;
             resetCardCreationControls();
             highlightDecision.disabled = false;
+        }
+
+        function showPrintingStatus() {
+            window.clearTimeout(printingReturnTimer);
+            printingReturnTimer = 0;
+            printingStatusStartedAt = performance.now();
+            panelThumbnail.hidden = false;
+            highlightConfirmation.hidden = true;
+            highlightPanel.classList.remove("is-loading");
+            highlightPanel.classList.add("is-printing");
+            highlightTitle.textContent = "印刷中...";
+            highlightInstruction.hidden = true;
+            highlightGrid.hidden = true;
+            highlightEmpty.hidden = true;
+            highlightDecision.hidden = true;
+            highlightPanel.hidden = false;
+        }
+
+        function finishPrintingStatus() {
+            if (!printingStatusStartedAt) return;
+            const elapsed = performance.now() - printingStatusStartedAt;
+            const delay = Math.max(0, PRINTING_STATUS_MIN_MS - elapsed);
+            window.clearTimeout(printingReturnTimer);
+            printingReturnTimer = window.setTimeout(() => {
+                clearHighlights();
+                restorePanelThumbnailContent(true);
+                playLoopMusic(thumbnailMusic, THUMBNAIL_MUSIC_VOLUME);
+            }, delay);
         }
 
         function toggleHighlightSelection(index) {
@@ -702,6 +885,7 @@
                 return;
             }
 
+            showPrintingStatus();
             highlightDecision.disabled = true;
             highlightDecision.textContent = "作成中...";
             try {
@@ -727,7 +911,6 @@
                     imageUrl: result.imageUrl,
                     archiveId
                 };
-                highlightTitle.textContent = "印刷を準備しています...";
                 sendCardPayload();
             } catch (error) {
                 console.error(error);
@@ -757,9 +940,11 @@
             switch (data.type) {
                 case "ready":
                     clearHighlights();
+                    restorePanelThumbnailContent();
                     break;
                 case "error":
                     playLoopMusic(thumbnailMusic, THUMBNAIL_MUSIC_VOLUME);
+                    restorePanelThumbnailContent();
                     break;
                 case "keyboard-start":
                     prepareKeyboardStart();
@@ -769,8 +954,11 @@
                     break;
                 case "thumbnail-restored":
                     stopWorkMusic();
-                    playLoopMusic(thumbnailMusic, THUMBNAIL_MUSIC_VOLUME);
                     thumbnailReady = true;
+                    if (highlightPanel.hidden) {
+                        playLoopMusic(thumbnailMusic, THUMBNAIL_MUSIC_VOLUME);
+                        restorePanelThumbnailContent();
+                    }
                     break;
                 case "work-music-start":
                     playLoopMusic(workMusic, WORK_MUSIC_VOLUME);
@@ -817,7 +1005,9 @@
             } else if (data.type === "card-print-started") {
                 createPendingArchive();
             } else if (data.type === "card-received") {
-                clearHighlights();
+                showPrintingStatus();
+            } else if (data.type === "card-print-finished") {
+                finishPrintingStatus();
             } else if (data.type === "card-error") {
                 showCardCreationError("印刷画像を準備できませんでした");
             }

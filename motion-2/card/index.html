@@ -255,18 +255,37 @@
       "motion-control-panel",
       "motion-archive"
     ]);
+    let activeArchiveId = "";
+    let printCompletionSent = false;
 
     printButton.addEventListener("click", () => window.print());
+
+    function sendPrintStatus(type) {
+      window.opener?.postMessage(
+        { source: "motion-card", type, archiveId: activeArchiveId },
+        targetOrigin
+      );
+    }
+
+    function notifyPrintFinished() {
+      if (!activeArchiveId || printCompletionSent) return;
+      printCompletionSent = true;
+      sendPrintStatus("card-print-finished");
+    }
+
+    window.addEventListener("afterprint", notifyPrintFinished);
 
     async function printAutomatically() {
       if (document.fonts?.ready) await document.fonts.ready;
       await new Promise(resolve => setTimeout(resolve, PRINT_RENDER_DELAY_MS));
       window.focus();
-      window.opener?.postMessage(
-        { source: "motion-card", type: "card-print-started" },
-        targetOrigin
-      );
-      window.print();
+      printCompletionSent = false;
+      sendPrintStatus("card-print-started");
+      try {
+        window.print();
+      } finally {
+        notifyPrintFinished();
+      }
     }
 
     function loadImage(image, source) {
@@ -287,6 +306,8 @@
       if (event.data.type !== "lenticular-card" || !event.data.imageUrl) return;
 
       try {
+        activeArchiveId = String(event.data.archiveId ?? "");
+        printCompletionSent = false;
         await Promise.all([
           event.data.cardArtUrl
             ? loadImage(cardArt, event.data.cardArtUrl)
@@ -296,7 +317,7 @@
         lenticularPhoto.hidden = false;
         printButton.disabled = false;
         window.opener?.postMessage(
-          { source: "motion-card", type: "card-received" },
+          { source: "motion-card", type: "card-received", archiveId: activeArchiveId },
           targetOrigin
         );
         printAutomatically();
