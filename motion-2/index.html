@@ -1028,15 +1028,19 @@
         const WORK_MUSIC_RATE_WARNING = 1.2;
         const WORK_MUSIC_RATE_URGENT = 2;
 
-        const SCORE_TRIGGER_THRESHOLD = 1.80;
+        const SCORE_TRIGGER_THRESHOLD = 0.22;
         const SCORE_EVENT_COOLDOWN_MS = 220;
-        const SCORE_MEDIUM_THRESHOLD = 2.8;
-        const SCORE_LARGE_THRESHOLD = 4.5;
-        const SCORE_BASE_POINTS = 10;
-        const SCORE_MEDIUM_POINTS = 20;
-        const SCORE_LARGE_POINTS = 30;
-        const SCORE_SHAPE_CHANGE_BONUS = 10;
-        const SCORE_NEW_SHAPE_BONUS = 20;
+        const SCORE_MEDIUM_THRESHOLD = 0.65;
+        const SCORE_LARGE_THRESHOLD = 1.2;
+        const SCORE_MOTION_VERTEX_COUNT = 12;
+        const SCORE_FACE_VISIBLE_RATIO = 0.97;
+        const SCORE_FACE_EDGE_MARGIN_RATIO = 0.01;
+        const SCORE_MIN_FACE_AREA_RATIO = 0.01;
+        const SCORE_BASE_POINTS = 1;
+        const SCORE_MEDIUM_POINTS = 2;
+        const SCORE_LARGE_POINTS = 3;
+        const SCORE_SHAPE_CHANGE_BONUS = 1;
+        const SCORE_NEW_SHAPE_BONUS = 2;
         const SCORE_LAUNCH_RADIUS_RATIO = 0.39;
         const SCORE_ARC_HEIGHT_RATIO = 0.36;
         const SCORE_MAX_ARC_HEIGHT_PX = 150;
@@ -1181,10 +1185,10 @@
         let experienceRecording = null;
         let experienceHighlightsPromise = Promise.resolve();
         let workMusicPlaybackRate = WORK_MUSIC_RATE_NORMAL;
-        const previousMotionScores = new Map();
+        let previousShapeMotionPoints = [];
         const discoveredScoreShapes = new Set(["circle"]);
         let lastScoredShapeName = "circle";
-        let previousMotionSampleAt = 0;
+        let previousShapeMotionSampleAt = 0;
         let paramSets = await loadParamSets();
         let activeParamSetName = "";
         let motionGainSets = await loadMotionGainSets();
@@ -1575,8 +1579,8 @@
         }
 
         function resetMotionTracking() {
-            previousMotionScores.clear();
-            previousMotionSampleAt = 0;
+            previousShapeMotionPoints = [];
+            previousShapeMotionSampleAt = 0;
         }
 
         function resetFeatureFrames() {
@@ -2587,7 +2591,7 @@
             return averageValues(values.map(value => (value - average) ** 2));
         }
 
-        function updateExperienceHud(categories, now = performance.now()) {
+        function updateExperienceHud(spectrumFrame, hasTrackedFace, now = performance.now()) {
             if (experienceHud.hidden || !visualizeStartedAt) return;
 
             const elapsed = now - visualizeStartedAt;
@@ -2602,7 +2606,11 @@
                 if (!experienceFinished) finishExperience();
                 return;
             }
-            const motionAmount = measureMotionAmount(categories, now);
+            const motionAmount = measureShapeMotionAmount(
+                spectrumFrame.motionPoints,
+                hasTrackedFace && spectrumFrame.active,
+                now
+            );
 
             if (
                 motionAmount >= SCORE_TRIGGER_THRESHOLD
@@ -2689,39 +2697,45 @@
             sendControlPanelMessage({ type: "work-music-stop" });
         }
 
-        function measureMotionAmount(categories, now) {
-            if (!categories.length) {
-                previousMotionScores.clear();
-                previousMotionSampleAt = 0;
+        function measureShapeMotionAmount(points, canCollect, now) {
+            if (!canCollect || !points.length) {
+                resetMotionTracking();
                 return 0;
             }
 
-            const currentScores = new Map(categories.map(({ categoryName, score }) => [categoryName, score]));
-            if (!previousMotionSampleAt || !previousMotionScores.size) {
-                saveMotionSample(currentScores, now);
+            if (
+                !previousShapeMotionSampleAt
+                || previousShapeMotionPoints.length !== points.length
+            ) {
+                saveShapeMotionSample(points, now);
                 return 0;
             }
 
             const deltaSeconds = clamp(
-                (now - previousMotionSampleAt) / MILLISECONDS_PER_SECOND,
+                (now - previousShapeMotionSampleAt) / MILLISECONDS_PER_SECOND,
                 1 / 120,
                 0.1
             );
-            const strongestMovements = [...currentScores]
-                .map(([categoryName, score]) => Math.abs(score - (previousMotionScores.get(categoryName) ?? score)) / deltaSeconds)
+            const strongestMovements = points
+                .map((point, index) => {
+                    const previous = previousShapeMotionPoints[index];
+                    return Math.hypot(
+                        point.x - previous.x,
+                        point.y - previous.y
+                    ) / deltaSeconds;
+                })
                 .sort((a, b) => b - a)
-                .slice(0, 8);
-            saveMotionSample(currentScores, now);
+                .slice(0, SCORE_MOTION_VERTEX_COUNT);
+            saveShapeMotionSample(points, now);
 
             return strongestMovements.length
                 ? strongestMovements.reduce((sum, value) => sum + value, 0) / strongestMovements.length
                 : 0;
         }
 
-        function saveMotionSample(scores, now) {
-            previousMotionScores.clear();
-            for (const [categoryName, score] of scores) previousMotionScores.set(categoryName, score);
-            previousMotionSampleAt = now;
+        function saveShapeMotionSample(points, now) {
+            previousShapeMotionPoints = points.map(({ x, y }) => ({ x, y }));
+            previousShapeMotionSampleAt = now;
         }
 
         function scoreForMotion(motionAmount) {
@@ -3050,9 +3064,13 @@
 
             const displayCategories = categories.length ? categories : zeroDisplayCategories();
             const activeCategories = selectedCategories(displayCategories);
-            updateExperienceHud(categories);
+            const spectrumFrame = updateSpectrumFrame(activeCategories, displayCategories);
+            updateExperienceHud(
+                spectrumFrame,
+                primaryFaceIndex >= 0 && faceIsVisibleForScoring(landmarks)
+            );
             collectFeatureFrame(categories, landmarks);
-            if (!visualize.hidden) drawSpectrum(updateSpectrumFrame(activeCategories, displayCategories));
+            if (!visualize.hidden) drawSpectrum(spectrumFrame);
         }
 
         function selectPrimaryFaceIndex(faceLandmarks = []) {
@@ -3217,6 +3235,29 @@
             }, 0);
 
             return insideCount / landmarks.length >= 0.97;
+        }
+
+        function faceIsVisibleForScoring(landmarks = []) {
+            if (!landmarks.length) return false;
+
+            const bounds = landmarkBounds(landmarks);
+            if (
+                !bounds
+                || (bounds.maxX - bounds.minX) * (bounds.maxY - bounds.minY)
+                    < SCORE_MIN_FACE_AREA_RATIO
+            ) {
+                return false;
+            }
+
+            const margin = SCORE_FACE_EDGE_MARGIN_RATIO;
+            const insideCount = landmarks.reduce((count, point) => count + Number(
+                point.x >= margin
+                && point.x <= 1 - margin
+                && point.y >= margin
+                && point.y <= 1 - margin
+            ), 0);
+
+            return insideCount / landmarks.length >= SCORE_FACE_VISIBLE_RATIO;
         }
 
         function setActiveMode(mode) {
@@ -4003,9 +4044,9 @@
                         x: cx + point.x * baseRadius,
                         y: cy + point.y * baseRadius
                     }));
-                    return { active: false, points, material, shapeName: "circle" };
+                    return { active: false, points, motionPoints: [], material, shapeName: "circle" };
                 }
-                return { active: false, points: [], material, shapeName: "circle" };
+                return { active: false, points: [], motionPoints: [], material, shapeName: "circle" };
             }
 
             const maxSpike = Math.min(width, height) * MAX_VERTEX_DISPLACEMENT_RATIO;
@@ -4036,6 +4077,7 @@
             });
             const surfaceStates = resampleCyclicStates(diffusedStates, SHAPE_POINT_COUNT);
             const shape = updateShapeMorph(shapeCategories, calibrated);
+            const motionPoints = [];
             const points = surfaceStates.map(({ position, velocity, phase }, i) => {
                 const templatePoint = blendedTemplatePoint(i, shape.weights);
                 const length = Math.hypot(templatePoint.x, templatePoint.y) || 1;
@@ -4048,6 +4090,12 @@
                 const ripple =
                     Math.sin(time * (1.2 + material.noiseSpeed) + phase)
                     * Math.min(Math.abs(velocity) * material.ripple, 0.055);
+                const userDeformation = clamp(position + ripple, -1, 1);
+                const normalizedDisplacement = userDeformation * maxSpike / baseRadius;
+                motionPoints.push({
+                    x: templatePoint.x + normal.x * normalizedDisplacement,
+                    y: templatePoint.y + normal.y * normalizedDisplacement
+                });
                 const deformation = clamp(position + breathing + surfaceMotion + ripple, -1, 1);
                 const displacement = deformation * maxSpike;
 
@@ -4057,7 +4105,7 @@
                 };
             });
 
-            return { active: calibrated, points, material, shapeName: shape.name };
+            return { active: calibrated, points, motionPoints, material, shapeName: shape.name };
         }
 
         function resampleCyclicStates(states, count) {
