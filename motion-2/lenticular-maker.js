@@ -21,7 +21,7 @@
         ppi: 600,
         lpi: 50,
         phase: 0,
-        brightness: 160,
+        brightness: 120,
         lensDirection: "horizontal",
         reverseOrder: false,
         registrationMarks: true
