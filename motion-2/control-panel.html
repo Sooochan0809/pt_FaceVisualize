@@ -65,22 +65,9 @@
             opacity: 0.55;
         }
 
-        #panelStart,
         .highlightDecision {
             width: min(100%, 520px);
             justify-self: center;
-        }
-
-        #panelStart {
-            position: fixed;
-            top: 50%;
-            left: 50%;
-            width: min(calc(100% - 48px), 520px);
-            transform: translate(-50%, -50%);
-        }
-
-        #panelStart:active {
-            transform: translate(-50%, calc(-50% + 3px));
         }
 
         [hidden] {
@@ -355,7 +342,6 @@
 
 <body>
     <main>
-        <button id="panelStart" type="button" disabled>準備中...</button>
         <section id="highlightPanel" class="highlightPanel" aria-live="polite" hidden>
             <h1 id="highlightTitle" class="highlightTitle">ベストショット📸</h1>
             <p id="highlightInstruction" class="highlightInstruction">6枚 えらんでね（0/6）</p>
@@ -384,7 +370,6 @@
     <script src="./facecard-archive.js"></script>
 
     <script>
-        const panelStart = document.getElementById("panelStart");
         const thumbnailMusic = document.getElementById("thumbnailMusic");
         const workMusic = document.getElementById("workMusic");
         const startSound = document.getElementById("startSound");
@@ -485,16 +470,8 @@
         }
 
         function send(action) {
-            if (!window.opener || window.opener.closed) {
-                setButton("スタート", false);
-                return;
-            }
+            if (!window.opener || window.opener.closed) return;
             window.opener.postMessage({ source: "motion-control-panel", action }, targetOrigin);
-        }
-
-        function setButton(label, disabled) {
-            panelStart.textContent = label;
-            panelStart.disabled = disabled;
         }
 
         function isTrustedMessage(event, expectedSource, expectedChannel) {
@@ -517,7 +494,6 @@
         }
 
         function showHighlightsLoading() {
-            panelStart.hidden = true;
             highlightGrid.replaceChildren(
                 ...Array.from(
                     { length: HIGHLIGHT_DISPLAY_LIMIT },
@@ -590,7 +566,6 @@
             const displayImages = images.slice(0, HIGHLIGHT_DISPLAY_LIMIT);
             highlightPanel.classList.remove("is-loading");
             highlightGrid.removeAttribute("aria-busy");
-            panelStart.hidden = true;
             highlightDecision.hidden = false;
             highlightTitle.textContent = "ベストショット📸";
             highlightInstruction.hidden = false;
@@ -760,26 +735,34 @@
             }
         };
 
-        panelStart.onclick = () => {
+        function prepareKeyboardStart() {
             clearHighlights();
             thumbnailReady = false;
-            setButton("体験中...", true);
             playEffectSound(startSound);
             unlockWorkMusic();
-            send("camera");
-        };
+        }
+
+        document.addEventListener("keydown", event => {
+            if (event.repeat || event.metaKey || event.ctrlKey || event.altKey) return;
+            const key = event.key.toLowerCase();
+            if (key === "s" && thumbnailReady && highlightPanel.hidden) {
+                prepareKeyboardStart();
+                send("camera");
+            } else if (key === "c") {
+                send("calibrate");
+            }
+        });
 
         function handleMainWindowMessage(data) {
             switch (data.type) {
                 case "ready":
                     clearHighlights();
-                    panelStart.hidden = false;
-                    setButton("スタート", false);
                     break;
                 case "error":
                     playLoopMusic(thumbnailMusic, THUMBNAIL_MUSIC_VOLUME);
-                    panelStart.hidden = false;
-                    setButton("スタート", false);
+                    break;
+                case "keyboard-start":
+                    prepareKeyboardStart();
                     break;
                 case "thumbnail-fade-out":
                     fadeOutAudio(thumbnailMusic, THUMBNAIL_MUSIC_VOLUME);
@@ -788,8 +771,6 @@
                     stopWorkMusic();
                     playLoopMusic(thumbnailMusic, THUMBNAIL_MUSIC_VOLUME);
                     thumbnailReady = true;
-                    if (highlightPanel.hidden) panelStart.hidden = false;
-                    setButton("スタート", false);
                     break;
                 case "work-music-start":
                     playLoopMusic(workMusic, WORK_MUSIC_VOLUME);
@@ -837,10 +818,6 @@
                 createPendingArchive();
             } else if (data.type === "card-received") {
                 clearHighlights();
-                if (thumbnailReady) {
-                    panelStart.hidden = false;
-                    setButton("スタート", false);
-                }
             } else if (data.type === "card-error") {
                 showCardCreationError("印刷画像を準備できませんでした");
             }

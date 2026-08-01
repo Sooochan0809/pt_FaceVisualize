@@ -1238,11 +1238,7 @@
         renderParamSetOptions();
         renderMotionGainSetOptions();
 
-        document.addEventListener("keydown", event => {
-            if (event.key !== " " || event.repeat) return;
-            setDebugUiHidden(!uiHidden);
-            syncCalibrationGuideVisibility();
-        });
+        document.addEventListener("keydown", handleKeyboardCommand);
 
         window.addEventListener("beforeunload", () => {
             if (controlPanelWindow && !controlPanelWindow.closed) controlPanelWindow.close();
@@ -1429,6 +1425,46 @@
             }
         }
 
+        function handleKeyboardCommand(event) {
+            if (event.repeat || event.metaKey || event.ctrlKey || event.altKey) return;
+            const target = event.target;
+            if (target instanceof HTMLElement && target.matches("input, select, textarea, button")) return;
+
+            const key = event.key.toLowerCase();
+            if (key === " ") {
+                event.preventDefault();
+                setDebugUiHidden(!uiHidden);
+                syncCalibrationGuideVisibility();
+            } else if (key === "s") {
+                startExperienceFromKeyboard();
+            } else if (key === "c") {
+                startCalibrationFromKeyboard();
+            }
+        }
+
+        function startExperienceFromKeyboard() {
+            if (startScreen.hidden || startTransitionActive) return;
+            sendControlPanelMessage({ type: "keyboard-start" });
+            startCameraExperience().catch(report("カメラを開始できません"));
+        }
+
+        function startCalibrationFromKeyboard() {
+            if (
+                activeMode !== "camera"
+                || startTransitionActive
+                || !visualizing()
+                || !["intro", "waiting"].includes(calibrationStage)
+            ) {
+                return;
+            }
+
+            if (!faceFitsCalibrationFrame(smoothedLandmarks)) {
+                beginFacePositioning();
+                return;
+            }
+            startGuidedCalibration();
+        }
+
         function sendControlPanelMessage(message) {
             if (!controlPanelWindow || controlPanelWindow.closed) return;
             controlPanelWindow.postMessage({ source: "motion-main", ...message }, panelTargetOrigin);
@@ -1443,6 +1479,8 @@
                 sendControlPanelMessage({ type: "ready" });
             } else if (action === "camera") {
                 startCameraExperience().catch(report("カメラを開始できません"));
+            } else if (action === "calibrate") {
+                startCalibrationFromKeyboard();
             }
         }
 
@@ -3196,12 +3234,7 @@
 
             if (calibrationStage === "intro" && performance.now() >= calibrationIntroUntil) {
                 calibrationStage = "waiting";
-                showCalibrationGuide(GUIDE_MESSAGE, "recording");
-            }
-
-            if (faceDetected && !base.size && !calibrationActive()) {
-                if (calibrationStage === "intro") return;
-                startGuidedCalibration();
+                showCalibrationGuide(INTRO_MESSAGE, "waiting");
             }
         }
 
