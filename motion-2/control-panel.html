@@ -529,6 +529,7 @@
         let pendingCardPayload = null;
         let pendingArchivePayload = null;
         let thumbnailReady = true;
+        let practiceActive = false;
         let printingStatusStartedAt = 0;
         let printingReturnTimer = 0;
 
@@ -920,6 +921,7 @@
 
         function prepareKeyboardStart() {
             clearHighlights();
+            practiceActive = false;
             thumbnailReady = false;
             playEffectSound(startSound);
             unlockWorkMusic();
@@ -928,7 +930,10 @@
         document.addEventListener("keydown", event => {
             if (event.repeat || event.metaKey || event.ctrlKey || event.altKey) return;
             const key = event.key.toLowerCase();
-            if (key === "s" && thumbnailReady && highlightPanel.hidden) {
+            if (key === "s" && practiceActive) {
+                practiceActive = false;
+                send("practice-complete");
+            } else if (key === "s" && thumbnailReady && highlightPanel.hidden) {
                 prepareKeyboardStart();
                 send("camera");
             } else if (key === "c") {
@@ -948,6 +953,12 @@
                     break;
                 case "keyboard-start":
                     prepareKeyboardStart();
+                    break;
+                case "practice-started":
+                    practiceActive = true;
+                    break;
+                case "practice-ended":
+                    practiceActive = false;
                     break;
                 case "thumbnail-fade-out":
                     fadeOutAudio(thumbnailMusic, THUMBNAIL_MUSIC_VOLUME);

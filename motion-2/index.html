@@ -993,11 +993,21 @@
         const PRIMARY_FACE_MAX_DISTANCE = 0.22;
 
         const POSITION_MESSAGE = "円の中に顔を入れてください";
+        const CALIBRATION_PAUSED_MESSAGE = "円の中に顔を戻してください";
         const INTRO_MESSAGE = "顔を動かさずに点を見つめてください";
         const GUIDE_MESSAGE = "動かしていない顔を記録しています...";
         const MOTION_GAIN_MESSAGE = "自由に表情を動かしてください.";
-        const CALIBRATION_OUTLINE_STAGES = new Set(["positioning", "intro", "waiting", "recording"]);
+        const CALIBRATION_OUTLINE_STAGES = new Set([
+            "positioning",
+            "intro",
+            "waiting",
+            "recording",
+            "paused"
+        ]);
         const CALIBRATION_INTRO_MS = 2000;
+        const PRACTICE_TITLE_MS = 2000;
+        const PRACTICE_TITLE_MESSAGE = "れんしゅう";
+        const PRACTICE_GUIDE_MESSAGE = "まずは図形を動かす練習をしよう！";
 
         const EXPERIENCE_DISPLAY_SECONDS = 30;
         const EXPERIENCE_DURATION_MS =
@@ -1173,6 +1183,7 @@
         let calibrationGuideActive = false;
         let calibrationIntroUntil = 0;
         let calibrationStage = "idle";
+        let practiceActive = false;
         let experienceAnnouncementTimer = 0;
         let experienceIntroSequenceId = 0;
         let experienceScore = 0;
@@ -1443,6 +1454,10 @@
         }
 
         function startExperienceFromKeyboard() {
+            if (practiceActive) {
+                startExperienceIntro();
+                return;
+            }
             if (startScreen.hidden || startTransitionActive) return;
             sendControlPanelMessage({ type: "keyboard-start" });
             startCameraExperience().catch(report("カメラを開始できません"));
@@ -1481,6 +1496,8 @@
                 startCameraExperience().catch(report("カメラを開始できません"));
             } else if (action === "calibrate") {
                 startCalibrationFromKeyboard();
+            } else if (action === "practice-complete") {
+                if (practiceActive) startExperienceIntro();
             }
         }
 
@@ -1521,6 +1538,7 @@
 
         function beginFacePositioning() {
             if (activeMode !== "camera") return;
+            practiceActive = false;
             hideExperienceHud();
             resetCalibration();
             calibrationStage = "positioning";
@@ -1547,6 +1565,8 @@
         }
 
         function startExperienceIntro() {
+            practiceActive = false;
+            sendControlPanelMessage({ type: "practice-ended" });
             hideExperienceAnnouncement();
             stopWorkMusic();
             visualizeStartedAt = 0;
@@ -1580,6 +1600,20 @@
             };
 
             showNextStep();
+        }
+
+        function startPractice() {
+            practiceActive = true;
+            visualizeStartedAt = 0;
+            hideExperienceHud();
+            sendControlPanelMessage({ type: "practice-started" });
+            startWorkMusic();
+            showExperienceAnnouncement(PRACTICE_TITLE_MESSAGE);
+            const sequenceId = experienceIntroSequenceId;
+            experienceAnnouncementTimer = window.setTimeout(() => {
+                if (!practiceActive || sequenceId !== experienceIntroSequenceId) return;
+                showExperienceAnnouncement(PRACTICE_GUIDE_MESSAGE);
+            }, PRACTICE_TITLE_MS);
         }
 
         function startExperienceHud() {
@@ -3230,6 +3264,21 @@
                 return;
             }
 
+            if (calibrationStage === "recording" && !facePositioned) {
+                calibrationStage = "paused";
+                showCalibrationGuide(CALIBRATION_PAUSED_MESSAGE, "positioning");
+                return;
+            }
+
+            if (calibrationStage === "paused") {
+                if (facePositioned) {
+                    calibrationStage = "recording";
+                    showCalibrationGuide(GUIDE_MESSAGE, "recording");
+                    updateCalibrationPoint();
+                }
+                return;
+            }
+
             if (calibrationStage === "complete") return;
 
             if (calibrationStage === "intro" && performance.now() >= calibrationIntroUntil) {
@@ -3677,7 +3726,13 @@
         }
 
         function updateCalibration(categories, landmarks) {
-            if ((!calibration.warmup && !calibration.remaining) || !categories.length) return;
+            if (
+                calibrationStage === "paused"
+                || (!calibration.warmup && !calibration.remaining)
+                || !categories.length
+            ) {
+                return;
+            }
 
             if (calibration.warmup) {
                 status.textContent = `準備中 ${--calibration.warmup}`;
@@ -3701,7 +3756,7 @@
             resetMotionVisualState();
             hideCalibrationGuide();
             sendControlPanelMessage({ type: "calibration-complete" });
-            startExperienceIntro();
+            startPractice();
             status.textContent = `キャリブ済み (${calibration.samples} frames)`;
         }
 
