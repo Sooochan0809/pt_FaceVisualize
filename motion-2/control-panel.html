@@ -639,6 +639,9 @@
 
         function showHighlightsLoading() {
             exitPanelThumbnailContent();
+            MotionLenticular.prepare().catch(error => {
+                console.warn("頭部位置合わせの準備ができませんでした", error);
+            });
             highlightPanel.classList.remove("is-printing");
             highlightGrid.hidden = false;
             highlightGrid.replaceChildren(

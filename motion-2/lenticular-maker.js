@@ -4,6 +4,11 @@
     const MM_PER_INCH = 25.4;
     const REQUIRED_IMAGE_COUNT = 6;
     const FULL_CIRCLE_RADIANS = Math.PI * 2;
+    const MEDIAPIPE_VERSION = "0.10.34";
+    const MEDIAPIPE_TASKS_URL = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MEDIAPIPE_VERSION}`;
+    const MEDIAPIPE_WASM_URL = `${MEDIAPIPE_TASKS_URL}/wasm`;
+    const FACE_MODEL_URL = "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/latest/face_landmarker.task";
+    const HEAD_ALIGNMENT_LANDMARKS = [33, 133, 362, 263, 1, 4, 61, 291, 199, 152];
     const REGISTRATION_MARK = Object.freeze({
         insetMm: 1.6,
         minimumRadiusMm: 1.05,
@@ -21,11 +26,13 @@
         ppi: 600,
         lpi: 50,
         phase: 0,
-        brightness: 120,
+        brightness: 240,
         lensDirection: "horizontal",
         reverseOrder: false,
-        registrationMarks: true
+        registrationMarks: true,
+        headAlignment: true
     });
+    let faceLandmarkerPromise = null;
 
     const mod = (value, divisor) => ((value % divisor) + divisor) % divisor;
     const mmToPixels = (mm, ppi) => Math.max(1, Math.round(mm / MM_PER_INCH * ppi));
@@ -38,6 +45,42 @@
             image.onerror = reject;
             image.src = imageUrl;
         });
+    }
+
+    function getFaceLandmarker() {
+        if (!faceLandmarkerPromise) {
+            faceLandmarkerPromise = import(MEDIAPIPE_TASKS_URL)
+                .then(async ({ FaceLandmarker, FilesetResolver }) => {
+                    const vision = await FilesetResolver.forVisionTasks(
+                        MEDIAPIPE_WASM_URL
+                    );
+                    return FaceLandmarker.createFromOptions(vision, {
+                        baseOptions: { modelAssetPath: FACE_MODEL_URL },
+                        runningMode: "IMAGE",
+                        numFaces: 1
+                    });
+                })
+                .catch(error => {
+                    faceLandmarkerPromise = null;
+                    throw error;
+                });
+        }
+        return faceLandmarkerPromise;
+    }
+
+    async function detectFaceLandmarks(image) {
+        try {
+            const faceLandmarker = await getFaceLandmarker();
+            const landmarks = faceLandmarker.detect(image).faceLandmarks?.[0];
+            if (!landmarks) return null;
+            return landmarks.map(point => ({
+                x: point.x * image.naturalWidth,
+                y: point.y * image.naturalHeight
+            }));
+        } catch (error) {
+            console.warn("頭部位置を検出できませんでした", error);
+            return null;
+        }
     }
 
     function createAxisImageMap(length, imageCount) {
@@ -76,17 +119,107 @@
         });
     }
 
-    function drawCover(ctx, image, width, height) {
+    function getCoverTransform(image, width, height) {
         const scale = Math.max(width / image.naturalWidth, height / image.naturalHeight);
-        const drawWidth = image.naturalWidth * scale;
-        const drawHeight = image.naturalHeight * scale;
-        ctx.drawImage(
-            image,
-            (width - drawWidth) / 2,
-            (height - drawHeight) / 2,
-            drawWidth,
-            drawHeight
+        return {
+            a: scale,
+            b: 0,
+            c: 0,
+            d: scale,
+            e: (width - image.naturalWidth * scale) / 2,
+            f: (height - image.naturalHeight * scale) / 2
+        };
+    }
+
+    function transformPoint(point, transform) {
+        return {
+            x: transform.a * point.x + transform.c * point.y + transform.e,
+            y: transform.b * point.x + transform.d * point.y + transform.f
+        };
+    }
+
+    function averagePoint(points) {
+        const sum = points.reduce((total, point) => ({
+            x: total.x + point.x,
+            y: total.y + point.y
+        }), { x: 0, y: 0 });
+        return {
+            x: sum.x / points.length,
+            y: sum.y / points.length
+        };
+    }
+
+    function getHeadAlignmentTransform(sourceLandmarks, targetLandmarks) {
+        const pairs = HEAD_ALIGNMENT_LANDMARKS
+            .filter(index => sourceLandmarks[index] && targetLandmarks[index])
+            .map(index => ({
+                source: sourceLandmarks[index],
+                target: targetLandmarks[index]
+            }));
+        if (pairs.length < 2) return null;
+
+        const sourceCenter = averagePoint(pairs.map(pair => pair.source));
+        const targetCenter = averagePoint(pairs.map(pair => pair.target));
+        const fit = pairs.reduce((sum, pair) => {
+            const sourceX = pair.source.x - sourceCenter.x;
+            const sourceY = pair.source.y - sourceCenter.y;
+            const targetX = pair.target.x - targetCenter.x;
+            const targetY = pair.target.y - targetCenter.y;
+            return {
+                dot: sum.dot + sourceX * targetX + sourceY * targetY,
+                cross: sum.cross + sourceX * targetY - sourceY * targetX,
+                size: sum.size + sourceX * sourceX + sourceY * sourceY
+            };
+        }, { dot: 0, cross: 0, size: 0 });
+        if (!fit.size) return null;
+
+        const a = fit.dot / fit.size;
+        const b = fit.cross / fit.size;
+        return {
+            a,
+            b,
+            c: -b,
+            d: a,
+            e: targetCenter.x - a * sourceCenter.x + b * sourceCenter.y,
+            f: targetCenter.y - b * sourceCenter.x - a * sourceCenter.y
+        };
+    }
+
+    function getImageTransforms(items, width, height) {
+        const fittedTransforms = items.map(({ image }) =>
+            getCoverTransform(image, width, height)
         );
+        if (!SETTINGS.headAlignment) return fittedTransforms;
+
+        const referenceIndex = items.findIndex(item => item.landmarks);
+        if (referenceIndex < 0) return fittedTransforms;
+        const referenceLandmarks = items[referenceIndex].landmarks.map(point =>
+            transformPoint(point, fittedTransforms[referenceIndex])
+        );
+
+        return items.map((item, index) => {
+            if (index === referenceIndex || !item.landmarks) {
+                return fittedTransforms[index];
+            }
+            return getHeadAlignmentTransform(
+                item.landmarks,
+                referenceLandmarks
+            ) ?? fittedTransforms[index];
+        });
+    }
+
+    function drawTransformedImage(ctx, image, transform) {
+        ctx.save();
+        ctx.transform(
+            transform.a,
+            transform.b,
+            transform.c,
+            transform.d,
+            transform.e,
+            transform.f
+        );
+        ctx.drawImage(image, 0, 0);
+        ctx.restore();
     }
 
     function drawSixDotMark(ctx, centerX, centerY, radius) {
@@ -190,6 +323,11 @@
         }
 
         const images = await Promise.all(imageUrls.map(loadImage));
+        const landmarks = await Promise.all(images.map(detectFaceLandmarks));
+        const items = images.map((image, index) => ({
+            image,
+            landmarks: landmarks[index]
+        }));
         const width = mmToPixels(SETTINGS.widthMm, SETTINGS.ppi);
         const height = mmToPixels(SETTINGS.heightMm, SETTINGS.ppi);
         const canvas = document.createElement("canvas");
@@ -201,6 +339,7 @@
 
         const horizontalLens = SETTINGS.lensDirection === "horizontal";
         const axisMap = createAxisImageMap(horizontalLens ? height : width, images.length);
+        const imageTransforms = getImageTransforms(items, width, height);
         images.forEach((image, imageIndex) => {
             ctx.save();
             ctx.beginPath();
@@ -209,7 +348,7 @@
             ctx.imageSmoothingEnabled = true;
             ctx.imageSmoothingQuality = "high";
             ctx.filter = `brightness(${SETTINGS.brightness / 100})`;
-            drawCover(ctx, image, width, height);
+            drawTransformedImage(ctx, image, imageTransforms[imageIndex]);
             ctx.restore();
         });
 
@@ -220,9 +359,17 @@
             imageUrl: canvas.toDataURL("image/png"),
             width,
             height,
-            settings: SETTINGS
+            settings: SETTINGS,
+            alignment: {
+                enabled: SETTINGS.headAlignment,
+                detectedImages: landmarks.filter(Boolean).length
+            }
         };
     }
 
-    window.MotionLenticular = Object.freeze({ create, settings: SETTINGS });
+    window.MotionLenticular = Object.freeze({
+        create,
+        prepare: getFaceLandmarker,
+        settings: SETTINGS
+    });
 })();
