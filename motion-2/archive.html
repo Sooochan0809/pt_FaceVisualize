@@ -100,6 +100,11 @@
             color: var(--muted);
         }
 
+        .archive-list {
+            display: grid;
+            gap: 28px;
+        }
+
         .archive-card {
             display: grid;
             width: min(1040px, 100%);
@@ -160,7 +165,7 @@
 
         .archive-meta > .selected-title,
         .archive-meta > .selected-grid,
-        .archive-meta > #unselectedSection {
+        .archive-meta > .unselected-section {
             grid-column: 1 / -1;
         }
 
@@ -178,13 +183,29 @@
             object-fit: cover;
         }
 
-        .print-button {
-            width: fit-content;
+        .card-actions {
+            display: flex;
+            width: 100%;
             grid-column: 1 / -1;
+            justify-content: flex-end;
+            gap: 10px;
             margin-top: 14px;
         }
 
-        .print-button:disabled {
+        .download-button {
+            display: inline-grid;
+            min-height: 52px;
+            place-items: center;
+            border: 2px solid var(--accent);
+            border-radius: 16px;
+            padding: 8px 22px;
+            background: #fff;
+            color: var(--accent);
+            cursor: pointer;
+        }
+
+        .print-button:disabled,
+        .download-button:disabled {
             cursor: wait;
             opacity: 0.55;
         }
@@ -206,8 +227,8 @@
                 grid-template-rows: auto auto auto auto auto 1fr auto;
             }
 
-            .print-button {
-                grid-column: 2;
+            .card-actions {
+                grid-column: 1 / -1;
                 grid-row: 7;
                 align-self: end;
                 justify-self: end;
@@ -252,31 +273,38 @@
         <section id="archiveDrop" class="archive-drop">
             <div>
                 <label class="archive-file-label" for="archiveFile">アーカイブを選択</label>
-                <input id="archiveFile" type="file" accept=".zip,.facecard.zip,application/zip">
-                <p class="archive-hint">facecard.zipをここへドラッグ＆ドロップ</p>
+                <input id="archiveFile" type="file" accept=".zip,.facecard.zip,application/zip" multiple>
+                <p class="archive-hint">複数のfacecard.zipをここへドラッグ＆ドロップできます</p>
             </div>
         </section>
         <p id="archiveStatus" class="archive-status" role="status"></p>
 
-        <section id="archiveCard" class="archive-card" hidden>
-            <div class="archive-media">
-                <img id="lenticularPreview" class="lenticular-preview" alt="レンチキュラー画像">
-            </div>
-            <div class="archive-meta">
-                <h2 id="archiveId"></h2>
-                <p id="archiveCreatedAt"></p>
-                <p id="archiveSettings"></p>
-                <p id="archiveVideoMeta"></p>
-                <a id="experienceVideoLink" class="archive-video-link" target="_blank" rel="noopener" hidden>動画を再生</a>
-                <h3 class="selected-title">選択した6枚</h3>
-                <div id="selectedGrid" class="selected-grid"></div>
-                <div id="unselectedSection">
-                    <h3 class="selected-title">選択されなかった表情</h3>
-                    <div id="unselectedGrid" class="selected-grid"></div>
+        <div id="archiveList" class="archive-list"></div>
+
+        <template id="archiveCardTemplate">
+            <section class="archive-card">
+                <div class="archive-media">
+                    <img class="lenticular-preview" alt="レンチキュラー画像">
                 </div>
-                <button id="printArchive" class="print-button" type="button">再印刷</button>
-            </div>
-        </section>
+                <div class="archive-meta">
+                    <h2 class="archive-id"></h2>
+                    <p class="archive-created-at"></p>
+                    <p class="archive-settings"></p>
+                    <p class="archive-video-meta"></p>
+                    <a class="archive-video-link" target="_blank" rel="noopener" hidden>動画を再生</a>
+                    <h3 class="selected-title">選択した6枚</h3>
+                    <div class="selected-grid selected-images"></div>
+                    <div class="unselected-section">
+                        <h3 class="selected-title">選択されなかった表情</h3>
+                        <div class="selected-grid unselected-images"></div>
+                    </div>
+                    <div class="card-actions">
+                        <button class="download-button" type="button">PNGで保存</button>
+                        <button class="print-button" type="button">再印刷</button>
+                    </div>
+                </div>
+            </section>
+        </template>
     </main>
 
     <script src="./facecard-archive.js"></script>
@@ -284,21 +312,17 @@
         const archiveDrop = document.getElementById("archiveDrop");
         const archiveFile = document.getElementById("archiveFile");
         const archiveStatus = document.getElementById("archiveStatus");
-        const archiveCard = document.getElementById("archiveCard");
-        const archiveId = document.getElementById("archiveId");
-        const archiveCreatedAt = document.getElementById("archiveCreatedAt");
-        const archiveSettings = document.getElementById("archiveSettings");
-        const archiveVideoMeta = document.getElementById("archiveVideoMeta");
-        const lenticularPreview = document.getElementById("lenticularPreview");
-        const experienceVideoLink = document.getElementById("experienceVideoLink");
-        const selectedGrid = document.getElementById("selectedGrid");
-        const unselectedSection = document.getElementById("unselectedSection");
-        const unselectedGrid = document.getElementById("unselectedGrid");
-        const printArchive = document.getElementById("printArchive");
+        const archiveList = document.getElementById("archiveList");
+        const archiveCardTemplate = document.getElementById("archiveCardTemplate");
         const targetOrigin = location.origin === "null" ? "*" : location.origin;
         const CARD_POPUP_FEATURES =
             "popup=yes,width=900,height=700,resizable=yes,scrollbars=yes";
-        let loadedArchive = null;
+        const EXPORT_WIDTH = 1040;
+        const EXPORT_HEIGHT = 624;
+        const EXPORT_SCALE = 2;
+        const loadedArchives = [];
+        let activePrintArchive = null;
+        let activePrintButton = null;
         let cardWindow = null;
 
         function setStatus(message) {
@@ -337,69 +361,328 @@
             );
         }
 
-        async function loadArchive(file) {
-            if (!file) return;
-            setStatus("アーカイブを読み込んでいます...");
-            printArchive.disabled = true;
-            try {
-                const nextArchive = await MotionFacecardArchive.read(file);
-                loadedArchive?.revoke();
-                loadedArchive = nextArchive;
-                const { manifest } = loadedArchive;
-                const settings = manifest.lenticular.settings;
-                const video = manifest.experienceVideo;
+        function blobToDataUrl(blob) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.addEventListener("load", () => resolve(reader.result));
+                reader.addEventListener("error", () => reject(reader.error));
+                reader.readAsDataURL(blob);
+            });
+        }
 
-                archiveId.textContent = manifest.archiveId;
-                archiveCreatedAt.textContent = formatCreatedAt(manifest.createdAt);
-                archiveSettings.textContent =
-                    `${settings.widthMm}mm × ${settings.heightMm}mm`
-                    + ` / ${settings.ppi}ppi / ${settings.lpi}lpi`;
-                archiveVideoMeta.textContent = video
-                    ? `動画 ${video.durationSeconds.toFixed(1)}秒`
-                        + ` / ${video.width}×${video.height}`
-                    : "体験動画なし";
-                lenticularPreview.src = loadedArchive.lenticularImageUrl;
-                if (loadedArchive.experienceVideoUrl) {
-                    experienceVideoLink.href = loadedArchive.experienceVideoUrl;
-                    experienceVideoLink.hidden = false;
-                } else {
-                    experienceVideoLink.removeAttribute("href");
-                    experienceVideoLink.hidden = true;
-                }
-                renderArchiveImages(
-                    selectedGrid,
-                    loadedArchive.selectedImages,
-                    "選択画像"
+        async function loadCanvasImage(url) {
+            const response = await fetch(url);
+            if (!response.ok) throw new Error("画像をPNG用に読み込めませんでした。");
+            const dataUrl = await blobToDataUrl(await response.blob());
+            const image = new Image();
+            await new Promise((resolve, reject) => {
+                image.addEventListener("load", resolve, { once: true });
+                image.addEventListener("error", () => reject(
+                    new Error("画像をPNG用に展開できませんでした。")
+                ), { once: true });
+                image.src = dataUrl;
+            });
+            return image;
+        }
+
+        function roundedRect(context, x, y, width, height, radius) {
+            const right = x + width;
+            const bottom = y + height;
+            context.beginPath();
+            context.moveTo(x + radius, y);
+            context.lineTo(right - radius, y);
+            context.quadraticCurveTo(right, y, right, y + radius);
+            context.lineTo(right, bottom - radius);
+            context.quadraticCurveTo(right, bottom, right - radius, bottom);
+            context.lineTo(x + radius, bottom);
+            context.quadraticCurveTo(x, bottom, x, bottom - radius);
+            context.lineTo(x, y + radius);
+            context.quadraticCurveTo(x, y, x + radius, y);
+            context.closePath();
+        }
+
+        function drawContainedImage(context, image, x, y, width, height, radius) {
+            const scale = Math.min(width / image.width, height / image.height);
+            const drawWidth = image.width * scale;
+            const drawHeight = image.height * scale;
+            context.save();
+            roundedRect(context, x, y, width, height, radius);
+            context.clip();
+            context.fillStyle = "#eeeeee";
+            context.fillRect(x, y, width, height);
+            context.drawImage(
+                image,
+                x + (width - drawWidth) / 2,
+                y + height - drawHeight,
+                drawWidth,
+                drawHeight
+            );
+            context.restore();
+        }
+
+        function drawCoveredImage(context, image, x, y, width, height, radius) {
+            const scale = Math.max(width / image.width, height / image.height);
+            const sourceWidth = width / scale;
+            const sourceHeight = height / scale;
+            const sourceX = (image.width - sourceWidth) / 2;
+            const sourceY = (image.height - sourceHeight) / 2;
+            context.save();
+            roundedRect(context, x, y, width, height, radius);
+            context.clip();
+            context.drawImage(
+                image,
+                sourceX,
+                sourceY,
+                sourceWidth,
+                sourceHeight,
+                x,
+                y,
+                width,
+                height
+            );
+            context.restore();
+        }
+
+        function drawText(context, text, x, y, font, color = "#27231f") {
+            context.fillStyle = color;
+            context.font = font;
+            context.textBaseline = "top";
+            context.fillText(text, x, y);
+        }
+
+        function drawThumbnailRow(context, images, x, y, width) {
+            const gap = 8;
+            const columns = 6;
+            const itemWidth = (width - gap * (columns - 1)) / columns;
+            const itemHeight = itemWidth * 4 / 3;
+            images.slice(0, columns).forEach((image, index) => {
+                drawCoveredImage(
+                    context,
+                    image,
+                    x + index * (itemWidth + gap),
+                    y,
+                    itemWidth,
+                    itemHeight,
+                    8
                 );
-                renderArchiveImages(
-                    unselectedGrid,
-                    loadedArchive.unselectedImages,
-                    "未選択画像"
-                );
-                unselectedSection.hidden = !loadedArchive.unselectedImages.length;
-                archiveCard.hidden = false;
-                printArchive.disabled = false;
-                setStatus(`${file.name}を読み込みました`);
+            });
+        }
+
+        async function cardToPng(loadedArchive) {
+            if (document.fonts?.ready) await document.fonts.ready;
+            const [lenticularImage, selectedImages, unselectedImages] = await Promise.all([
+                loadCanvasImage(loadedArchive.lenticularImageUrl),
+                Promise.all(loadedArchive.selectedImages.map(item =>
+                    loadCanvasImage(item.imageUrl)
+                )),
+                Promise.all(loadedArchive.unselectedImages.map(item =>
+                    loadCanvasImage(item.imageUrl)
+                ))
+            ]);
+            const { manifest } = loadedArchive;
+            const settings = manifest.lenticular.settings;
+            const video = manifest.experienceVideo;
+            const canvas = document.createElement("canvas");
+            canvas.width = EXPORT_WIDTH * EXPORT_SCALE;
+            canvas.height = EXPORT_HEIGHT * EXPORT_SCALE;
+            const context = canvas.getContext("2d");
+            if (!context) throw new Error("Canvasを準備できませんでした。");
+            context.scale(EXPORT_SCALE, EXPORT_SCALE);
+
+            roundedRect(context, 0, 0, EXPORT_WIDTH, EXPORT_HEIGHT, 28);
+            context.fillStyle = "#ffffff";
+            context.fill();
+
+            const padding = 28;
+            const gap = 22;
+            const contentWidth = EXPORT_WIDTH - padding * 2;
+            const mediaWidth = (contentWidth - gap) * 3 / 7;
+            const metaX = padding + mediaWidth + gap;
+            const metaWidth = EXPORT_WIDTH - padding - metaX;
+            const contentHeight = EXPORT_HEIGHT - padding * 2;
+            drawContainedImage(
+                context,
+                lenticularImage,
+                padding,
+                padding,
+                mediaWidth,
+                contentHeight,
+                14
+            );
+
+            drawText(context, manifest.archiveId, metaX, 28,
+                '700 34px "Zen Maru Gothic", sans-serif');
+            drawText(context, formatCreatedAt(manifest.createdAt), metaX, 76,
+                '500 16px "Zen Maru Gothic", sans-serif', "#766f68");
+            drawText(
+                context,
+                `${settings.widthMm}mm × ${settings.heightMm}mm / ${settings.ppi}ppi / ${settings.lpi}lpi`,
+                metaX,
+                102,
+                '500 16px "Zen Maru Gothic", sans-serif',
+                "#766f68"
+            );
+            drawText(
+                context,
+                video
+                    ? `動画 ${video.durationSeconds.toFixed(1)}秒 / ${video.width}×${video.height}`
+                    : "体験動画なし",
+                metaX,
+                128,
+                '500 16px "Zen Maru Gothic", sans-serif',
+                "#766f68"
+            );
+            if (video) {
+                drawText(context, "動画を再生", metaX + metaWidth - 88, 128,
+                    '700 16px "Zen Maru Gothic", sans-serif', "#f19935");
+            }
+
+            drawText(context, `選択した${selectedImages.length}枚`, metaX, 174,
+                '700 16px "Zen Maru Gothic", sans-serif');
+            drawThumbnailRow(context, selectedImages, metaX, 204, metaWidth);
+            if (unselectedImages.length) {
+                drawText(context, "選択されなかった表情", metaX, 352,
+                    '700 16px "Zen Maru Gothic", sans-serif');
+                drawThumbnailRow(context, unselectedImages, metaX, 382, metaWidth);
+            }
+
+            return await new Promise((resolve, reject) => {
+                canvas.toBlob(blob => {
+                    if (blob) resolve(blob);
+                    else reject(new Error("PNGに変換できませんでした。"));
+                }, "image/png");
+            });
+        }
+
+        async function downloadCard(loadedArchive, button) {
+            button.disabled = true;
+            setStatus(`${loadedArchive.manifest.archiveId}のPNGを作成しています...`);
+            try {
+                const png = await cardToPng(loadedArchive);
+                const url = URL.createObjectURL(png);
+                const link = document.createElement("a");
+                link.href = url;
+                link.download = `${loadedArchive.manifest.archiveId}-archive-card.png`;
+                document.body.append(link);
+                link.click();
+                link.remove();
+                window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+                setStatus(`${loadedArchive.manifest.archiveId}のPNGを保存しました`);
             } catch (error) {
                 console.error(error);
-                archiveCard.hidden = true;
-                setStatus(`読み込めませんでした: ${error.message}`);
+                setStatus(`PNGを作成できませんでした: ${error.message}`);
+            } finally {
+                button.disabled = false;
             }
         }
 
+        function openPrintArchive(loadedArchive, button) {
+            if (activePrintButton && activePrintButton !== button) {
+                activePrintButton.disabled = false;
+            }
+            activePrintArchive = loadedArchive;
+            activePrintButton = button;
+            button.disabled = true;
+            setStatus("印刷画面を開いています...");
+            cardWindow = window.open(
+                "./card/index.html",
+                "motion2-archive-print-card",
+                CARD_POPUP_FEATURES
+            );
+            if (!cardWindow) {
+                button.disabled = false;
+                setStatus("印刷画面を開けませんでした");
+            }
+        }
+
+        function createArchiveCard(loadedArchive) {
+            const card = archiveCardTemplate.content.firstElementChild.cloneNode(true);
+            const { manifest } = loadedArchive;
+            const settings = manifest.lenticular.settings;
+            const video = manifest.experienceVideo;
+            const videoLink = card.querySelector(".archive-video-link");
+            const unselectedSection = card.querySelector(".unselected-section");
+            const printButton = card.querySelector(".print-button");
+            const downloadButton = card.querySelector(".download-button");
+
+            card.querySelector(".archive-id").textContent = manifest.archiveId;
+            card.querySelector(".selected-title").textContent =
+                `選択した${loadedArchive.selectedImages.length}枚`;
+            card.querySelector(".archive-created-at").textContent =
+                formatCreatedAt(manifest.createdAt);
+            card.querySelector(".archive-settings").textContent =
+                `${settings.widthMm}mm × ${settings.heightMm}mm`
+                + ` / ${settings.ppi}ppi / ${settings.lpi}lpi`;
+            card.querySelector(".archive-video-meta").textContent = video
+                ? `動画 ${video.durationSeconds.toFixed(1)}秒`
+                    + ` / ${video.width}×${video.height}`
+                : "体験動画なし";
+            card.querySelector(".lenticular-preview").src =
+                loadedArchive.lenticularImageUrl;
+            if (loadedArchive.experienceVideoUrl) {
+                videoLink.href = loadedArchive.experienceVideoUrl;
+                videoLink.hidden = false;
+            }
+            renderArchiveImages(
+                card.querySelector(".selected-images"),
+                loadedArchive.selectedImages,
+                "選択画像"
+            );
+            renderArchiveImages(
+                card.querySelector(".unselected-images"),
+                loadedArchive.unselectedImages,
+                "未選択画像"
+            );
+            unselectedSection.hidden = !loadedArchive.unselectedImages.length;
+            printButton.addEventListener("click", () =>
+                openPrintArchive(loadedArchive, printButton)
+            );
+            downloadButton.addEventListener("click", () =>
+                downloadCard(loadedArchive, downloadButton)
+            );
+            return card;
+        }
+
+        async function loadArchives(files) {
+            const nextFiles = [...files];
+            if (!nextFiles.length) return;
+            let loadedCount = 0;
+            const errors = [];
+            setStatus(`${nextFiles.length}件のアーカイブを読み込んでいます...`);
+
+            for (const file of nextFiles) {
+                try {
+                    const loadedArchive = await MotionFacecardArchive.read(file);
+                    loadedArchives.push(loadedArchive);
+                    archiveList.append(createArchiveCard(loadedArchive));
+                    loadedCount++;
+                    setStatus(`${loadedCount}/${nextFiles.length}件を読み込みました`);
+                } catch (error) {
+                    console.error(error);
+                    errors.push(`${file.name}: ${error.message}`);
+                }
+            }
+
+            const total = loadedArchives.length;
+            setStatus(errors.length
+                ? `${loadedCount}件を追加（表示中${total}件）／${errors.length}件を読み込めませんでした`
+                : `${loadedCount}件を追加しました（表示中${total}件）`
+            );
+        }
+
         function sendCardPayload() {
-            if (!loadedArchive || !cardWindow || cardWindow.closed) return;
+            if (!activePrintArchive || !cardWindow || cardWindow.closed) return;
             cardWindow.postMessage({
                 source: "motion-archive",
                 type: "lenticular-card",
-                imageUrl: loadedArchive.lenticularImageUrl,
-                cardArtUrl: loadedArchive.cardArtUrl,
-                archiveId: loadedArchive.manifest.archiveId
+                imageUrl: activePrintArchive.lenticularImageUrl,
+                cardArtUrl: activePrintArchive.cardArtUrl,
+                archiveId: activePrintArchive.manifest.archiveId
             }, targetOrigin);
         }
 
         archiveFile.addEventListener("change", () => {
-            loadArchive(archiveFile.files[0]);
+            loadArchives(archiveFile.files);
             archiveFile.value = "";
         });
 
@@ -416,22 +699,7 @@
             });
         }
         archiveDrop.addEventListener("drop", event => {
-            loadArchive(event.dataTransfer.files[0]);
-        });
-
-        printArchive.addEventListener("click", () => {
-            if (!loadedArchive) return;
-            printArchive.disabled = true;
-            setStatus("印刷画面を開いています...");
-            cardWindow = window.open(
-                "./card/index.html",
-                "motion2-archive-print-card",
-                CARD_POPUP_FEATURES
-            );
-            if (!cardWindow) {
-                printArchive.disabled = false;
-                setStatus("印刷画面を開けませんでした");
-            }
+            loadArchives(event.dataTransfer.files);
         });
 
         window.addEventListener("message", event => {
@@ -445,15 +713,17 @@
             if (event.data.type === "card-ready") {
                 sendCardPayload();
             } else if (event.data.type === "card-received") {
-                printArchive.disabled = false;
-                setStatus(`${loadedArchive.manifest.archiveId}を印刷画面へ送りました`);
+                if (activePrintButton) activePrintButton.disabled = false;
+                setStatus(`${activePrintArchive.manifest.archiveId}を印刷画面へ送りました`);
             } else if (event.data.type === "card-error") {
-                printArchive.disabled = false;
+                if (activePrintButton) activePrintButton.disabled = false;
                 setStatus("印刷画像を準備できませんでした");
             }
         });
 
-        window.addEventListener("beforeunload", () => loadedArchive?.revoke());
+        window.addEventListener("beforeunload", () => {
+            for (const loadedArchive of loadedArchives) loadedArchive.revoke();
+        });
     </script>
 </body>
 
