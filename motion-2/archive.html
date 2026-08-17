@@ -32,7 +32,8 @@
         }
 
         button,
-        input {
+        input,
+        select {
             font: inherit;
         }
 
@@ -102,18 +103,20 @@
 
         .archive-list {
             display: grid;
+            width: 100%;
+            justify-items: center;
             gap: 28px;
         }
 
         .archive-card {
             display: grid;
             width: min(1040px, 100%);
-            min-height: 0;
             aspect-ratio: 5 / 3;
             grid-template-columns: minmax(0, 3fr) minmax(0, 4fr);
             gap: clamp(14px, 2.5vw, 22px);
             border-radius: 28px;
             margin-inline: auto;
+            justify-self: center;
             padding: clamp(20px, 3vw, 28px);
             background: var(--panel);
             box-shadow: 0 18px 46px rgb(74 53 31 / 12%);
@@ -165,8 +168,76 @@
 
         .archive-meta > .selected-title,
         .archive-meta > .selected-grid,
-        .archive-meta > .unselected-section {
+        .archive-meta > .unselected-section,
+        .archive-meta > .card-footer {
             grid-column: 1 / -1;
+        }
+
+        .card-footer {
+            display: grid;
+            width: 100%;
+            grid-template-columns: minmax(0, 280px) minmax(0, 1fr);
+            align-items: end;
+            gap: 12px;
+            margin-top: 4px;
+        }
+
+        .archive-attributes {
+            display: grid;
+            width: min(280px, 100%);
+            grid-template-columns: minmax(0, 1fr) minmax(0, 0.8fr) auto;
+            align-items: end;
+            gap: 8px;
+            border-radius: 10px;
+            padding: 6px 7px;
+            background: rgb(241 153 53 / 9%);
+        }
+
+        .attribute-control {
+            display: grid;
+            min-width: 0;
+            grid-template-columns: auto minmax(0, 1fr);
+            align-items: center;
+            gap: 4px;
+            color: var(--muted);
+            font-size: 0.68rem;
+        }
+
+        .attribute-label {
+            writing-mode: vertical-rl;
+            text-orientation: upright;
+            letter-spacing: 0.08em;
+            line-height: 1;
+        }
+
+        .attribute-control select,
+        .attribute-control input {
+            width: 100%;
+            min-width: 0;
+            height: 32px;
+            border: 1px solid rgb(118 111 104 / 35%);
+            border-radius: 7px;
+            padding: 3px 7px;
+            background: #fff;
+            color: var(--ink);
+            font-size: 0.82rem;
+        }
+
+        .attribute-age-field {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .attribute-save-button {
+            min-height: 32px;
+            border: 0;
+            border-radius: 8px;
+            padding: 5px 12px;
+            background: var(--accent);
+            color: #fff;
+            cursor: pointer;
         }
 
         .selected-grid {
@@ -175,7 +246,12 @@
             gap: 8px;
         }
 
-        .selected-grid img {
+        .archive-image {
+            min-width: 0;
+            margin: 0;
+        }
+
+        .archive-image img {
             display: block;
             width: 100%;
             aspect-ratio: 3 / 4;
@@ -183,13 +259,26 @@
             object-fit: cover;
         }
 
+        .emotion-estimate {
+            overflow: hidden;
+            margin-top: 4px;
+            border-radius: 6px;
+            padding: 3px 4px;
+            background: rgb(241 153 53 / 13%);
+            color: var(--ink);
+            font-size: clamp(0.58rem, 1vw, 0.72rem);
+            line-height: 1.25;
+            text-align: center;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
         .card-actions {
             display: flex;
-            width: 100%;
-            grid-column: 1 / -1;
+            width: fit-content;
+            justify-self: end;
             justify-content: flex-end;
             gap: 10px;
-            margin-top: 14px;
         }
 
         .download-button {
@@ -224,14 +313,6 @@
 
             .archive-meta {
                 height: 100%;
-                grid-template-rows: auto auto auto auto auto 1fr auto;
-            }
-
-            .card-actions {
-                grid-column: 1 / -1;
-                grid-row: 7;
-                align-self: end;
-                justify-self: end;
             }
         }
 
@@ -256,6 +337,16 @@
 
         }
 
+        @media (max-width: 620px) {
+            .card-footer {
+                grid-template-columns: 1fr;
+            }
+
+            .card-actions {
+                width: 100%;
+            }
+        }
+
         @media (max-width: 380px) {
             .archive-meta {
                 grid-template-columns: 1fr;
@@ -264,6 +355,7 @@
             .archive-meta > * {
                 grid-column: 1;
             }
+
         }
     </style>
 </head>
@@ -292,15 +384,38 @@
                     <p class="archive-settings"></p>
                     <p class="archive-video-meta"></p>
                     <a class="archive-video-link" target="_blank" rel="noopener" hidden>動画を再生</a>
+                    <div class="card-footer">
+                        <div class="archive-attributes" aria-label="属性登録">
+                            <label class="attribute-control">
+                                <span class="attribute-label">性別</span>
+                                <select class="attribute-gender">
+                                    <option value="">未設定</option>
+                                    <option value="female">女性</option>
+                                    <option value="male">男性</option>
+                                    <option value="nonbinary">ノンバイナリー</option>
+                                    <option value="other">その他</option>
+                                    <option value="no-answer">回答しない</option>
+                                </select>
+                            </label>
+                            <label class="attribute-control">
+                                <span class="attribute-label">年齢</span>
+                                <span class="attribute-age-field">
+                                    <input class="attribute-age" type="number" min="0" max="120" step="1" inputmode="numeric" placeholder="未設定">
+                                    <span>歳</span>
+                                </span>
+                            </label>
+                            <button class="attribute-save-button" type="button">登録</button>
+                        </div>
+                        <div class="card-actions">
+                            <button class="download-button" type="button">PNGで保存</button>
+                            <button class="print-button" type="button">再印刷</button>
+                        </div>
+                    </div>
                     <h3 class="selected-title">選択した6枚</h3>
                     <div class="selected-grid selected-images"></div>
                     <div class="unselected-section">
                         <h3 class="selected-title">選択されなかった表情</h3>
                         <div class="selected-grid unselected-images"></div>
-                    </div>
-                    <div class="card-actions">
-                        <button class="download-button" type="button">PNGで保存</button>
-                        <button class="print-button" type="button">再印刷</button>
                     </div>
                 </div>
             </section>
@@ -320,6 +435,23 @@
         const EXPORT_WIDTH = 1040;
         const EXPORT_HEIGHT = 624;
         const EXPORT_SCALE = 2;
+        const EMOTION_LABELS = Object.freeze({
+            neutral: "無表情",
+            happy: "喜び",
+            sad: "悲しみ",
+            angry: "怒り",
+            fearful: "恐れ",
+            disgusted: "嫌悪",
+            surprised: "驚き"
+        });
+        const GENDER_LABELS = Object.freeze({
+            female: "女性",
+            male: "男性",
+            nonbinary: "ノンバイナリー",
+            other: "その他",
+            "no-answer": "回答しない"
+        });
+        const ATTRIBUTE_STORAGE_PREFIX = "motion2-archive-attributes:";
         const loadedArchives = [];
         let activePrintArchive = null;
         let activePrintButton = null;
@@ -339,18 +471,68 @@
                 }).format(date);
         }
 
+        function formatEmotionEstimate(item) {
+            const emotion = String(item?.emotion || "").trim();
+            if (!emotion) return "";
+            const emotionLabel = EMOTION_LABELS[emotion.toLowerCase()] || emotion;
+            const score = Number(item?.emotionScore);
+            if (!Number.isFinite(score)) return emotionLabel;
+            const percentage = score <= 1 ? score * 100 : score;
+            return `${emotionLabel} ${percentage.toFixed(1)}%`;
+        }
+
+        function loadArchiveAttributes(archiveId) {
+            try {
+                const saved = localStorage.getItem(
+                    `${ATTRIBUTE_STORAGE_PREFIX}${archiveId}`
+                );
+                if (!saved) return { gender: "", age: "" };
+                const parsed = JSON.parse(saved);
+                return {
+                    gender: GENDER_LABELS[parsed.gender] ? parsed.gender : "",
+                    age: Number.isInteger(parsed.age) ? String(parsed.age) : ""
+                };
+            } catch (error) {
+                console.warn("属性を復元できませんでした。", error);
+                return { gender: "", age: "" };
+            }
+        }
+
+        function formatAttributeSummary(attributes) {
+            const parts = [];
+            if (attributes?.gender && GENDER_LABELS[attributes.gender]) {
+                parts.push(`性別 ${GENDER_LABELS[attributes.gender]}`);
+            }
+            if (attributes?.age !== "" && Number.isFinite(Number(attributes.age))) {
+                parts.push(`年齢 ${Number(attributes.age)}歳`);
+            }
+            return parts.join(" / ");
+        }
+
         function createArchiveImage(item, index, label) {
+            const figure = document.createElement("figure");
             const image = document.createElement("img");
+            const emotionEstimate = formatEmotionEstimate(item);
             const capturedAt = Number(item.capturedAtSeconds);
             const capturedAtText = Number.isFinite(capturedAt)
                 ? `${capturedAt.toFixed(1)}秒`
                 : "時刻不明";
+            figure.className = "archive-image";
             image.src = item.imageUrl;
-            image.alt = `${label} ${index + 1}`;
-            image.title = item.emotion
-                ? `${item.emotion} / ${capturedAtText}`
+            image.alt = emotionEstimate
+                ? `${label} ${index + 1}（${emotionEstimate}）`
+                : `${label} ${index + 1}`;
+            image.title = emotionEstimate
+                ? `${emotionEstimate} / ${capturedAtText}`
                 : capturedAtText;
-            return image;
+            figure.append(image);
+            if (emotionEstimate) {
+                const caption = document.createElement("figcaption");
+                caption.className = "emotion-estimate";
+                caption.textContent = emotionEstimate;
+                figure.append(caption);
+            }
+            return figure;
         }
 
         function renderArchiveImages(container, items, label) {
@@ -450,21 +632,49 @@
             context.fillText(text, x, y);
         }
 
-        function drawThumbnailRow(context, images, x, y, width) {
+        function drawThumbnailRow(context, images, items, x, y, width) {
             const gap = 8;
             const columns = 6;
             const itemWidth = (width - gap * (columns - 1)) / columns;
             const itemHeight = itemWidth * 4 / 3;
             images.slice(0, columns).forEach((image, index) => {
+                const itemX = x + index * (itemWidth + gap);
                 drawCoveredImage(
                     context,
                     image,
-                    x + index * (itemWidth + gap),
+                    itemX,
                     y,
                     itemWidth,
                     itemHeight,
                     8
                 );
+                const emotionEstimate = formatEmotionEstimate(items[index]);
+                if (emotionEstimate) {
+                    const captionY = y + itemHeight + 4;
+                    const captionHeight = 18;
+                    roundedRect(
+                        context,
+                        itemX,
+                        captionY,
+                        itemWidth,
+                        captionHeight,
+                        6
+                    );
+                    context.fillStyle = "#fdf1e3";
+                    context.fill();
+                    context.fillStyle = "#27231f";
+                    context.font = '700 10px "Zen Maru Gothic", sans-serif';
+                    context.textAlign = "center";
+                    context.textBaseline = "middle";
+                    context.fillText(
+                        emotionEstimate,
+                        itemX + itemWidth / 2,
+                        captionY + captionHeight / 2,
+                        itemWidth - 6
+                    );
+                    context.textAlign = "start";
+                    context.textBaseline = "top";
+                }
             });
         }
 
@@ -537,13 +747,37 @@
                     '700 16px "Zen Maru Gothic", sans-serif', "#f19935");
             }
 
-            drawText(context, `選択した${selectedImages.length}枚`, metaX, 174,
+            const attributeSummary = formatAttributeSummary(loadedArchive.attributes);
+            drawText(
+                context,
+                attributeSummary ? `属性 ${attributeSummary}` : "属性 未登録",
+                metaX,
+                154,
+                '700 14px "Zen Maru Gothic", sans-serif',
+                attributeSummary ? "#27231f" : "#766f68"
+            );
+
+            drawText(context, `選択した${selectedImages.length}枚`, metaX, 184,
                 '700 16px "Zen Maru Gothic", sans-serif');
-            drawThumbnailRow(context, selectedImages, metaX, 204, metaWidth);
+            drawThumbnailRow(
+                context,
+                selectedImages,
+                loadedArchive.selectedImages,
+                metaX,
+                214,
+                metaWidth
+            );
             if (unselectedImages.length) {
-                drawText(context, "選択されなかった表情", metaX, 352,
+                drawText(context, "選択されなかった表情", metaX, 362,
                     '700 16px "Zen Maru Gothic", sans-serif');
-                drawThumbnailRow(context, unselectedImages, metaX, 382, metaWidth);
+                drawThumbnailRow(
+                    context,
+                    unselectedImages,
+                    loadedArchive.unselectedImages,
+                    metaX,
+                    392,
+                    metaWidth
+                );
             }
 
             return await new Promise((resolve, reject) => {
@@ -595,6 +829,39 @@
             }
         }
 
+        function registerArchiveAttributes(
+            loadedArchive,
+            genderSelect,
+            ageInput,
+            button
+        ) {
+            if (!ageInput.reportValidity()) return;
+            const age = ageInput.value === "" ? "" : Number(ageInput.value);
+            const attributes = {
+                gender: genderSelect.value,
+                age
+            };
+            loadedArchive.attributes = attributes;
+            let savedOnDevice = true;
+            try {
+                localStorage.setItem(
+                    `${ATTRIBUTE_STORAGE_PREFIX}${loadedArchive.manifest.archiveId}`,
+                    JSON.stringify(attributes)
+                );
+            } catch (error) {
+                savedOnDevice = false;
+                console.warn("属性を端末へ保存できませんでした。", error);
+            }
+            button.textContent = savedOnDevice ? "登録済み" : "反映済み";
+            setStatus(savedOnDevice
+                ? `${loadedArchive.manifest.archiveId}の属性を登録しました`
+                : "属性はこの画面内に反映しましたが、端末には保存できませんでした"
+            );
+            window.setTimeout(() => {
+                if (button.isConnected) button.textContent = "登録";
+            }, 1200);
+        }
+
         function createArchiveCard(loadedArchive) {
             const card = archiveCardTemplate.content.firstElementChild.cloneNode(true);
             const { manifest } = loadedArchive;
@@ -602,8 +869,14 @@
             const video = manifest.experienceVideo;
             const videoLink = card.querySelector(".archive-video-link");
             const unselectedSection = card.querySelector(".unselected-section");
+            const genderSelect = card.querySelector(".attribute-gender");
+            const ageInput = card.querySelector(".attribute-age");
+            const attributeSaveButton = card.querySelector(".attribute-save-button");
             const printButton = card.querySelector(".print-button");
             const downloadButton = card.querySelector(".download-button");
+            loadedArchive.attributes = loadArchiveAttributes(manifest.archiveId);
+            genderSelect.value = loadedArchive.attributes.gender;
+            ageInput.value = loadedArchive.attributes.age;
 
             card.querySelector(".archive-id").textContent = manifest.archiveId;
             card.querySelector(".selected-title").textContent =
@@ -634,6 +907,14 @@
                 "未選択画像"
             );
             unselectedSection.hidden = !loadedArchive.unselectedImages.length;
+            attributeSaveButton.addEventListener("click", () =>
+                registerArchiveAttributes(
+                    loadedArchive,
+                    genderSelect,
+                    ageInput,
+                    attributeSaveButton
+                )
+            );
             printButton.addEventListener("click", () =>
                 openPrintArchive(loadedArchive, printButton)
             );

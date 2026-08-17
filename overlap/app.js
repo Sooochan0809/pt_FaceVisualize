@@ -51,6 +51,7 @@ import Delaunator from "https://cdn.jsdelivr.net/npm/delaunator@5/+esm";
         const cropHeightInput = document.getElementById("cropHeightInput");
         const cropShowButton = document.getElementById("cropShowButton");
         const monoToggleButton = document.getElementById("monoToggleButton");
+        const averageBlendToggleButton = document.getElementById("averageBlendToggleButton");
         const alignToggleButton = document.getElementById("alignToggleButton");
         const hierarchyToggleButton = document.getElementById("hierarchyToggleButton");
         const hierarchyIntervalControl = document.getElementById("hierarchyIntervalControl");
@@ -70,6 +71,7 @@ import Delaunator from "https://cdn.jsdelivr.net/npm/delaunator@5/+esm";
         let alignmentEnabled = true;
         let alignmentReferenceId = null;
         let monochromeEnabled = true;
+        let averageBlendEnabled = false;
         let mode = MODE_OVERLAY;
         let runtimeActive = true;
         let autoRandomFrameId = null;
@@ -745,7 +747,11 @@ import Delaunator from "https://cdn.jsdelivr.net/npm/delaunator@5/+esm";
             stageImageArea.style.height = `${area.bottom - area.top}px`;
         }
 
-        function createStageMedia(layer, transform) {
+        function getOverlayOpacity(layer, drawIndex) {
+            return averageBlendEnabled ? 1 / (drawIndex + 1) : layer.opacity;
+        }
+
+        function createStageMedia(layer, transform, opacity) {
             let media = layer.stageElement;
             if (!media) {
                 media = layer.mediaType === "video" ? layer.image : document.createElement("img");
@@ -765,7 +771,7 @@ import Delaunator from "https://cdn.jsdelivr.net/npm/delaunator@5/+esm";
 
             media.style.width = `${layer.width}px`;
             media.style.height = `${layer.height}px`;
-            media.style.opacity = layer.opacity;
+            media.style.opacity = opacity;
             media.style.transformOrigin = "0 0";
             media.style.transform = `matrix(${transform.a}, ${transform.b}, ${transform.c}, ${transform.d}, ${transform.e}, ${transform.f})`;
             media.classList.toggle("is-monochrome", monochromeEnabled);
@@ -848,12 +854,12 @@ import Delaunator from "https://cdn.jsdelivr.net/npm/delaunator@5/+esm";
         }
 
         function drawOverlayLayers(ctx, transforms, offset = { x: 0, y: 0 }) {
-            layers.slice().reverse().forEach((layer) => {
+            layers.slice().reverse().forEach((layer, drawIndex) => {
                 const transform = transforms.get(layer.id);
                 if (!transform || !layer.image) return;
 
                 ctx.save();
-                ctx.globalAlpha = layer.opacity;
+                ctx.globalAlpha = getOverlayOpacity(layer, drawIndex);
                 ctx.filter = monochromeEnabled ? "grayscale(1)" : "none";
                 ctx.setTransform(
                     transform.a,
@@ -1794,21 +1800,29 @@ import Delaunator from "https://cdn.jsdelivr.net/npm/delaunator@5/+esm";
             stage.querySelectorAll(".stageLayer").forEach((media) => {
                 if (!activeLayerIds.has(media.dataset.layerId)) media.remove();
             });
-            layers.slice().reverse().forEach((layer) => {
-                stage.appendChild(createStageMedia(layer, transforms.get(layer.id)));
+            layers.slice().reverse().forEach((layer, drawIndex) => {
+                stage.appendChild(createStageMedia(
+                    layer,
+                    transforms.get(layer.id),
+                    getOverlayOpacity(layer, drawIndex)
+                ));
             });
         }
 
         function renderLayerOutputs() {
             const normalizedMorphWeights = getNormalizedMorphWeights();
-            layers.forEach((layer) => {
+            layers.forEach((layer, layerIndex) => {
+                const displayOpacity = getOverlayOpacity(layer, layers.length - 1 - layerIndex);
                 const output = document.querySelector(`[data-opacity-output="${layer.id}"]`);
                 if (output) {
-                    output.value = `${Math.round(layer.opacity * 100)}%`;
+                    output.value = `${Math.round(displayOpacity * 100)}%`;
                     output.textContent = output.value;
                 }
                 const opacityInput = document.querySelector(`[data-opacity-input="${layer.id}"]`);
-                if (opacityInput) opacityInput.value = String(Math.round(layer.opacity * 100));
+                if (opacityInput) {
+                    opacityInput.value = String(Math.round(displayOpacity * 100));
+                    opacityInput.disabled = averageBlendEnabled;
+                }
 
                 const morphOutput = document.querySelector(`[data-morph-output="${layer.id}"]`);
                 if (morphOutput) {
@@ -1946,12 +1960,15 @@ import Delaunator from "https://cdn.jsdelivr.net/npm/delaunator@5/+esm";
         }
 
         function createOpacityControl(layer, item) {
+            const layerIndex = layers.indexOf(layer);
+            const displayOpacity = getOverlayOpacity(layer, layers.length - 1 - layerIndex);
             return createRangeControl(layer, item, {
                 label: "不透明度",
-                value: Math.round(layer.opacity * 100),
+                value: Math.round(displayOpacity * 100),
+                disabled: averageBlendEnabled,
                 inputDatasetKey: "opacityInput",
                 outputDatasetKey: "opacityOutput",
-                outputValue: `${Math.round(layer.opacity * 100)}%`,
+                outputValue: `${Math.round(displayOpacity * 100)}%`,
                 onInput: setOpacity
             });
         }
@@ -2083,6 +2100,8 @@ import Delaunator from "https://cdn.jsdelivr.net/npm/delaunator@5/+esm";
             fileInput.disabled = layers.length >= MAX_IMAGES;
             addLayerSlot.hidden = layers.length >= MAX_IMAGES;
             syncToggleButton(monoToggleButton, monochromeEnabled);
+            averageBlendToggleButton.hidden = mode !== MODE_OVERLAY;
+            syncToggleButton(averageBlendToggleButton, averageBlendEnabled);
             alignToggleButton.hidden = mode !== MODE_OVERLAY;
             syncToggleButton(alignToggleButton, alignmentEnabled);
             hierarchyToggleButton.hidden = mode !== MODE_OVERLAY;
@@ -2128,6 +2147,11 @@ import Delaunator from "https://cdn.jsdelivr.net/npm/delaunator@5/+esm";
 
         monoToggleButton.addEventListener("click", () => {
             monochromeEnabled = !monochromeEnabled;
+            render();
+        });
+
+        averageBlendToggleButton.addEventListener("click", () => {
+            averageBlendEnabled = !averageBlendEnabled;
             render();
         });
 
