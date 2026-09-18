@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>表情のモーフィング</title>
+    <style>
+        :root {
+            --bg: #f0f0f0;
+            --ink: #1b2026;
+            --muted: #6d737b;
+            --line: #d9dde2;
+            --panel: #fff;
+            --accent: #42d392;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        html,
+        body {
+            min-height: 100dvh;
+        }
+
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: var(--bg);
+            color: var(--ink);
+            font-family: "Yu Gothic Medium", "Yu Gothic", sans-serif;
+        }
+
+        button,
+        input {
+            font: inherit;
+        }
+
+        button {
+            border: 1px solid var(--line);
+            background: var(--panel);
+            color: var(--ink);
+            cursor: pointer;
+        }
+
+        button:disabled {
+            cursor: not-allowed;
+            opacity: .42;
+        }
+
+        .app {
+            width: 100dvw;
+            height: 100dvh;
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) 340px;
+            overflow: hidden;
+        }
+
+        .workspace {
+            min-width: 0;
+            height: 100%;
+            display: grid;
+        }
+
+        .stageWrap {
+            min-height: 0;
+            display: grid;
+            place-items: center;
+            padding: 24px;
+        }
+
+        .stage {
+            position: relative;
+            width: min(100%, calc((100dvh - 48px) * 1.333));
+            aspect-ratio: 4 / 3;
+            min-width: 280px;
+            min-height: 210px;
+            overflow: hidden;
+            border: 1px solid var(--line);
+            background:
+                linear-gradient(45deg, #dde1e6 25%, transparent 25%),
+                linear-gradient(-45deg, #dde1e6 25%, transparent 25%),
+                linear-gradient(45deg, transparent 75%, #dde1e6 75%),
+                linear-gradient(-45deg, transparent 75%, #dde1e6 75%);
+            background-color: #f8f9fa;
+            background-position: 0 0, 0 10px, 10px -10px, -10px 0;
+            background-size: 20px 20px;
+        }
+
+        .morphCanvas {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            pointer-events: none;
+        }
+
+        .morphCanvas.is-monochrome {
+            filter: grayscale(1);
+        }
+
+        .stageMessage {
+            position: absolute;
+            inset: 0;
+            display: grid;
+            place-items: center;
+            padding: 24px;
+            color: var(--muted);
+            font-size: .88rem;
+            text-align: center;
+            pointer-events: none;
+        }
+
+        .stageMessage[hidden] {
+            display: none;
+        }
+
+        .stageControls {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            z-index: 2;
+        }
+
+        .stageToggleButton {
+            min-width: 76px;
+            height: 32px;
+            padding: 0 10px;
+            border: 0;
+            border-radius: 8px;
+            background: var(--ink);
+            color: #fff;
+            font-size: .78rem;
+        }
+
+        .stageToggleButton.is-off {
+            background: #7d858f;
+        }
+
+        .sidePanel {
+            min-width: 0;
+            height: 100dvh;
+            display: grid;
+            grid-template-rows: minmax(0, 1fr) auto;
+            border-left: 1px solid var(--line);
+            background: var(--panel);
+        }
+
+        .sideHint {
+            margin: 8px 2px 0;
+            color: var(--muted);
+            font-size: .72rem;
+            line-height: 1.5;
+        }
+
+        .layerList {
+            min-height: 0;
+            display: grid;
+            place-content: center;
+            gap: 10px;
+            padding: 12px;
+            overflow: auto;
+        }
+
+        .layerList.has-layers {
+            align-content: start;
+            justify-content: stretch;
+        }
+
+        .layers {
+            display: grid;
+            align-content: start;
+            gap: 10px;
+        }
+
+        .addLayerSlot {
+            display: grid;
+            place-items: center;
+        }
+
+        .addLayerSlot[hidden] {
+            display: none;
+        }
+
+        .fileButton {
+            position: relative;
+            width: 80px;
+            height: 80px;
+            display: inline-grid;
+            place-items: center;
+            padding: 0;
+            overflow: hidden;
+            border-radius: 8px;
+            background: transparent;
+            cursor: pointer;
+        }
+
+        .fileButton img {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+
+        .fileButton input {
+            position: absolute;
+            inset: 0;
+            opacity: 0;
+            cursor: pointer;
+        }
+
+        .fileButton.is-disabled {
+            opacity: .42;
+            pointer-events: none;
+        }
+
+        .layer {
+            position: relative;
+            display: grid;
+            grid-template-columns: 74px minmax(0, 1fr);
+            gap: 10px;
+            padding: 10px;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            background: #fff;
+        }
+
+        .layerRemoveButton {
+            position: absolute;
+            top: -9px;
+            right: -9px;
+            z-index: 2;
+            width: 24px;
+            height: 24px;
+            display: grid;
+            place-items: center;
+            padding: 0;
+            border: 0;
+            border-radius: 50%;
+            background: transparent;
+        }
+
+        .layerRemoveButton img {
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+        }
+
+        .layerThumb {
+            position: relative;
+            width: 74px;
+            height: 74px;
+            overflow: hidden;
+            border: 1px solid var(--line);
+            border-radius: 6px;
+            background: #f8f9fa;
+        }
+
+        .layerThumb img,
+        .layerThumb video {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            display: block;
+            pointer-events: none;
+        }
+
+        .mediaBadge {
+            position: absolute;
+            left: 4px;
+            bottom: 4px;
+            padding: 2px 5px;
+            border-radius: 4px;
+            background: rgba(27, 32, 38, .78);
+            color: #fff;
+            font-size: .6rem;
+        }
+
+        .layerBody {
+            min-width: 0;
+            display: grid;
+            align-content: center;
+            gap: 10px;
+        }
+
+        .fileName {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            font-size: .83rem;
+        }
+
+        .morphControl {
+            display: grid;
+            grid-template-columns: 1fr 3.2em;
+            gap: 8px;
+            align-items: center;
+        }
+
+        input[type="range"] {
+            width: 100%;
+            accent-color: var(--accent);
+        }
+
+        output {
+            color: var(--muted);
+            font-size: .78rem;
+            text-align: right;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .layerState {
+            color: var(--muted);
+            font-size: .7rem;
+        }
+
+        .layerState.is-error {
+            color: #c64b4b;
+        }
+
+        .sideFooter {
+            padding: 12px;
+            border-top: 1px solid var(--line);
+        }
+
+        .footerMain {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+        }
+
+        .status {
+            color: var(--muted);
+            font-size: .82rem;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .textButton {
+            height: 36px;
+            padding: 0 12px;
+            border: 0;
+            border-radius: 8px;
+            background: var(--ink);
+            color: #fff;
+            font-size: .88rem;
+        }
+
+        @media (max-width: 860px) {
+            body {
+                overflow: auto;
+            }
+
+            .app {
+                min-height: 100dvh;
+                height: auto;
+                grid-template-columns: 1fr;
+                grid-template-rows: minmax(420px, 58dvh) auto;
+                overflow: visible;
+            }
+
+            .workspace {
+                min-height: 420px;
+            }
+
+            .stageWrap {
+                padding: 12px;
+            }
+
+            .stage {
+                width: min(100%, calc((58dvh - 24px) * 1.333));
+            }
+
+            .sidePanel {
+                height: auto;
+                min-height: 42dvh;
+                border-left: 0;
+                border-top: 1px solid var(--line);
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="app">
+        <main class="workspace">
+            <section class="stageWrap" aria-label="モーフィングプレビュー">
+                <div class="stage" id="stage">
+                    <canvas class="morphCanvas is-monochrome" id="morphCanvas" width="600" height="800"></canvas>
+                    <p class="stageMessage" id="stageMessage">顔が写った画像または動画を2つ以上追加してください</p>
+                    <div class="stageControls">
+                        <button class="stageToggleButton" id="monoToggleButton" type="button"
+                            aria-pressed="true">モノクロ</button>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <aside class="sidePanel" aria-label="インポート素材">
+            <div class="layerList" id="layerList">
+                <div class="layers" id="layers"></div>
+                <div class="addLayerSlot" id="addLayerSlot">
+                    <label class="fileButton" id="fileButton" aria-label="画像・動画を追加">
+                        <img src="../overlap/icon-plus.png" alt="">
+                        <input id="fileInput" type="file" accept="image/*,video/*" multiple>
+                    </label>
+                </div>
+            </div>
+            <footer class="sideFooter">
+                <div class="footerMain">
+                    <span class="status" id="status">0 / 7</span>
+                    <button class="textButton" id="clearButton" type="button" disabled>クリア</button>
+                </div>
+            </footer>
+        </aside>
+    </div>
+    <script type="module" src="app.js?v=20260918-1"></script>
+</body>
+
+</html>
