@@ -279,11 +279,13 @@ function renderMorph() {
         .map((layer) => ({ layer, weight: normalizedWeights.get(layer.id) || 0 }))
         .filter((item) => item.weight > 0);
 
-    stageMessage.hidden = activeLayers.length > 0;
+    if (stageMessage) stageMessage.hidden = activeLayers.length > 0;
     if (activeLayers.length === 0) {
-        stageMessage.textContent = layers.length
-            ? "顔を検出できる素材を追加してください"
-            : "顔が写った画像または動画を2つ以上追加してください";
+        if (stageMessage) {
+            stageMessage.textContent = layers.length
+                ? "顔を検出できる素材を追加してください"
+                : "顔が写った画像または動画を2つ以上追加してください";
+        }
         return;
     }
 
