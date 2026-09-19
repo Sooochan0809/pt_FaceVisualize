@@ -168,16 +168,6 @@
             background: #171a1e;
         }
 
-        .emptyVideo {
-            color: #abb1b9;
-            font-size: .85rem;
-            text-align: center;
-        }
-
-        .emptyVideo[hidden] {
-            display: none;
-        }
-
         .chartWrap {
             position: relative;
             height: 330px;
@@ -516,7 +506,7 @@
             <section class="panel">
                 <div class="videoShell">
                     <video id="video" playsinline muted controls hidden></video>
-                    <div class="emptyVideo" id="emptyVideo">顔が写った動画を選択してください</div>
+                    <div class="emptyVideo" id="emptyVideo"></div>
                 </div>
                 <div class="toolbar">
                     <label class="fileButton">動画を選択<input id="fileInput" type="file" accept="video/*"></label>
@@ -640,7 +630,7 @@
                                 value="0.5"><span>秒</span></label>
                     </div>
                 </div>
-                <p class="small muted">再生速度は「raw区間 ÷ 目標時間」で計算します。例：raw 0.2秒を0.5秒にすると0.40xです。</p>
+                <p class="small muted">再生速度は「raw区間 ÷ 目標時間」で計算。(例：raw 0.2秒を0.5秒にしたい場合、0.40倍速)</p>
             </section>
 
             <section class="panel">
@@ -670,14 +660,13 @@
 
             <section class="panel">
                 <div class="panelHeader">
-                    <h2>保存</h2>
+                    <h2>書き出し</h2>
                 </div>
                 <div class="buttonRow">
-                    <button id="exportVideoButton" class="primaryButton" type="button" disabled>正規化WebM</button>
-                    <button id="exportCsvButton" type="button" disabled>解析CSV</button>
-                    <button id="exportJsonButton" type="button" disabled>設定JSON</button>
+                    <button id="exportVideoButton" class="primaryButton" type="button" disabled>WebM</button>
+                    <button id="exportCsvButton" type="button" disabled>CSV</button>
+                    <button id="exportJsonButton" type="button" disabled>JSON（設定）</button>
                 </div>
-                <p class="small muted">WebMは映像のみを書き出します。書き出しには正規化後の再生時間と同程度かかります。</p>
             </section>
         </aside>
     </main>
