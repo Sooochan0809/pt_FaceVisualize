@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="ja">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -19,8 +20,15 @@
             --target: #ef7f45;
             --danger: #c64b4b;
         }
-        * { box-sizing: border-box; }
-        html { min-height: 100%; }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        html {
+            min-height: 100%;
+        }
+
         body {
             min-height: 100dvh;
             margin: 0;
@@ -28,16 +36,32 @@
             color: var(--ink);
             font-family: "Yu Gothic Medium", "Yu Gothic", sans-serif;
         }
-        button, input, select { font: inherit; }
-        button, .fileButton {
+
+        button,
+        input,
+        select {
+            font: inherit;
+        }
+
+        button,
+        .fileButton {
             border: 1px solid var(--line);
             border-radius: 8px;
             background: var(--panel);
             color: var(--ink);
             cursor: pointer;
         }
-        button:disabled, input:disabled, select:disabled { cursor: not-allowed; opacity: .45; }
-        a { color: inherit; }
+
+        button:disabled,
+        input:disabled,
+        select:disabled {
+            cursor: not-allowed;
+            opacity: .45;
+        }
+
+        a {
+            color: inherit;
+        }
 
         .topbar {
             position: sticky;
@@ -53,10 +77,24 @@
             background: rgba(255, 255, 255, .94);
             backdrop-filter: blur(10px);
         }
-   
-        .backLink { color: var(--muted); font-size: .8rem; text-decoration: none; }
-        .topbar h1 { margin: 0; font-size: 1rem; font-weight: 600; }
-        .topbar p { margin: 0 0 0 auto; color: var(--muted); font-size: .75rem; }
+
+        .backLink {
+            color: var(--muted);
+            font-size: .8rem;
+            text-decoration: none;
+        }
+
+        .topbar h1 {
+            margin: 0;
+            font-size: 1rem;
+            font-weight: 600;
+        }
+
+        .topbar p {
+            margin: 0 0 0 auto;
+            color: var(--muted);
+            font-size: .75rem;
+        }
 
         .app {
             width: min(1480px, 100%);
@@ -65,14 +103,24 @@
             display: grid;
             grid-template-columns: minmax(0, 1.55fr) minmax(340px, .8fr);
         }
-        .workspace { min-width: 0; padding: 18px; }
+
+        .workspace {
+            min-width: 0;
+            padding: 18px;
+        }
+
         .settings {
             min-width: 0;
             padding: 18px;
             border-left: 1px solid var(--line);
             background: var(--panel);
         }
-        .stack { display: grid; gap: 14px; }
+
+        .stack {
+            display: grid;
+            gap: 14px;
+        }
+
         .panel {
             min-width: 0;
             padding: 14px;
@@ -80,7 +128,13 @@
             border-radius: 10px;
             background: var(--panel);
         }
-        .panel h2, .panel h3 { margin: 0; font-size: .9rem; }
+
+        .panel h2,
+        .panel h3 {
+            margin: 0;
+            font-size: .9rem;
+        }
+
         .panelHeader {
             display: flex;
             align-items: center;
@@ -88,8 +142,15 @@
             gap: 12px;
             margin-bottom: 12px;
         }
-        .muted { color: var(--muted); }
-        .small { font-size: .72rem; line-height: 1.55; }
+
+        .muted {
+            color: var(--muted);
+        }
+
+        .small {
+            font-size: .72rem;
+            line-height: 1.55;
+        }
 
         .videoShell {
             min-height: 260px;
@@ -99,9 +160,23 @@
             border-radius: 8px;
             background: #171a1e;
         }
-        video { display: block; width: 100%; max-height: 56dvh; background: #171a1e; }
-        .emptyVideo { color: #abb1b9; font-size: .85rem; text-align: center; }
-        .emptyVideo[hidden] { display: none; }
+
+        video {
+            display: block;
+            width: 100%;
+            max-height: 56dvh;
+            background: #171a1e;
+        }
+
+        .emptyVideo {
+            color: #abb1b9;
+            font-size: .85rem;
+            text-align: center;
+        }
+
+        .emptyVideo[hidden] {
+            display: none;
+        }
 
         .chartWrap {
             position: relative;
@@ -111,7 +186,14 @@
             border-radius: 8px;
             background: #fff;
         }
-        #chart { width: 100%; height: 100%; display: block; cursor: crosshair; }
+
+        #chart {
+            width: 100%;
+            height: 100%;
+            display: block;
+            cursor: crosshair;
+        }
+
         .chartEmpty {
             position: absolute;
             inset: 0;
@@ -123,14 +205,45 @@
             text-align: center;
             pointer-events: none;
         }
-        .chartEmpty[hidden] { display: none; }
-        .legend { display: flex; flex-wrap: wrap; gap: 14px; color: var(--muted); font-size: .74rem; }
-        .legendItem { display: inline-flex; align-items: center; gap: 5px; }
-        .swatch { width: 18px; height: 3px; border-radius: 2px; }
 
-        .toolbar, .buttonRow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-        .toolbar { margin-top: 10px; }
-        .fileButton, button {
+        .chartEmpty[hidden] {
+            display: none;
+        }
+
+        .legend {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 14px;
+            color: var(--muted);
+            font-size: .74rem;
+        }
+
+        .legendItem {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .swatch {
+            width: 18px;
+            height: 3px;
+            border-radius: 2px;
+        }
+
+        .toolbar,
+        .buttonRow {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .toolbar {
+            margin-top: 10px;
+        }
+
+        .fileButton,
+        button {
             min-height: 36px;
             display: inline-flex;
             align-items: center;
@@ -138,17 +251,68 @@
             padding: 0 12px;
             font-size: .8rem;
         }
-        .fileButton { position: relative; overflow: hidden; background: var(--ink); color: #fff; border-color: var(--ink); }
-        .fileButton input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
-        .primaryButton { border-color: var(--ink); background: var(--ink); color: #fff; }
-        .accentButton { border-color: var(--accent); background: var(--accent); color: #10231b; }
-        .status { flex: 1; min-width: 180px; color: var(--muted); font-size: .76rem; }
-        progress { width: 100%; height: 7px; margin-top: 10px; accent-color: var(--accent); }
-        progress[hidden] { display: none; }
 
-        .formGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
-        label.field { min-width: 0; display: grid; gap: 5px; color: var(--muted); font-size: .73rem; }
-        input[type="number"], select {
+        .fileButton {
+            position: relative;
+            overflow: hidden;
+            background: var(--ink);
+            color: #fff;
+            border-color: var(--ink);
+        }
+
+        .fileButton input {
+            position: absolute;
+            inset: 0;
+            opacity: 0;
+            cursor: pointer;
+        }
+
+        .primaryButton {
+            border-color: var(--ink);
+            background: var(--ink);
+            color: #fff;
+        }
+
+        .accentButton {
+            border-color: var(--accent);
+            background: var(--accent);
+            color: #10231b;
+        }
+
+        .status {
+            flex: 1;
+            min-width: 180px;
+            color: var(--muted);
+            font-size: .76rem;
+        }
+
+        progress {
+            width: 100%;
+            height: 7px;
+            margin-top: 10px;
+            accent-color: var(--accent);
+        }
+
+        progress[hidden] {
+            display: none;
+        }
+
+        .formGrid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 10px;
+        }
+
+        label.field {
+            min-width: 0;
+            display: grid;
+            gap: 5px;
+            color: var(--muted);
+            font-size: .73rem;
+        }
+
+        input[type="number"],
+        select {
             width: 100%;
             min-width: 0;
             height: 36px;
@@ -158,21 +322,52 @@
             background: #fff;
             color: var(--ink);
         }
-        input[type="range"] { width: 100%; accent-color: var(--accent); }
-        .inlineCheck { display: inline-flex; align-items: center; gap: 7px; font-size: .76rem; }
 
-        .boundaryList { display: grid; gap: 9px; }
+        input[type="range"] {
+            width: 100%;
+            accent-color: var(--accent);
+        }
+
+        .inlineCheck {
+            display: inline-flex;
+            align-items: center;
+            gap: 7px;
+            font-size: .76rem;
+        }
+
+        .boundaryList {
+            display: grid;
+            gap: 9px;
+        }
+
         .boundary {
             display: grid;
             grid-template-columns: 112px minmax(90px, 1fr) 76px 56px;
             gap: 7px;
             align-items: center;
         }
-        .boundaryName { font-size: .75rem; }
-        .boundary input[type="number"] { height: 32px; font-size: .76rem; }
-        .boundary button { min-height: 32px; height: 32px; padding: 0 7px; font-size: .7rem; }
 
-        .segments { display: grid; gap: 8px; }
+        .boundaryName {
+            font-size: .75rem;
+        }
+
+        .boundary input[type="number"] {
+            height: 32px;
+            font-size: .76rem;
+        }
+
+        .boundary button {
+            min-height: 32px;
+            height: 32px;
+            padding: 0 7px;
+            font-size: .7rem;
+        }
+
+        .segments {
+            display: grid;
+            gap: 8px;
+        }
+
         .segment {
             display: grid;
             grid-template-columns: 8px minmax(0, 1fr) 82px;
@@ -182,42 +377,134 @@
             border: 1px solid var(--line);
             border-radius: 8px;
         }
-        .segmentColor { align-self: stretch; border-radius: 4px; }
-        .segmentTitle { font-size: .77rem; }
-        .segmentMeta { margin-top: 3px; color: var(--muted); font-size: .68rem; font-variant-numeric: tabular-nums; }
-        .durationField { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 4px; font-size: .7rem; }
-        .durationField input { height: 32px; min-width: 0; padding: 0 5px; }
-        .segment.is-disabled { opacity: .42; }
 
-        .previewTimeline { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 8px; }
-        .previewTimeline button { width: 42px; padding: 0; }
-        .timeOutput { width: 86px; color: var(--muted); font-size: .72rem; text-align: right; font-variant-numeric: tabular-nums; }
+        .segmentColor {
+            align-self: stretch;
+            border-radius: 4px;
+        }
+
+        .segmentTitle {
+            font-size: .77rem;
+        }
+
+        .segmentMeta {
+            margin-top: 3px;
+            color: var(--muted);
+            font-size: .68rem;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .durationField {
+            display: grid;
+            grid-template-columns: 1fr auto;
+            align-items: center;
+            gap: 4px;
+            font-size: .7rem;
+        }
+
+        .durationField input {
+            height: 32px;
+            min-width: 0;
+            padding: 0 5px;
+        }
+
+        .segment.is-disabled {
+            opacity: .42;
+        }
+
+        .previewTimeline {
+            display: grid;
+            grid-template-columns: auto 1fr auto;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .previewTimeline button {
+            width: 42px;
+            padding: 0;
+        }
+
+        .timeOutput {
+            width: 86px;
+            color: var(--muted);
+            font-size: .72rem;
+            text-align: right;
+            font-variant-numeric: tabular-nums;
+        }
+
         .summary {
             display: grid;
             grid-template-columns: repeat(3, 1fr);
             gap: 8px;
             margin-top: 10px;
         }
-        .metric { padding: 8px; border-radius: 7px; background: #f5f6f7; }
-        .metricLabel { color: var(--muted); font-size: .65rem; }
-        .metricValue { margin-top: 2px; font-size: .82rem; font-variant-numeric: tabular-nums; }
-        .error { color: var(--danger); }
+
+        .metric {
+            padding: 8px;
+            border-radius: 7px;
+            background: #f5f6f7;
+        }
+
+        .metricLabel {
+            color: var(--muted);
+            font-size: .65rem;
+        }
+
+        .metricValue {
+            margin-top: 2px;
+            font-size: .82rem;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .error {
+            color: var(--danger);
+        }
 
         @media (max-width: 900px) {
-            .topbar p { display: none; }
-            .app { grid-template-columns: 1fr; }
-            .settings { border-left: 0; border-top: 1px solid var(--line); }
-            .chartWrap { height: 280px; }
+            .topbar p {
+                display: none;
+            }
+
+            .app {
+                grid-template-columns: 1fr;
+            }
+
+            .settings {
+                border-left: 0;
+                border-top: 1px solid var(--line);
+            }
+
+            .chartWrap {
+                height: 280px;
+            }
         }
+
         @media (max-width: 560px) {
-            .workspace, .settings { padding: 10px; }
-            .formGrid { grid-template-columns: 1fr; }
-            .boundary { grid-template-columns: 90px minmax(70px, 1fr) 68px; }
-            .boundary button { grid-column: 2 / 4; }
-            .summary { grid-template-columns: 1fr; }
+
+            .workspace,
+            .settings {
+                padding: 10px;
+            }
+
+            .formGrid {
+                grid-template-columns: 1fr;
+            }
+
+            .boundary {
+                grid-template-columns: 90px minmax(70px, 1fr) 68px;
+            }
+
+            .boundary button {
+                grid-column: 2 / 4;
+            }
+
+            .summary {
+                grid-template-columns: 1fr;
+            }
         }
     </style>
 </head>
+
 <body>
     <header class="topbar">
         <h1>表情動画ノーマライザー</h1>
@@ -243,8 +530,10 @@
                 <div class="panelHeader">
                     <h2>感情値グラフ</h2>
                     <div class="legend">
-                        <span class="legendItem"><i class="swatch" style="background:var(--base)"></i><span id="baseLegend">無表情</span></span>
-                        <span class="legendItem"><i class="swatch" style="background:var(--target)"></i><span id="targetLegend">喜び</span></span>
+                        <span class="legendItem"><i class="swatch" style="background:var(--base)"></i><span
+                                id="baseLegend">無表情</span></span>
+                        <span class="legendItem"><i class="swatch" style="background:var(--target)"></i><span
+                                id="targetLegend">喜び</span></span>
                     </div>
                 </div>
                 <div class="chartWrap" id="chartWrap">
@@ -257,7 +546,9 @@
 
         <aside class="settings stack">
             <section class="panel">
-                <div class="panelHeader"><h2>解析設定</h2></div>
+                <div class="panelHeader">
+                    <h2>解析設定</h2>
+                </div>
                 <div class="formGrid">
                     <label class="field">基準の感情
                         <select id="baseEmotion"></select>
@@ -317,43 +608,70 @@
             </section>
 
             <section class="panel">
-                <div class="panelHeader"><h2>目標時間</h2></div>
+                <div class="panelHeader">
+                    <h2>目標時間</h2>
+                </div>
                 <div class="segments">
                     <div class="segment" id="neutralSegment">
                         <i class="segmentColor" style="background:#88919c"></i>
-                        <div><div class="segmentTitle">0から動き始めるまで</div><div class="segmentMeta" id="neutralMeta">raw 0.00秒 / 1.00x</div></div>
-                        <label class="durationField"><input id="neutralDuration" type="number" min="0.01" step="0.01" value="0.5"><span>秒</span></label>
+                        <div>
+                            <div class="segmentTitle">0から動き始めるまで</div>
+                            <div class="segmentMeta" id="neutralMeta">raw 0.00秒 / 1.00x</div>
+                        </div>
+                        <label class="durationField"><input id="neutralDuration" type="number" min="0.01" step="0.01"
+                                value="0.5"><span>秒</span></label>
                     </div>
                     <div class="segment" id="riseSegment">
                         <i class="segmentColor" style="background:var(--accent)"></i>
-                        <div><div class="segmentTitle">表情が発生している状態</div><div class="segmentMeta" id="riseMeta">raw 0.00秒 / 1.00x</div></div>
-                        <label class="durationField"><input id="riseDuration" type="number" min="0.01" step="0.01" value="0.5"><span>秒</span></label>
+                        <div>
+                            <div class="segmentTitle">表情が発生している状態</div>
+                            <div class="segmentMeta" id="riseMeta">raw 0.00秒 / 1.00x</div>
+                        </div>
+                        <label class="durationField"><input id="riseDuration" type="number" min="0.01" step="0.01"
+                                value="0.5"><span>秒</span></label>
                     </div>
                     <div class="segment" id="settleSegment">
                         <i class="segmentColor" style="background:#8b6fc0"></i>
-                        <div><div class="segmentTitle">発生から収束する状態</div><div class="segmentMeta" id="settleMeta">raw 0.00秒 / 1.00x</div></div>
-                        <label class="durationField"><input id="settleDuration" type="number" min="0.01" step="0.01" value="0.5"><span>秒</span></label>
+                        <div>
+                            <div class="segmentTitle">発生から収束する状態</div>
+                            <div class="segmentMeta" id="settleMeta">raw 0.00秒 / 1.00x</div>
+                        </div>
+                        <label class="durationField"><input id="settleDuration" type="number" min="0.01" step="0.01"
+                                value="0.5"><span>秒</span></label>
                     </div>
                 </div>
                 <p class="small muted">再生速度は「raw区間 ÷ 目標時間」で計算します。例：raw 0.2秒を0.5秒にすると0.40xです。</p>
             </section>
 
             <section class="panel">
-                <div class="panelHeader"><h2>正規化プレビュー</h2></div>
+                <div class="panelHeader">
+                    <h2>正規化プレビュー</h2>
+                </div>
                 <div class="previewTimeline">
                     <button id="previewButton" type="button" disabled aria-label="正規化プレビューを再生">▶</button>
                     <input id="previewRange" type="range" min="0" max="1" step="0.001" value="0" disabled>
                     <output class="timeOutput" id="previewTime">0.00 / 0.00秒</output>
                 </div>
                 <div class="summary">
-                    <div class="metric"><div class="metricLabel">RAW範囲</div><div class="metricValue" id="rawDurationMetric">0.00秒</div></div>
-                    <div class="metric"><div class="metricLabel">正規化後</div><div class="metricValue" id="targetDurationMetric">0.00秒</div></div>
-                    <div class="metric"><div class="metricLabel">検出率</div><div class="metricValue" id="detectionMetric">—</div></div>
+                    <div class="metric">
+                        <div class="metricLabel">RAW範囲</div>
+                        <div class="metricValue" id="rawDurationMetric">0.00秒</div>
+                    </div>
+                    <div class="metric">
+                        <div class="metricLabel">正規化後</div>
+                        <div class="metricValue" id="targetDurationMetric">0.00秒</div>
+                    </div>
+                    <div class="metric">
+                        <div class="metricLabel">検出率</div>
+                        <div class="metricValue" id="detectionMetric">—</div>
+                    </div>
                 </div>
             </section>
 
             <section class="panel">
-                <div class="panelHeader"><h2>保存</h2></div>
+                <div class="panelHeader">
+                    <h2>保存</h2>
+                </div>
                 <div class="buttonRow">
                     <button id="exportVideoButton" class="primaryButton" type="button" disabled>正規化WebM</button>
                     <button id="exportCsvButton" type="button" disabled>解析CSV</button>
@@ -364,4 +682,5 @@
         </aside>
     </main>
 </body>
+
 </html>
