@@ -169,7 +169,6 @@
         }
 
         .chartWrap {
-            position: relative;
             height: 330px;
             overflow: hidden;
             border: 1px solid var(--line);
@@ -181,23 +180,6 @@
             width: 100%;
             height: 100%;
             display: block;
-            cursor: crosshair;
-        }
-
-        .chartEmpty {
-            position: absolute;
-            inset: 0;
-            display: grid;
-            place-items: center;
-            padding: 24px;
-            color: var(--muted);
-            font-size: .82rem;
-            text-align: center;
-            pointer-events: none;
-        }
-
-        .chartEmpty[hidden] {
-            display: none;
         }
 
         .legend {
@@ -526,11 +508,9 @@
                                 id="targetLegend">喜び</span></span>
                     </div>
                 </div>
-                <div class="chartWrap" id="chartWrap">
+                <div class="chartWrap">
                     <canvas id="chart"></canvas>
-                    <div class="chartEmpty" id="chartEmpty">解析後、横軸に動画時間、縦軸に感情値を表示します</div>
                 </div>
-                <p class="small muted">グラフをクリックすると元動画をシークします。細い線は検出値、太い線は平滑化後の値です。</p>
             </section>
         </section>
 

@@ -24,7 +24,6 @@
         status: $("status"),
         analysisProgress: $("analysisProgress"),
         chart: $("chart"),
-        chartEmpty: $("chartEmpty"),
         baseEmotion: $("baseEmotion"),
         targetEmotion: $("targetEmotion"),
         sampleInterval: $("sampleInterval"),
@@ -328,15 +327,14 @@
         });
     }
 
-    function drawSeries(ctx, data, emotion, valueKey, color, lineWidth, alpha, xFor, yFor) {
+    function drawSeries(ctx, data, emotion, color, xFor, yFor) {
         ctx.save();
         ctx.strokeStyle = color;
-        ctx.lineWidth = lineWidth;
-        ctx.globalAlpha = alpha;
+        ctx.lineWidth = 2.5;
         ctx.beginPath();
         let drawing = false;
         data.forEach((sample) => {
-            const source = valueKey === "smooth" ? sample.smooth : sample.expressions;
+            const source = sample.smooth;
             if (!sample.detected || !source) {
                 drawing = false;
                 return;
@@ -394,10 +392,8 @@
             const smoothed = getSmoothedSamples();
             const base = elements.baseEmotion.value;
             const target = elements.targetEmotion.value;
-            drawSeries(ctx, samples, base, "expressions", "#718096", 1, .25, xFor, yFor);
-            drawSeries(ctx, samples, target, "expressions", "#ef7f45", 1, .25, xFor, yFor);
-            drawSeries(ctx, smoothed, base, "smooth", "#718096", 2.5, 1, xFor, yFor);
-            drawSeries(ctx, smoothed, target, "smooth", "#ef7f45", 2.5, 1, xFor, yFor);
+            drawSeries(ctx, smoothed, base, "#718096", xFor, yFor);
+            drawSeries(ctx, smoothed, target, "#ef7f45", xFor, yFor);
         }
 
         const markerColors = { start: "#53606e", onset: "#42a77b", peak: "#ef7f45", settle: "#8b6fc0" };
@@ -494,7 +490,6 @@
         pausePreview();
         elements.video.pause();
         samples = [];
-        elements.chartEmpty.hidden = false;
         setBusy(true);
 
         try {
@@ -513,7 +508,6 @@
                 if (index % 5 === 0) drawChart();
             }
             if (token !== analysisToken) return;
-            elements.chartEmpty.hidden = samples.length > 0;
             const detectedCount = samples.filter((sample) => sample.detected).length;
             elements.detectionMetric.textContent = `${Math.round(detectedCount / samples.length * 100)}%`;
             autoDetectBoundaries();
@@ -699,7 +693,6 @@
         videoReady = false;
         samples = [];
         elements.detectionMetric.textContent = "—";
-        elements.chartEmpty.hidden = false;
         elements.video.hidden = false;
         elements.emptyVideo.hidden = true;
         elements.video.src = objectUrl;
@@ -772,16 +765,6 @@
             previewPosition = finiteNumber(elements.previewRange.value, 0);
             elements.video.currentTime = mapNormalizedTime(previewPosition);
             updatePreviewUI();
-            drawChart();
-        });
-
-        elements.chart.addEventListener("click", (event) => {
-            if (!videoReady) return;
-            pausePreview();
-            const rect = elements.chart.getBoundingClientRect();
-            const plotWidth = rect.width - CHART_PADDING.left - CHART_PADDING.right;
-            const ratio = clamp((event.clientX - rect.left - CHART_PADDING.left) / Math.max(1, plotWidth), 0, 1);
-            elements.video.currentTime = ratio * elements.video.duration;
             drawChart();
         });
 
