@@ -102,22 +102,6 @@
             filter: grayscale(1);
         }
 
-        .stageMessage {
-            position: absolute;
-            inset: 0;
-            display: grid;
-            place-items: center;
-            padding: 24px;
-            color: var(--muted);
-            font-size: .88rem;
-            text-align: center;
-            pointer-events: none;
-        }
-
-        .stageMessage[hidden] {
-            display: none;
-        }
-
         .stageControls {
             position: absolute;
             top: 10px;
@@ -389,7 +373,6 @@
             <section class="stageWrap" aria-label="モーフィングプレビュー">
                 <div class="stage" id="stage">
                     <canvas class="morphCanvas is-monochrome" id="morphCanvas" width="600" height="800"></canvas>
-                    <p class="stageMessage" id="stageMessage">顔が写った画像または動画を2つ以上追加してください</p>
                     <div class="stageControls">
                         <button class="stageToggleButton" id="monoToggleButton" type="button"
                             aria-pressed="true">モノクロ</button>
