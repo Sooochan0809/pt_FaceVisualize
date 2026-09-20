@@ -33,9 +33,9 @@
         neutralDuration: $("neutralDuration"),
         riseDuration: $("riseDuration"),
         settleDuration: $("settleDuration"),
-        neutralMeta: $("neutralMeta"),
-        riseMeta: $("riseMeta"),
-        settleMeta: $("settleMeta"),
+        neutralRaw: $("neutralRaw"),
+        riseRaw: $("riseRaw"),
+        settleRaw: $("settleRaw"),
         settleSegment: $("settleSegment"),
         previewButton: $("previewButton"),
         previewRange: $("previewRange"),
@@ -189,7 +189,7 @@
             peak: duration * 0.6,
             settle: duration * 0.9
         };
-        syncTargetDurationsToRaw();
+        updateNormalizationSummary();
         updateBoundaryLog();
     }
 
@@ -223,14 +223,6 @@
         };
     }
 
-    function syncTargetDurationsToRaw() {
-        const raw = rawDurations();
-        elements.neutralDuration.value = Math.max(0.01, raw.neutral).toFixed(2);
-        elements.riseDuration.value = Math.max(0.01, raw.rise).toFixed(2);
-        elements.settleDuration.value = Math.max(0.01, raw.settle).toFixed(2);
-        updateNormalizationSummary();
-    }
-
     function getSegments() {
         const target = targetDurations();
         const segments = [
@@ -261,17 +253,15 @@
         return anchors.start;
     }
 
-    function updateSegmentMeta(node, rawDuration, targetDuration) {
-        const rate = targetDuration > 0 ? rawDuration / targetDuration : 0;
-        node.textContent = `raw ${rawDuration.toFixed(2)}秒 / ${rate.toFixed(2)}x`;
+    function updateRawDuration(node, rawDuration) {
+        node.textContent = `raw ${rawDuration.toFixed(2)}秒`;
     }
 
     function updateNormalizationSummary() {
         const raw = rawDurations();
-        const target = targetDurations();
-        updateSegmentMeta(elements.neutralMeta, raw.neutral, target.neutral);
-        updateSegmentMeta(elements.riseMeta, raw.rise, target.rise);
-        updateSegmentMeta(elements.settleMeta, raw.settle, target.settle);
+        updateRawDuration(elements.neutralRaw, raw.neutral);
+        updateRawDuration(elements.riseRaw, raw.rise);
+        updateRawDuration(elements.settleRaw, raw.settle);
         elements.settleSegment.hidden = !includeSettle;
         elements.settleDuration.disabled = !includeSettle || busy || !samples.length;
 
@@ -451,7 +441,7 @@
             anchors.settle = Math.max(anchors.peak, elements.video.duration);
             includeSettle = false;
         }
-        syncTargetDurationsToRaw();
+        updateNormalizationSummary();
         updateBoundaryLog();
         drawChart();
         setStatus(settleTime !== null ? "動き始め・ピーク・収束を自動検出しました" : "動き始め・ピークを検出しました（収束なし）");

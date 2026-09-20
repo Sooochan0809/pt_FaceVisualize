@@ -59,46 +59,9 @@
             opacity: .45;
         }
 
-        a {
-            color: inherit;
-        }
-
-        .topbar {
-            position: sticky;
-            top: 0;
-            z-index: 10;
-            min-height: 58px;
-            display: flex;
-            flex-direction: column;
-            align-items: flex-start;
-            gap: 4px;
-            padding: 10px 18px;
-            border-bottom: 1px solid var(--line);
-            background: rgba(255, 255, 255, .94);
-            backdrop-filter: blur(10px);
-        }
-
-        .backLink {
-            color: var(--muted);
-            font-size: .8rem;
-            text-decoration: none;
-        }
-
-        .topbar h1 {
-            margin: 0;
-            font-size: 1rem;
-            font-weight: 600;
-        }
-
-        .topbar p {
-            margin: 0 0 0 auto;
-            color: var(--muted);
-            font-size: .75rem;
-        }
-
         .app {
             width: min(1480px, 100%);
-            min-height: calc(100dvh - 58px);
+            min-height: 100dvh;
             margin: 0 auto;
             display: grid;
             grid-template-columns: minmax(0, 1.55fr) minmax(340px, .8fr);
@@ -118,6 +81,7 @@
 
         .stack {
             display: grid;
+            align-content: start;
             gap: 14px;
         }
 
@@ -186,6 +150,7 @@
             display: flex;
             flex-wrap: wrap;
             gap: 14px;
+            margin-left: auto;
             color: var(--muted);
             font-size: .74rem;
         }
@@ -212,6 +177,10 @@
 
         .toolbar {
             margin-top: 10px;
+        }
+
+        .formGrid #analyzeButton {
+            align-self: end;
         }
 
         .fileButton,
@@ -318,7 +287,7 @@
 
         .segment {
             display: grid;
-            grid-template-columns: 8px minmax(0, 1fr) 82px;
+            grid-template-columns: 8px minmax(0, 1fr) auto;
             gap: 9px;
             align-items: center;
             padding: 9px;
@@ -335,16 +304,28 @@
             font-size: .77rem;
         }
 
-        .segmentMeta {
-            margin-top: 3px;
+        .durationFlow {
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 6px;
+        }
+
+        .rawDuration {
             color: var(--muted);
             font-size: .68rem;
             font-variant-numeric: tabular-nums;
+            white-space: nowrap;
+        }
+
+        .durationArrow {
+            color: var(--muted);
+            font-size: .72rem;
         }
 
         .durationField {
             display: grid;
-            grid-template-columns: 1fr auto;
+            grid-template-columns: 56px auto;
             align-items: center;
             gap: 4px;
             font-size: .7rem;
@@ -369,6 +350,7 @@
             grid-template-columns: auto 1fr auto;
             align-items: center;
             gap: 8px;
+            margin-top: 12px;
         }
 
         .previewTimeline button {
@@ -413,10 +395,6 @@
         }
 
         @media (max-width: 900px) {
-            .topbar p {
-                display: none;
-            }
-
             .app {
                 grid-template-columns: 1fr;
             }
@@ -450,11 +428,6 @@
 </head>
 
 <body>
-    <header class="topbar">
-        <h1>表情動画ノーマライザー</h1>
-        <a class="backLink" href="../morphing/">← モーフィング</a>
-    </header>
-
     <main class="app">
         <section class="workspace stack">
             <section class="panel">
@@ -464,7 +437,6 @@
                 </div>
                 <div class="toolbar">
                     <label class="fileButton">動画を選択<input id="fileInput" type="file" accept="video/*"></label>
-                    <button id="analyzeButton" class="accentButton" type="button" disabled>感情を解析</button>
                     <span class="status" id="status">Face APIモデルを読み込んでいます</span>
                 </div>
                 <progress id="analysisProgress" value="0" max="1" hidden></progress>
@@ -472,7 +444,6 @@
 
             <section class="panel">
                 <div class="panelHeader">
-                    <h2>感情値グラフ</h2>
                     <div class="legend">
                         <span class="legendItem"><i class="swatch"
                                 style="background:var(--base)"></i><span>無表情</span></span>
@@ -507,49 +478,45 @@
                             <option value="11" selected>11点移動平均</option>
                         </select>
                     </label>
+                    <button id="analyzeButton" class="accentButton" type="button" disabled>解析</button>
                 </div>
             </section>
 
             <section class="panel">
                 <div class="panelHeader">
-                    <h2>目標時間</h2>
+                    <h2>正規化</h2>
                 </div>
                 <div class="segments">
                     <div class="segment" id="neutralSegment">
                         <i class="segmentColor" style="background:#88919c"></i>
-                        <div>
-                            <div class="segmentTitle">0から動き始めるまで</div>
-                            <div class="segmentMeta" id="neutralMeta">raw 0.00秒 / 1.00x</div>
+                        <div class="segmentTitle">0から動き始めるまで</div>
+                        <div class="durationFlow">
+                            <span class="rawDuration" id="neutralRaw">raw 0.00秒</span>
+                            <span class="durationArrow">→</span>
+                            <label class="durationField"><input id="neutralDuration" type="number" min="0.01"
+                                    step="0.01" value="0.5"><span>秒</span></label>
                         </div>
-                        <label class="durationField"><input id="neutralDuration" type="number" min="0.01" step="0.01"
-                                value="0.5"><span>秒</span></label>
                     </div>
                     <div class="segment" id="riseSegment">
                         <i class="segmentColor" style="background:var(--accent)"></i>
-                        <div>
-                            <div class="segmentTitle">表情が発生している状態</div>
-                            <div class="segmentMeta" id="riseMeta">raw 0.00秒 / 1.00x</div>
+                        <div class="segmentTitle">表情が発生している状態</div>
+                        <div class="durationFlow">
+                            <span class="rawDuration" id="riseRaw">raw 0.00秒</span>
+                            <span class="durationArrow">→</span>
+                            <label class="durationField"><input id="riseDuration" type="number" min="0.01"
+                                    step="0.01" value="1.5"><span>秒</span></label>
                         </div>
-                        <label class="durationField"><input id="riseDuration" type="number" min="0.01" step="0.01"
-                                value="1.5"><span>秒</span></label>
                     </div>
                     <div class="segment" id="settleSegment">
                         <i class="segmentColor" style="background:#8b6fc0"></i>
-                        <div>
-                            <div class="segmentTitle">発生から収束する状態</div>
-                            <div class="segmentMeta" id="settleMeta">raw 0.00秒 / 1.00x</div>
+                        <div class="segmentTitle">発生から収束する状態</div>
+                        <div class="durationFlow">
+                            <span class="rawDuration" id="settleRaw">raw 0.00秒</span>
+                            <span class="durationArrow">→</span>
+                            <label class="durationField"><input id="settleDuration" type="number" min="0.01"
+                                    step="0.01" value="0.5"><span>秒</span></label>
                         </div>
-                        <label class="durationField"><input id="settleDuration" type="number" min="0.01" step="0.01"
-                                value="0.5"><span>秒</span></label>
                     </div>
-                </div>
-                <p class="small muted">再生速度は「raw区間 ÷ 目標時間」で計算。(例：raw 0.2秒を0.5秒にしたい場合、0.40倍速)</p>
-                <div class="analysisLog" id="boundaryLog">区間境界: 未解析</div>
-            </section>
-
-            <section class="panel">
-                <div class="panelHeader">
-                    <h2>正規化プレビュー</h2>
                 </div>
                 <div class="previewTimeline">
                     <button id="previewButton" type="button" disabled aria-label="正規化プレビューを再生">▶</button>
@@ -570,6 +537,7 @@
                         <div class="metricValue" id="detectionMetric">—</div>
                     </div>
                 </div>
+                <div class="analysisLog" id="boundaryLog">区間境界: 未解析</div>
             </section>
 
             <section class="panel">
