@@ -300,39 +300,15 @@
             accent-color: var(--accent);
         }
 
-        .inlineCheck {
-            display: inline-flex;
-            align-items: center;
-            gap: 7px;
-            font-size: .76rem;
-        }
-
-        .boundaryList {
-            display: grid;
-            gap: 9px;
-        }
-
-        .boundary {
-            display: grid;
-            grid-template-columns: 112px minmax(90px, 1fr) 76px 56px;
-            gap: 7px;
-            align-items: center;
-        }
-
-        .boundaryName {
-            font-size: .75rem;
-        }
-
-        .boundary input[type="number"] {
-            height: 32px;
-            font-size: .76rem;
-        }
-
-        .boundary button {
-            min-height: 32px;
-            height: 32px;
-            padding: 0 7px;
-            font-size: .7rem;
+        .analysisLog {
+            margin-top: 12px;
+            padding-top: 9px;
+            border-top: 1px solid var(--line);
+            color: var(--muted);
+            font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+            font-size: .66rem;
+            line-height: 1.6;
+            font-variant-numeric: tabular-nums;
         }
 
         .segments {
@@ -382,6 +358,10 @@
 
         .segment.is-disabled {
             opacity: .42;
+        }
+
+        .segment[hidden] {
+            display: none;
         }
 
         .previewTimeline {
@@ -462,14 +442,6 @@
                 grid-template-columns: 1fr;
             }
 
-            .boundary {
-                grid-template-columns: 90px minmax(70px, 1fr) 68px;
-            }
-
-            .boundary button {
-                grid-column: 2 / 4;
-            }
-
             .summary {
                 grid-template-columns: 1fr;
             }
@@ -502,8 +474,8 @@
                 <div class="panelHeader">
                     <h2>感情値グラフ</h2>
                     <div class="legend">
-                        <span class="legendItem"><i class="swatch" style="background:var(--base)"></i><span
-                                id="baseLegend">無表情</span></span>
+                        <span class="legendItem"><i class="swatch"
+                                style="background:var(--base)"></i><span>無表情</span></span>
                         <span class="legendItem"><i class="swatch" style="background:var(--target)"></i><span
                                 id="targetLegend">喜び</span></span>
                     </div>
@@ -520,9 +492,6 @@
                     <h2>解析設定</h2>
                 </div>
                 <div class="formGrid">
-                    <label class="field">基準の感情
-                        <select id="baseEmotion"></select>
-                    </label>
                     <label class="field">変化後の感情
                         <select id="targetEmotion"></select>
                     </label>
@@ -533,47 +502,11 @@
                         <select id="smoothWindow">
                             <option value="1">なし</option>
                             <option value="3">3点移動平均</option>
-                            <option value="5" selected>5点移動平均</option>
+                            <option value="5">5点移動平均</option>
                             <option value="7">7点移動平均</option>
-                            <option value="11">11点移動平均</option>
+                            <option value="11" selected>11点移動平均</option>
                         </select>
                     </label>
-                </div>
-            </section>
-
-            <section class="panel">
-                <div class="panelHeader">
-                    <h2>区間境界</h2>
-                    <button id="autoDetectButton" type="button" disabled>自動検出</button>
-                </div>
-                <div class="boundaryList">
-                    <div class="boundary" data-boundary="start">
-                        <span class="boundaryName">① 開始</span>
-                        <input type="range" id="startRange" min="0" step="0.01" value="0">
-                        <input type="number" id="startTime" min="0" step="0.01" value="0" aria-label="開始時刻">
-                        <button type="button" data-set-current="start">現在位置</button>
-                    </div>
-                    <div class="boundary" data-boundary="onset">
-                        <span class="boundaryName">② 動き始め</span>
-                        <input type="range" id="onsetRange" min="0" step="0.01" value="0">
-                        <input type="number" id="onsetTime" min="0" step="0.01" value="0" aria-label="動き始め時刻">
-                        <button type="button" data-set-current="onset">現在位置</button>
-                    </div>
-                    <div class="boundary" data-boundary="peak">
-                        <span class="boundaryName">③ 表情ピーク</span>
-                        <input type="range" id="peakRange" min="0" step="0.01" value="0">
-                        <input type="number" id="peakTime" min="0" step="0.01" value="0" aria-label="表情ピーク時刻">
-                        <button type="button" data-set-current="peak">現在位置</button>
-                    </div>
-                    <div class="boundary" data-boundary="settle">
-                        <span class="boundaryName">④ 収束</span>
-                        <input type="range" id="settleRange" min="0" step="0.01" value="0">
-                        <input type="number" id="settleTime" min="0" step="0.01" value="0" aria-label="収束時刻">
-                        <button type="button" data-set-current="settle">現在位置</button>
-                    </div>
-                </div>
-                <div class="buttonRow" style="margin-top:10px">
-                    <label class="inlineCheck"><input id="includeSettle" type="checkbox" checked> 収束区間を使用</label>
                 </div>
             </section>
 
@@ -598,7 +531,7 @@
                             <div class="segmentMeta" id="riseMeta">raw 0.00秒 / 1.00x</div>
                         </div>
                         <label class="durationField"><input id="riseDuration" type="number" min="0.01" step="0.01"
-                                value="0.5"><span>秒</span></label>
+                                value="1.5"><span>秒</span></label>
                     </div>
                     <div class="segment" id="settleSegment">
                         <i class="segmentColor" style="background:#8b6fc0"></i>
@@ -611,6 +544,7 @@
                     </div>
                 </div>
                 <p class="small muted">再生速度は「raw区間 ÷ 目標時間」で計算。(例：raw 0.2秒を0.5秒にしたい場合、0.40倍速)</p>
+                <div class="analysisLog" id="boundaryLog">区間境界: 未解析</div>
             </section>
 
             <section class="panel">

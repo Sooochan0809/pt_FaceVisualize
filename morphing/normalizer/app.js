@@ -2,6 +2,7 @@
     "use strict";
 
     const MODEL_URL = "../../modules/faceAPI/models";
+    const BASE_EMOTION = "neutral";
     const EMOTIONS = ["neutral", "happy", "sad", "angry", "fearful", "disgusted", "surprised"];
     const EMOTION_LABELS = {
         neutral: "無表情",
@@ -24,14 +25,11 @@
         status: $("status"),
         analysisProgress: $("analysisProgress"),
         chart: $("chart"),
-        baseEmotion: $("baseEmotion"),
         targetEmotion: $("targetEmotion"),
         sampleInterval: $("sampleInterval"),
         smoothWindow: $("smoothWindow"),
-        baseLegend: $("baseLegend"),
         targetLegend: $("targetLegend"),
-        autoDetectButton: $("autoDetectButton"),
-        includeSettle: $("includeSettle"),
+        boundaryLog: $("boundaryLog"),
         neutralDuration: $("neutralDuration"),
         riseDuration: $("riseDuration"),
         settleDuration: $("settleDuration"),
@@ -50,11 +48,6 @@
         exportJsonButton: $("exportJsonButton")
     };
 
-    const boundaryElements = Object.fromEntries(BOUNDARY_KEYS.map((key) => [key, {
-        range: $(`${key}Range`),
-        number: $(`${key}Time`)
-    }]));
-
     const detectorOptions = new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.35 });
     const analysisCanvas = document.createElement("canvas");
     let objectUrl = "";
@@ -65,6 +58,7 @@
     let samples = [];
     let analysisToken = 0;
     let anchors = { start: 0, onset: 0, peak: 0, settle: 0 };
+    let includeSettle = true;
     let previewPlaying = false;
     let previewPosition = 0;
     let previewStartedAt = 0;
@@ -103,49 +97,42 @@
     }
 
     function populateEmotionSelects() {
-        const options = EMOTIONS.map((emotion) => {
+        const options = EMOTIONS.filter((emotion) => emotion !== BASE_EMOTION).map((emotion) => {
             const option = document.createElement("option");
             option.value = emotion;
             option.textContent = EMOTION_LABELS[emotion];
             return option;
         });
-        elements.baseEmotion.replaceChildren(...options.map((option) => option.cloneNode(true)));
         elements.targetEmotion.replaceChildren(...options);
-        elements.baseEmotion.value = "neutral";
         elements.targetEmotion.value = "happy";
         updateLegend();
     }
 
     function updateLegend() {
-        elements.baseLegend.textContent = EMOTION_LABELS[elements.baseEmotion.value];
         elements.targetLegend.textContent = EMOTION_LABELS[elements.targetEmotion.value];
     }
 
     function updateButtonStates() {
         const hasAnalysis = samples.length > 0;
-        const canNormalize = videoReady && anchors.peak > anchors.onset && anchors.onset >= anchors.start;
+        const canNormalize = hasAnalysis && videoReady && anchors.peak > anchors.onset && anchors.onset >= anchors.start;
         elements.analyzeButton.disabled = busy || !videoReady || !modelsReady;
-        elements.autoDetectButton.disabled = busy || !hasAnalysis || elements.baseEmotion.value === elements.targetEmotion.value;
         elements.previewButton.disabled = busy || !canNormalize;
         elements.previewRange.disabled = busy || !canNormalize;
         elements.exportVideoButton.disabled = busy || !canNormalize || !window.MediaRecorder;
         elements.exportCsvButton.disabled = busy || !hasAnalysis;
         elements.exportJsonButton.disabled = busy || !hasAnalysis;
         elements.fileInput.disabled = busy;
-        elements.baseEmotion.disabled = busy;
         elements.targetEmotion.disabled = busy;
         elements.sampleInterval.disabled = busy;
         elements.smoothWindow.disabled = busy;
-        elements.includeSettle.disabled = busy;
-        elements.neutralDuration.disabled = busy;
-        elements.riseDuration.disabled = busy;
-        elements.settleDuration.disabled = busy || !elements.includeSettle.checked;
+        elements.neutralDuration.disabled = busy || !hasAnalysis;
+        elements.riseDuration.disabled = busy || !hasAnalysis;
+        elements.settleDuration.disabled = busy || !hasAnalysis || !includeSettle;
     }
 
     function setBusy(nextBusy) {
         busy = nextBusy;
         updateButtonStates();
-        syncBoundaryControls();
     }
 
     function waitForVideoMetadata() {
@@ -195,45 +182,29 @@
 
     function setDefaultAnchors() {
         const duration = Number.isFinite(elements.video.duration) ? elements.video.duration : 0;
+        includeSettle = true;
         anchors = {
             start: 0,
             onset: duration * 0.25,
             peak: duration * 0.6,
             settle: duration * 0.9
         };
-        syncBoundaryControls();
         syncTargetDurationsToRaw();
+        updateBoundaryLog();
     }
 
-    function syncBoundaryControls() {
-        const duration = Number.isFinite(elements.video.duration) ? elements.video.duration : 0;
-        BOUNDARY_KEYS.forEach((key) => {
-            const controls = boundaryElements[key];
-            controls.range.max = String(duration);
-            controls.number.max = String(duration);
-            controls.range.value = String(anchors[key]);
-            controls.number.value = anchors[key].toFixed(2);
-            controls.range.disabled = !videoReady || busy;
-            controls.number.disabled = !videoReady || busy;
-        });
-        document.querySelectorAll("[data-set-current]").forEach((button) => {
-            button.disabled = !videoReady || busy;
-        });
-    }
-
-    function setAnchor(key, nextValue, seek = false) {
-        const duration = Number.isFinite(elements.video.duration) ? elements.video.duration : 0;
-        const limits = {
-            start: [0, anchors.onset],
-            onset: [anchors.start, anchors.peak],
-            peak: [anchors.onset, anchors.settle],
-            settle: [anchors.peak, duration]
-        };
-        anchors[key] = clamp(finiteNumber(nextValue, anchors[key]), limits[key][0], limits[key][1]);
-        syncBoundaryControls();
-        updateNormalizationSummary();
-        drawChart();
-        if (seek) seekVideo(anchors[key]);
+    function updateBoundaryLog() {
+        if (!samples.length) {
+            elements.boundaryLog.textContent = "区間境界: 未解析";
+            return;
+        }
+        const settleText = includeSettle ? `${anchors.settle.toFixed(2)}s` : "未検出";
+        elements.boundaryLog.textContent = [
+            `区間境界  start ${anchors.start.toFixed(2)}s`,
+            `発生 ${anchors.onset.toFixed(2)}s`,
+            `ピーク ${anchors.peak.toFixed(2)}s`,
+            `収束 ${settleText}`
+        ].join("  /  ");
     }
 
     function rawDurations() {
@@ -266,7 +237,7 @@
             { key: "neutral", sourceStart: anchors.start, sourceEnd: anchors.onset, targetDuration: target.neutral },
             { key: "rise", sourceStart: anchors.onset, sourceEnd: anchors.peak, targetDuration: target.rise }
         ];
-        if (elements.includeSettle.checked && anchors.settle > anchors.peak) {
+        if (includeSettle && anchors.settle > anchors.peak) {
             segments.push({ key: "settle", sourceStart: anchors.peak, sourceEnd: anchors.settle, targetDuration: target.settle });
         }
         return segments.filter((segment) => segment.sourceEnd > segment.sourceStart && segment.targetDuration > 0);
@@ -301,10 +272,10 @@
         updateSegmentMeta(elements.neutralMeta, raw.neutral, target.neutral);
         updateSegmentMeta(elements.riseMeta, raw.rise, target.rise);
         updateSegmentMeta(elements.settleMeta, raw.settle, target.settle);
-        elements.settleSegment.classList.toggle("is-disabled", !elements.includeSettle.checked);
-        elements.settleDuration.disabled = !elements.includeSettle.checked || busy;
+        elements.settleSegment.hidden = !includeSettle;
+        elements.settleDuration.disabled = !includeSettle || busy || !samples.length;
 
-        const sourceEnd = elements.includeSettle.checked ? anchors.settle : anchors.peak;
+        const sourceEnd = includeSettle ? anchors.settle : anchors.peak;
         elements.rawDurationMetric.textContent = formatSeconds(Math.max(0, sourceEnd - anchors.start));
         const duration = normalizedDuration();
         elements.targetDurationMetric.textContent = formatSeconds(duration);
@@ -390,15 +361,15 @@
 
         if (samples.length) {
             const smoothed = getSmoothedSamples();
-            const base = elements.baseEmotion.value;
+            const base = BASE_EMOTION;
             const target = elements.targetEmotion.value;
             drawSeries(ctx, smoothed, base, "#718096", xFor, yFor);
             drawSeries(ctx, smoothed, target, "#ef7f45", xFor, yFor);
         }
 
         const markerColors = { start: "#53606e", onset: "#42a77b", peak: "#ef7f45", settle: "#8b6fc0" };
-        BOUNDARY_KEYS.forEach((key, index) => {
-            if (key === "settle" && !elements.includeSettle.checked) return;
+        if (samples.length) BOUNDARY_KEYS.forEach((key, index) => {
+            if (key === "settle" && !includeSettle) return;
             const x = xFor(anchors[key]);
             ctx.strokeStyle = markerColors[key];
             ctx.lineWidth = 1.5;
@@ -424,13 +395,13 @@
     }
 
     function autoDetectBoundaries() {
-        if (!samples.length || elements.baseEmotion.value === elements.targetEmotion.value) return;
+        if (!samples.length) return;
         const data = getSmoothedSamples().filter((sample) => sample.detected && sample.smooth);
         if (data.length < 3) {
             setStatus("顔を検出できた点が少ないため、自動検出できません", 0, 0, true);
             return;
         }
-        const base = elements.baseEmotion.value;
+        const base = BASE_EMOTION;
         const target = elements.targetEmotion.value;
         const progression = data.map((sample) => ({
             sample,
@@ -444,47 +415,50 @@
         const baselineCount = Math.max(1, Math.min(beforePeak.length, Math.round(beforePeak.length * .2)));
         const baseline = beforePeak.slice(0, baselineCount).reduce((sum, item) => sum + item.value, 0) / baselineCount;
         const amplitude = Math.max(0.01, progression[peakIndex].value - baseline);
-        const onsetLevel = baseline + amplitude * .15;
+        const onsetLevel = baseline + amplitude * .05;
+        const peakLevel = baseline + amplitude * .95;
         const settleLevel = baseline + amplitude * .2;
-        let onsetIndex = beforePeak.findIndex((item, index) => {
-            const next = beforePeak[Math.min(beforePeak.length - 1, index + 1)];
-            return item.value >= onsetLevel && next.value >= onsetLevel;
-        });
-        if (onsetIndex < 0) onsetIndex = Math.max(0, peakIndex - 1);
 
-        let settleIndex = -1;
-        for (let index = peakIndex + 1; index < progression.length - 1; index += 1) {
-            if (progression[index].value <= settleLevel && progression[index + 1].value <= settleLevel) {
-                settleIndex = index;
-                break;
+        const crossingTime = (items, level, direction, startIndex = 1, endIndex = items.length - 1) => {
+            for (let index = startIndex; index <= endIndex; index += 1) {
+                const previous = items[index - 1];
+                const current = items[index];
+                const crossed = direction === "rising"
+                    ? previous.value <= level && current.value >= level
+                    : previous.value >= level && current.value <= level;
+                if (!crossed) continue;
+                const valueDistance = current.value - previous.value;
+                const ratio = Math.abs(valueDistance) < 1e-6 ? 0 : clamp((level - previous.value) / valueDistance, 0, 1);
+                return previous.sample.time + (current.sample.time - previous.sample.time) * ratio;
             }
-        }
+            return null;
+        };
 
-        const onsetTime = progression[onsetIndex].sample.time;
-        const peakTime = progression[peakIndex].sample.time;
+        const onsetTime = crossingTime(progression, onsetLevel, "rising", 1, peakIndex)
+            ?? progression[Math.max(0, peakIndex - 1)].sample.time;
+        const peakTime = crossingTime(progression, peakLevel, "rising", 1, peakIndex)
+            ?? progression[peakIndex].sample.time;
+        const settleTime = crossingTime(progression, settleLevel, "falling", peakIndex + 1);
         const neutralLead = Math.max(finiteNumber(elements.sampleInterval.value, .1), peakTime - onsetTime);
-        anchors.start = Math.max(0, onsetTime - neutralLead);
-        anchors.onset = Math.max(anchors.start, onsetTime);
-        anchors.peak = Math.max(anchors.onset, peakTime);
-        if (settleIndex >= 0) {
-            anchors.settle = Math.max(anchors.peak, progression[settleIndex].sample.time);
-            elements.includeSettle.checked = true;
+        const roundTime = (time) => Math.round(time * 100) / 100;
+        anchors.start = roundTime(Math.max(0, onsetTime - neutralLead));
+        anchors.onset = roundTime(Math.max(anchors.start, onsetTime));
+        anchors.peak = roundTime(Math.max(anchors.onset, peakTime));
+        if (settleTime !== null) {
+            anchors.settle = roundTime(Math.max(anchors.peak, settleTime));
+            includeSettle = true;
         } else {
             anchors.settle = Math.max(anchors.peak, elements.video.duration);
-            elements.includeSettle.checked = false;
+            includeSettle = false;
         }
-        syncBoundaryControls();
         syncTargetDurationsToRaw();
+        updateBoundaryLog();
         drawChart();
-        setStatus(settleIndex >= 0 ? "動き始め・ピーク・収束を自動検出しました" : "動き始め・ピークを検出しました（収束なし）");
+        setStatus(settleTime !== null ? "動き始め・ピーク・収束を自動検出しました" : "動き始め・ピークを検出しました（収束なし）");
     }
 
     async function analyzeVideo() {
         if (!videoReady || busy) return;
-        if (elements.baseEmotion.value === elements.targetEmotion.value) {
-            setStatus("基準と変化後には異なる感情を選択してください", 0, 0, true);
-            return;
-        }
         const token = ++analysisToken;
         const previousTime = elements.video.currentTime;
         pausePreview();
@@ -519,7 +493,6 @@
             if (token === analysisToken) {
                 await seekVideo(previousTime).catch(() => {});
                 setBusy(false);
-                syncBoundaryControls();
                 updateNormalizationSummary();
                 drawChart();
             }
@@ -603,12 +576,12 @@
             analysis: {
                 sampleInterval: finiteNumber(elements.sampleInterval.value, .1),
                 smoothingWindow: finiteNumber(elements.smoothWindow.value, 5),
-                baseEmotion: elements.baseEmotion.value,
+                baseEmotion: BASE_EMOTION,
                 targetEmotion: elements.targetEmotion.value,
                 detectionRate: samples.length ? samples.filter((sample) => sample.detected).length / samples.length : 0
             },
             boundaries: { ...anchors },
-            includeSettle: elements.includeSettle.checked,
+            includeSettle,
             targetDurations: targetDurations(),
             segments: getSegments().map((segment) => ({
                 ...segment,
@@ -678,7 +651,6 @@
             stream.getTracks().forEach((track) => track.stop());
             await seekVideo(restoreTime).catch(() => {});
             setBusy(false);
-            syncBoundaryControls();
             updateNormalizationSummary();
         }
     }
@@ -725,24 +697,16 @@
             elements.fileInput.value = "";
         });
         elements.analyzeButton.addEventListener("click", analyzeVideo);
-        elements.autoDetectButton.addEventListener("click", autoDetectBoundaries);
 
-        [elements.baseEmotion, elements.targetEmotion].forEach((select) => {
-            select.addEventListener("change", () => {
-                updateLegend();
-                updateButtonStates();
-                drawChart();
-            });
+        elements.targetEmotion.addEventListener("change", () => {
+            updateLegend();
+            updateButtonStates();
+            if (samples.length) autoDetectBoundaries();
+            else drawChart();
         });
-        elements.smoothWindow.addEventListener("change", drawChart);
-
-        BOUNDARY_KEYS.forEach((key) => {
-            const controls = boundaryElements[key];
-            controls.range.addEventListener("input", () => setAnchor(key, controls.range.value));
-            controls.number.addEventListener("change", () => setAnchor(key, controls.number.value, true));
-        });
-        document.querySelectorAll("[data-set-current]").forEach((button) => {
-            button.addEventListener("click", () => setAnchor(button.dataset.setCurrent, elements.video.currentTime, true));
+        elements.smoothWindow.addEventListener("change", () => {
+            if (samples.length) autoDetectBoundaries();
+            else drawChart();
         });
 
         [elements.neutralDuration, elements.riseDuration, elements.settleDuration].forEach((input) => {
@@ -752,13 +716,6 @@
                 updateNormalizationSummary();
             });
         });
-        elements.includeSettle.addEventListener("change", () => {
-            pausePreview();
-            previewPosition = 0;
-            updateNormalizationSummary();
-            drawChart();
-        });
-
         elements.previewButton.addEventListener("click", () => previewPlaying ? pausePreview() : playPreview());
         elements.previewRange.addEventListener("input", () => {
             pausePreview();
@@ -785,7 +742,7 @@
     async function initialize() {
         populateEmotionSelects();
         bindEvents();
-        syncBoundaryControls();
+        updateBoundaryLog();
         updateNormalizationSummary();
         drawChart();
         try {
