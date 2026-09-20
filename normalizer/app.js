@@ -23,6 +23,14 @@
   };
   const BOUNDARY_KEYS = ["start", "onset", "peak", "settle"];
   const CHART_PADDING = { left: 46, right: 18, top: 16, bottom: 30 };
+  const EXPRESSION_LANDMARK_INDICES = [
+    17, 18, 19, 20, 21, 22, 23, 24, 25, 26,
+    36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47,
+    48, 49, 50, 51, 52, 53, 54, 55, 56, 57,
+    58, 59, 60, 61, 62, 63, 64, 65, 66, 67,
+  ];
+  const COMPLETION_DISTANCE_RATIO = 0.18;
+  const COMPLETION_STABLE_SAMPLES = 3;
   const EXPORT_FPS = 30;
   const EXPORT_BITRATE = 8_000_000;
   const MEDIABUNNY_URL =
@@ -78,6 +86,7 @@
 
   const models = Promise.all([
     faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
+    faceapi.nets.faceLandmark68TinyNet.loadFromUri(MODEL_URL),
     faceapi.nets.faceExpressionNet.loadFromUri(MODEL_URL),
   ]);
 
@@ -204,6 +213,90 @@
     return analysisCanvas;
   }
 
+  function averagePoint(points, indices) {
+    const sum = indices.reduce(
+      (result, index) => {
+        result.x += points[index].x;
+        result.y += points[index].y;
+        return result;
+      },
+      { x: 0, y: 0 },
+    );
+    return { x: sum.x / indices.length, y: sum.y / indices.length };
+  }
+
+  function normalizeLandmarks(positions) {
+    const leftEye = averagePoint(positions, [36, 37, 38, 39, 40, 41]);
+    const rightEye = averagePoint(positions, [42, 43, 44, 45, 46, 47]);
+    const center = {
+      x: (leftEye.x + rightEye.x) / 2,
+      y: (leftEye.y + rightEye.y) / 2,
+    };
+    const dx = rightEye.x - leftEye.x;
+    const dy = rightEye.y - leftEye.y;
+    const scale = Math.hypot(dx, dy) || 1;
+    const cos = dx / scale;
+    const sin = dy / scale;
+
+    return EXPRESSION_LANDMARK_INDICES.flatMap((index) => {
+      const x = positions[index].x - center.x;
+      const y = positions[index].y - center.y;
+      return [(x * cos + y * sin) / scale, (-x * sin + y * cos) / scale];
+    });
+  }
+
+  function averageShape(shapes) {
+    if (!shapes.length) return null;
+    return shapes[0].map(
+      (_, index) =>
+        shapes.reduce((sum, shape) => sum + shape[index], 0) / shapes.length,
+    );
+  }
+
+  function shapeDistance(a, b) {
+    if (!a || !b || a.length !== b.length) return Infinity;
+    const squaredDistance = a.reduce((sum, value, index) => {
+      const difference = value - b[index];
+      return sum + difference * difference;
+    }, 0);
+    return Math.sqrt(squaredDistance / a.length);
+  }
+
+  function detectLandmarkCompletion(data, onsetTime) {
+    const landmarkSamples = data.filter((sample) => sample.landmarks);
+    if (landmarkSamples.length < COMPLETION_STABLE_SAMPLES * 2) return null;
+
+    const referenceCount = Math.max(
+      COMPLETION_STABLE_SAMPLES,
+      Math.round(landmarkSamples.length * 0.2),
+    );
+    const baselineShape = averageShape(
+      landmarkSamples.slice(0, referenceCount).map((sample) => sample.landmarks),
+    );
+    const finalShape = averageShape(
+      landmarkSamples.slice(-referenceCount).map((sample) => sample.landmarks),
+    );
+    const totalMovement = shapeDistance(baselineShape, finalShape);
+    if (!Number.isFinite(totalMovement) || totalMovement < 0.005) return null;
+
+    const measured = landmarkSamples.map((sample) => ({
+      sample,
+      fromBaseline: shapeDistance(sample.landmarks, baselineShape) / totalMovement,
+      toFinal: shapeDistance(sample.landmarks, finalShape) / totalMovement,
+    }));
+    for (let index = 0; index <= measured.length - COMPLETION_STABLE_SAMPLES; index += 1) {
+      if (measured[index].sample.time <= onsetTime) continue;
+      const window = measured.slice(index, index + COMPLETION_STABLE_SAMPLES);
+      const stable = window.every(
+        (item) =>
+          item.fromBaseline >= 0.8 &&
+          item.toFinal <= COMPLETION_DISTANCE_RATIO,
+      );
+      if (stable) return measured[index].sample.time;
+    }
+    return null;
+  }
+
   function updateBoundaryLog() {
     if (!samples.length) {
       elements.boundaryLog.textContent = "区間境界: 未解析";
@@ -215,16 +308,13 @@
     elements.boundaryLog.textContent = [
       `区間境界  start ${anchors.start.toFixed(2)}s`,
       `発生 ${anchors.onset.toFixed(2)}s`,
-      `ピーク ${anchors.peak.toFixed(2)}s`,
+      `変化完了 ${anchors.peak.toFixed(2)}s`,
       `収束 ${settleText}`,
     ].join("  /  ");
   }
 
   function expressionSourceEnd() {
-    if (includeSettle && anchors.settle > anchors.peak) return anchors.settle;
-    return Number.isFinite(elements.video.duration)
-      ? elements.video.duration
-      : anchors.peak;
+    return anchors.peak;
   }
 
   function rawDurations() {
@@ -455,13 +545,13 @@
   }
 
   function autoDetectBoundaries() {
-    if (!samples.length) return;
+    if (!samples.length) return null;
     const data = getSmoothedSamples().filter(
       (sample) => sample.detected && sample.smooth,
     );
     if (data.length < 3) {
       setStatus("顔を検出できた点が少ないため、自動検出できません", 0, 0, true);
-      return;
+      return null;
     }
     const base = BASE_EMOTION;
     const target = elements.targetEmotion.value;
@@ -520,9 +610,11 @@
     const onsetTime =
       crossingTime(progression, onsetLevel, "rising", 1, peakIndex) ??
       progression[Math.max(0, peakIndex - 1)].sample.time;
-    const peakTime =
+    const emotionPeakTime =
       crossingTime(progression, peakLevel, "rising", 1, peakIndex) ??
       progression[peakIndex].sample.time;
+    const landmarkCompletionTime = detectLandmarkCompletion(data, onsetTime);
+    const peakTime = landmarkCompletionTime ?? emotionPeakTime;
     const settleTime = crossingTime(
       progression,
       settleLevel,
@@ -547,11 +639,15 @@
     updateNormalizationSummary();
     updateBoundaryLog();
     drawChart();
+    const completionMethod = landmarkCompletionTime !== null
+      ? "顔形状の安定"
+      : "感情スコア";
     setStatus(
       settleTime !== null
-        ? "動き始め・ピーク・収束を自動検出しました"
-        : "動き始め・ピークを検出しました（収束なし）",
+        ? `動き始め・変化完了・収束を自動検出しました（完了: ${completionMethod}）`
+        : `動き始め・変化完了を検出しました（完了: ${completionMethod} / 収束なし）`,
     );
+    return completionMethod;
   }
 
   async function analyzeVideo() {
@@ -582,6 +678,7 @@
         await seekVideo(time);
         const detection = await faceapi
           .detectSingleFace(drawAnalysisFrame(), detectorOptions)
+          .withFaceLandmarks(true)
           .withFaceExpressions();
         const expressions = Object.fromEntries(
           EMOTIONS.map((emotion) => [
@@ -589,15 +686,24 @@
             detection?.expressions[emotion] || 0,
           ]),
         );
-        samples.push({ time, detected: Boolean(detection), expressions });
+        samples.push({
+          time,
+          detected: Boolean(detection),
+          expressions,
+          landmarks: detection
+            ? normalizeLandmarks(detection.landmarks.positions)
+            : null,
+        });
         if (index % 5 === 0) drawChart();
       }
       if (token !== analysisToken) return;
       const detectedCount = samples.filter((sample) => sample.detected).length;
       elements.detectionMetric.textContent = `${Math.round((detectedCount / samples.length) * 100)}%`;
-      autoDetectBoundaries();
+      const completionMethod = autoDetectBoundaries();
       setStatus(
-        `${samples.length}点を解析しました（顔検出 ${detectedCount}点）`,
+        completionMethod
+          ? `${samples.length}点を解析しました（顔検出 ${detectedCount}点 / 変化完了: ${completionMethod}）`
+          : `${samples.length}点を解析しました（顔検出 ${detectedCount}点）`,
       );
     } catch (error) {
       console.error(error);
@@ -699,7 +805,7 @@
 
   function exportJson() {
     const data = {
-      version: 2,
+      version: 3,
       source: sourceFileName,
       sourceDuration: elements.video.duration,
       analysis: {
