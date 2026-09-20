@@ -23,6 +23,10 @@
   };
   const BOUNDARY_KEYS = ["start", "onset", "peak", "settle"];
   const CHART_PADDING = { left: 46, right: 18, top: 16, bottom: 30 };
+  const EXPORT_FPS = 30;
+  const EXPORT_BITRATE = 8_000_000;
+  const MEDIABUNNY_URL =
+    "https://cdn.jsdelivr.net/npm/mediabunny@1.49.0/+esm";
   const $ = (id) => document.getElementById(id);
 
   const elements = {
@@ -137,7 +141,7 @@
     elements.previewButton.disabled = busy || !canNormalize;
     elements.previewRange.disabled = busy || !canNormalize;
     elements.exportVideoButton.disabled =
-      busy || !canNormalize || !window.MediaRecorder;
+      busy || !canNormalize || !("VideoEncoder" in window);
     elements.exportCsvButton.disabled = busy || !hasAnalysis;
     elements.exportJsonButton.disabled = busy || !hasAnalysis;
     elements.fileInput.disabled = busy;
@@ -535,7 +539,7 @@
       peakIndex + 1,
     );
     const neutralLead = Math.max(
-      finiteNumber(elements.sampleInterval.value, 0.1),
+      finiteNumber(elements.sampleInterval.value, 0.05),
       peakTime - onsetTime,
     );
     const roundTime = (time) => Math.round(time * 100) / 100;
@@ -571,8 +575,8 @@
     try {
       await models;
       const interval = clamp(
-        finiteNumber(elements.sampleInterval.value, 0.1),
-        0.05,
+        finiteNumber(elements.sampleInterval.value, 0.05),
+        0.03,
         2,
       );
       elements.sampleInterval.value = String(interval);
@@ -708,7 +712,7 @@
       source: sourceFileName,
       sourceDuration: elements.video.duration,
       analysis: {
-        sampleInterval: finiteNumber(elements.sampleInterval.value, 0.1),
+        sampleInterval: finiteNumber(elements.sampleInterval.value, 0.05),
         smoothingWindow: finiteNumber(elements.smoothWindow.value, 5),
         baseEmotion: BASE_EMOTION,
         targetEmotion: elements.targetEmotion.value,
@@ -732,77 +736,126 @@
     );
   }
 
-  function supportedWebmType() {
-    if (!window.MediaRecorder) return "";
-    return (
-      ["video/webm;codecs=vp9", "video/webm;codecs=vp8", "video/webm"].find(
-        (type) => MediaRecorder.isTypeSupported(type),
-      ) || ""
-    );
-  }
-
-  function delay(milliseconds) {
-    return new Promise((resolve) =>
-      setTimeout(resolve, Math.max(0, milliseconds)),
-    );
+  function readVideoDuration(blob) {
+    return new Promise((resolve, reject) => {
+      const video = document.createElement("video");
+      const url = URL.createObjectURL(blob);
+      const cleanup = () => {
+        video.removeAttribute("src");
+        video.load();
+        URL.revokeObjectURL(url);
+      };
+      video.preload = "metadata";
+      video.addEventListener(
+        "loadedmetadata",
+        () => {
+          const encodedDuration = video.duration;
+          cleanup();
+          resolve(encodedDuration);
+        },
+        { once: true },
+      );
+      video.addEventListener(
+        "error",
+        () => {
+          cleanup();
+          reject(new Error("書き出した動画の検証に失敗しました"));
+        },
+        { once: true },
+      );
+      video.src = url;
+    });
   }
 
   async function exportNormalizedVideo() {
-    const mimeType = supportedWebmType();
-    if (!mimeType || busy) {
-      setStatus("このブラウザはWebM書き出しに対応していません", 0, 0, true);
+    if (!("VideoEncoder" in window) || busy) {
+      setStatus("このブラウザは固定時刻のWebM書き出しに対応していません", 0, 0, true);
       return;
     }
     pausePreview();
     elements.video.pause();
     const restoreTime = elements.video.currentTime;
-    const duration = normalizedDuration();
-    const fps = 30;
-    const frameCount = Math.max(1, Math.ceil(duration * fps));
+    const requestedDuration = normalizedDuration();
+    const frameCount = Math.max(2, Math.round(requestedDuration * EXPORT_FPS));
+    const encodedDuration = frameCount / EXPORT_FPS;
+    const frameDuration = 1 / EXPORT_FPS;
     const canvas = document.createElement("canvas");
     canvas.width = elements.video.videoWidth;
     canvas.height = elements.video.videoHeight;
     const ctx = canvas.getContext("2d", { alpha: false });
-    const stream = canvas.captureStream(fps);
-    const recorder = new MediaRecorder(stream, {
-      mimeType,
-      videoBitsPerSecond: 8_000_000,
-    });
-    const chunks = [];
-    recorder.addEventListener("dataavailable", (event) => {
-      if (event.data.size) chunks.push(event.data);
-    });
-    const stopped = new Promise((resolve) =>
-      recorder.addEventListener("stop", resolve, { once: true }),
-    );
     setBusy(true);
 
     try {
-      recorder.start(250);
-      const startedAt = performance.now();
+      const {
+        BufferTarget,
+        CanvasSource,
+        Output,
+        WebMOutputFormat,
+        canEncodeVideo,
+      } = await import(MEDIABUNNY_URL);
+      const encodingOptions = {
+        width: canvas.width,
+        height: canvas.height,
+        bitrate: EXPORT_BITRATE,
+        latencyMode: "quality",
+      };
+      const codec = (await canEncodeVideo("vp9", encodingOptions))
+        ? "vp9"
+        : (await canEncodeVideo("vp8", encodingOptions))
+          ? "vp8"
+          : "";
+      if (!codec) throw new Error("VP8/VP9エンコーダーを利用できません");
+
+      const target = new BufferTarget();
+      const output = new Output({
+        format: new WebMOutputFormat(),
+        target,
+      });
+      const videoSource = new CanvasSource(canvas, {
+        codec,
+        bitrate: EXPORT_BITRATE,
+        latencyMode: "quality",
+        keyFrameInterval: 1,
+      });
+      output.addVideoTrack(videoSource, { frameRate: EXPORT_FPS });
+      await output.start();
+
       for (let frame = 0; frame < frameCount; frame += 1) {
-        const outputTime = Math.min(frame / fps, duration);
+        const progress = frame / (frameCount - 1);
+        const sourceTime = mapNormalizedTime(requestedDuration * progress);
         setStatus(
           `正規化WebMを書き出し中 ${frame + 1} / ${frameCount}`,
           frame + 1,
           frameCount,
         );
-        await seekVideo(mapNormalizedTime(outputTime));
+        await seekVideo(sourceTime);
         ctx.drawImage(elements.video, 0, 0, canvas.width, canvas.height);
-        const nextFrameAt = startedAt + ((frame + 1) * 1000) / fps;
-        await delay(nextFrameAt - performance.now());
+        await videoSource.add(frame / EXPORT_FPS, frameDuration, {
+          keyFrame: frame === 0,
+        });
       }
-      recorder.stop();
-      await stopped;
-      const blob = new Blob(chunks, { type: mimeType });
+      videoSource.close();
+      await output.finalize();
+      if (!target.buffer) throw new Error("WebMデータを生成できませんでした");
+
+      const blob = new Blob([target.buffer], { type: "video/webm" });
+      const verifiedDuration = await readVideoDuration(blob);
+      if (
+        !Number.isFinite(verifiedDuration) ||
+        Math.abs(verifiedDuration - encodedDuration) > frameDuration / 2
+      ) {
+        throw new Error(
+          `書き出し時間が不正です（${verifiedDuration}秒 / 期待値 ${encodedDuration}秒）`,
+        );
+      }
       downloadBlob(blob, `${safeBaseName()}-normalized.webm`);
-      setStatus(`正規化WebMを保存しました（${duration.toFixed(2)}秒）`);
+      setStatus(
+        `正規化WebMを保存しました（${frameCount}フレーム / ${encodedDuration.toFixed(3)}秒 / ${EXPORT_FPS}fps）`,
+      );
     } catch (error) {
       console.error(error);
-      if (recorder.state !== "inactive") recorder.stop();
-      setStatus("WebMの書き出しに失敗しました", 0, 0, true);
+      setStatus(`WebMの書き出しに失敗しました: ${error.message}`, 0, 0, true);
     } finally {
-      stream.getTracks().forEach((track) => track.stop());
       await seekVideo(restoreTime).catch(() => {});
       setBusy(false);
       updateNormalizationSummary();

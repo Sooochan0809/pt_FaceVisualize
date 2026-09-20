@@ -6,6 +6,7 @@ const MORPH_HEIGHT = 800;
 const MORPH_RATIO = MORPH_WIDTH / MORPH_HEIGHT;
 const VIDEO_RENDER_FPS = 30;
 const VIDEO_DETECTION_INTERVAL = 250;
+const VIDEO_SYNC_TOLERANCE = 0.08;
 const TRIANGLE_OVERDRAW_PX = 0.75;
 const MEDIAPIPE_TASKS_URL = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest";
 const MEDIAPIPE_WASM_URL = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm";
@@ -28,6 +29,8 @@ let monochromeEnabled = true;
 let animationFrameId = null;
 let lastRenderedAt = 0;
 let loadingCount = 0;
+let videoTimelinePosition = 0;
+let videoTimelineStartedAt = null;
 
 function createId() {
     return crypto.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -127,7 +130,6 @@ function loadVideo(src) {
         const video = document.createElement("video");
         video.muted = true;
         video.loop = true;
-        video.autoplay = true;
         video.playsInline = true;
         video.preload = "auto";
         video.onloadeddata = () => resolve(video);
@@ -157,7 +159,6 @@ async function makeLayer(file) {
         drawMediaToCanvas(media, sourceCanvas);
         const faceLandmarker = await getFaceLandmarker();
         const points = detectPoints(faceLandmarker, sourceCanvas);
-        if (isVideo) await media.play().catch(() => {});
 
         return {
             id: createId(),
@@ -319,7 +320,49 @@ function updateLayerState(layer) {
     if (slider) slider.disabled = !detected;
 }
 
+function getVideoTimelinePosition(now = performance.now()) {
+    if (videoTimelineStartedAt === null) return videoTimelinePosition;
+    return videoTimelinePosition + (now - videoTimelineStartedAt) / 1000;
+}
+
+function syncVideoElement(video, timelinePosition, force = false) {
+    if (video.readyState < 1) return;
+
+    if (Number.isFinite(video.duration) && video.duration > 0) {
+        const targetTime = timelinePosition % video.duration;
+        const directDrift = Math.abs(video.currentTime - targetTime);
+        const loopDrift = Math.min(directDrift, Math.abs(video.duration - directDrift));
+        if (force || loopDrift > VIDEO_SYNC_TOLERANCE) video.currentTime = targetTime;
+    }
+    if (!document.hidden && video.paused) video.play().catch(() => {});
+}
+
+function syncVideoPlayback(now = performance.now(), force = false) {
+    const videoLayers = layers.filter((layer) => layer.mediaType === "video");
+    if (videoLayers.length === 0) {
+        videoTimelinePosition = 0;
+        videoTimelineStartedAt = null;
+        return;
+    }
+
+    if (!document.hidden && videoTimelineStartedAt === null) videoTimelineStartedAt = now;
+    const timelinePosition = getVideoTimelinePosition(now);
+    videoLayers.forEach((layer) => {
+        syncVideoElement(layer.media, timelinePosition, force);
+    });
+}
+
+function pauseVideoPlayback(now = performance.now()) {
+    videoTimelinePosition = getVideoTimelinePosition(now);
+    videoTimelineStartedAt = null;
+    layers.forEach((layer) => {
+        if (layer.mediaType !== "video") return;
+        layer.media.pause();
+    });
+}
+
 function updateVideoLayers(now) {
+    syncVideoPlayback(now);
     const faceLandmarkerReady = faceLandmarkerPromise;
     layers.forEach((layer) => {
         if (layer.mediaType !== "video" || layer.media.readyState < 2) return;
@@ -355,9 +398,11 @@ function ensureAnimationLoop() {
     const hasVideo = layers.some((layer) => layer.mediaType === "video");
     if (hasVideo && animationFrameId === null) {
         animationFrameId = requestAnimationFrame(animationLoop);
-    } else if (!hasVideo && animationFrameId !== null) {
-        cancelAnimationFrame(animationFrameId);
+    } else if (!hasVideo) {
+        if (animationFrameId !== null) cancelAnimationFrame(animationFrameId);
         animationFrameId = null;
+        videoTimelinePosition = 0;
+        videoTimelineStartedAt = null;
     }
 }
 
@@ -386,6 +431,22 @@ function setLayerWeight(id, value) {
     renderOutputs();
 }
 
+function createVideoThumbnail(layer) {
+    const canvas = document.createElement("canvas");
+    const size = 148;
+    canvas.width = size;
+    canvas.height = size;
+    canvas.setAttribute("aria-hidden", "true");
+
+    const source = layer.sourceCanvas;
+    const scale = Math.min(size / source.width, size / source.height);
+    const width = source.width * scale;
+    const height = source.height * scale;
+    const ctx = canvas.getContext("2d");
+    ctx.drawImage(source, (size - width) / 2, (size - height) / 2, width, height);
+    return canvas;
+}
+
 function createLayerItem(layer) {
     const item = document.createElement("article");
     item.className = "layer";
@@ -402,15 +463,12 @@ function createLayerItem(layer) {
 
     const thumbnail = document.createElement("div");
     thumbnail.className = "layerThumb";
-    const preview = layer.media.cloneNode(true);
-    preview.muted = true;
-    preview.loop = true;
-    preview.autoplay = true;
-    preview.playsInline = true;
+    const preview = layer.mediaType === "video"
+        ? createVideoThumbnail(layer)
+        : layer.media.cloneNode(true);
     if (layer.mediaType === "image") preview.alt = "";
     thumbnail.appendChild(preview);
     if (layer.mediaType === "video") {
-        preview.play().catch(() => {});
         const badge = document.createElement("span");
         badge.className = "mediaBadge";
         badge.textContent = "VIDEO";
@@ -490,17 +548,13 @@ async function addFiles(fileList) {
 
     loadingCount += files.length;
     renderStatus();
-    for (const file of files) {
-        try {
-            const layer = await makeLayer(file);
-            layers.push(layer);
-        } catch (error) {
-            console.error(`Failed to load ${file.name}.`, error);
-        } finally {
-            loadingCount -= 1;
-            renderAll();
-        }
-    }
+    const results = await Promise.allSettled(files.map(makeLayer));
+    results.forEach((result, index) => {
+        if (result.status === "fulfilled") layers.push(result.value);
+        else console.error(`Failed to load ${files[index].name}.`, result.reason);
+    });
+    loadingCount -= files.length;
+    renderAll();
 }
 
 fileInput.addEventListener("change", async (event) => {
@@ -521,11 +575,8 @@ monoToggleButton.addEventListener("click", () => {
 });
 
 document.addEventListener("visibilitychange", () => {
-    layers.forEach((layer) => {
-        if (layer.mediaType !== "video") return;
-        if (document.hidden) layer.media.pause();
-        else layer.media.play().catch(() => {});
-    });
+    if (document.hidden) pauseVideoPlayback();
+    else syncVideoPlayback(performance.now(), true);
 });
 
 window.addEventListener("beforeunload", () => layers.forEach(disposeLayer));
