@@ -7,7 +7,7 @@
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <title>normalizer</title>
     <script defer src="../modules/faceAPI/face-api.min.js"></script>
-    <script defer src="app.js?v=20260919-1"></script>
+    <script defer src="app.js?v=20260920-1"></script>
     <style>
         :root {
             --bg: #f0f0f0;
@@ -93,8 +93,7 @@
             background: var(--panel);
         }
 
-        .panel h2,
-        .panel h3 {
+        .panel h2 {
             margin: 0;
             font-size: .9rem;
         }
@@ -105,15 +104,6 @@
             justify-content: space-between;
             gap: 12px;
             margin-bottom: 12px;
-        }
-
-        .muted {
-            color: var(--muted);
-        }
-
-        .small {
-            font-size: .72rem;
-            line-height: 1.55;
         }
 
         .videoShell {
@@ -337,10 +327,6 @@
             padding: 0 5px;
         }
 
-        .segment.is-disabled {
-            opacity: .42;
-        }
-
         .segment[hidden] {
             display: none;
         }
@@ -433,7 +419,7 @@
             <section class="panel">
                 <div class="videoShell">
                     <video id="video" playsinline muted controls hidden></video>
-                    <div class="emptyVideo" id="emptyVideo"></div>
+                    <div id="emptyVideo"></div>
                 </div>
                 <div class="toolbar">
                     <label class="fileButton">動画を選択<input id="fileInput" type="file" accept="video/*"></label>
@@ -487,7 +473,7 @@
                     <h2>正規化</h2>
                 </div>
                 <div class="segments">
-                    <div class="segment" id="neutralSegment">
+                    <div class="segment">
                         <i class="segmentColor" style="background:#88919c"></i>
                         <div class="segmentTitle">0から動き始めるまで</div>
                         <div class="durationFlow">
@@ -497,7 +483,7 @@
                                     step="0.01" value="0.5"><span>秒</span></label>
                         </div>
                     </div>
-                    <div class="segment" id="riseSegment">
+                    <div class="segment">
                         <i class="segmentColor" style="background:var(--accent)"></i>
                         <div class="segmentTitle">表情が発生している状態</div>
                         <div class="durationFlow">

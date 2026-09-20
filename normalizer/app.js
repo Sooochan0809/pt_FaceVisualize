@@ -204,21 +204,6 @@
     return analysisCanvas;
   }
 
-  function setDefaultAnchors() {
-    const duration = Number.isFinite(elements.video.duration)
-      ? elements.video.duration
-      : 0;
-    includeSettle = true;
-    anchors = {
-      start: 0,
-      onset: duration * 0.25,
-      peak: duration * 0.6,
-      settle: duration * 0.9,
-    };
-    updateNormalizationSummary();
-    updateBoundaryLog();
-  }
-
   function updateBoundaryLog() {
     if (!samples.length) {
       elements.boundaryLog.textContent = "区間境界: 未解析";
@@ -322,8 +307,6 @@
     updateRawDuration(elements.riseRaw, raw.rise);
     updateRawDuration(elements.settleRaw, raw.settle);
     elements.settleSegment.hidden = !includeSettle;
-    elements.settleDuration.disabled =
-      !includeSettle || busy || !samples.length;
 
     const sourceEnd = includeSettle ? anchors.settle : anchors.peak;
     elements.rawDurationMetric.textContent = formatSeconds(
@@ -835,20 +818,22 @@
     sourceFileName = file.name;
     videoReady = false;
     samples = [];
+    anchors = { start: 0, onset: 0, peak: 0, settle: 0 };
+    includeSettle = true;
+    previewPosition = 0;
     elements.detectionMetric.textContent = "—";
     elements.video.hidden = false;
     elements.emptyVideo.hidden = true;
     elements.video.src = objectUrl;
     elements.video.load();
     setStatus("動画を読み込んでいます");
-    updateButtonStates();
+    updateNormalizationSummary();
+    updateBoundaryLog();
 
     try {
       await waitForVideoMetadata();
       videoReady = true;
       elements.video.currentTime = 0;
-      previewPosition = 0;
-      setDefaultAnchors();
       setStatus(`${file.name} / ${formatClock(elements.video.duration)}`);
       updateButtonStates();
       drawChart();
