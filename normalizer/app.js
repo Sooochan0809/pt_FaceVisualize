@@ -42,13 +42,10 @@
     smoothWindow: $("smoothWindow"),
     targetLegend: $("targetLegend"),
     boundaryLog: $("boundaryLog"),
-    neutralDuration: $("neutralDuration"),
-    riseDuration: $("riseDuration"),
-    settleDuration: $("settleDuration"),
-    neutralRaw: $("neutralRaw"),
-    riseRaw: $("riseRaw"),
-    settleRaw: $("settleRaw"),
-    settleSegment: $("settleSegment"),
+    onsetTime: $("onsetTime"),
+    expressionDuration: $("expressionDuration"),
+    onsetRaw: $("onsetRaw"),
+    expressionRaw: $("expressionRaw"),
     previewButton: $("previewButton"),
     previewRange: $("previewRange"),
     previewTime: $("previewTime"),
@@ -148,9 +145,8 @@
     elements.targetEmotion.disabled = busy;
     elements.sampleInterval.disabled = busy;
     elements.smoothWindow.disabled = busy;
-    elements.neutralDuration.disabled = busy || !hasAnalysis;
-    elements.riseDuration.disabled = busy || !hasAnalysis;
-    elements.settleDuration.disabled = busy || !hasAnalysis || !includeSettle;
+    elements.onsetTime.disabled = busy || !hasAnalysis;
+    elements.expressionDuration.disabled = busy || !hasAnalysis;
   }
 
   function setBusy(nextBusy) {
@@ -224,22 +220,27 @@
     ].join("  /  ");
   }
 
+  function expressionSourceEnd() {
+    if (includeSettle && anchors.settle > anchors.peak) return anchors.settle;
+    return Number.isFinite(elements.video.duration)
+      ? elements.video.duration
+      : anchors.peak;
+  }
+
   function rawDurations() {
     return {
-      neutral: Math.max(0, anchors.onset - anchors.start),
-      rise: Math.max(0, anchors.peak - anchors.onset),
-      settle: Math.max(0, anchors.settle - anchors.peak),
+      onset: Math.max(0, anchors.onset - anchors.start),
+      expression: Math.max(0, expressionSourceEnd() - anchors.onset),
     };
   }
 
   function targetDurations() {
     return {
-      neutral: Math.max(
+      onset: Math.max(0.01, finiteNumber(elements.onsetTime.value, 0.3)),
+      expression: Math.max(
         0.01,
-        finiteNumber(elements.neutralDuration.value, 0.5),
+        finiteNumber(elements.expressionDuration.value, 1.7),
       ),
-      rise: Math.max(0.01, finiteNumber(elements.riseDuration.value, 0.5)),
-      settle: Math.max(0.01, finiteNumber(elements.settleDuration.value, 0.5)),
     };
   }
 
@@ -247,26 +248,18 @@
     const target = targetDurations();
     const segments = [
       {
-        key: "neutral",
+        key: "beforeOnset",
         sourceStart: anchors.start,
         sourceEnd: anchors.onset,
-        targetDuration: target.neutral,
+        targetDuration: target.onset,
       },
       {
-        key: "rise",
+        key: "expression",
         sourceStart: anchors.onset,
-        sourceEnd: anchors.peak,
-        targetDuration: target.rise,
+        sourceEnd: expressionSourceEnd(),
+        targetDuration: target.expression,
       },
     ];
-    if (includeSettle && anchors.settle > anchors.peak) {
-      segments.push({
-        key: "settle",
-        sourceStart: anchors.peak,
-        sourceEnd: anchors.settle,
-        targetDuration: target.settle,
-      });
-    }
     return segments.filter(
       (segment) =>
         segment.sourceEnd > segment.sourceStart && segment.targetDuration > 0,
@@ -307,12 +300,10 @@
 
   function updateNormalizationSummary() {
     const raw = rawDurations();
-    updateRawDuration(elements.neutralRaw, raw.neutral);
-    updateRawDuration(elements.riseRaw, raw.rise);
-    updateRawDuration(elements.settleRaw, raw.settle);
-    elements.settleSegment.hidden = !includeSettle;
+    updateRawDuration(elements.onsetRaw, raw.onset);
+    updateRawDuration(elements.expressionRaw, raw.expression);
 
-    const sourceEnd = includeSettle ? anchors.settle : anchors.peak;
+    const sourceEnd = expressionSourceEnd();
     elements.rawDurationMetric.textContent = formatSeconds(
       Math.max(0, sourceEnd - anchors.start),
     );
@@ -708,7 +699,7 @@
 
   function exportJson() {
     const data = {
-      version: 1,
+      version: 2,
       source: sourceFileName,
       sourceDuration: elements.video.duration,
       analysis: {
@@ -918,14 +909,11 @@
       else drawChart();
     });
 
-    [
-      elements.neutralDuration,
-      elements.riseDuration,
-      elements.settleDuration,
-    ].forEach((input) => {
+    [elements.onsetTime, elements.expressionDuration].forEach((input) => {
       input.addEventListener("input", updateNormalizationSummary);
       input.addEventListener("change", () => {
-        input.value = Math.max(0.01, finiteNumber(input.value, 0.5)).toFixed(2);
+        const fallback = input === elements.onsetTime ? 0.3 : 1.7;
+        input.value = Math.max(0.01, finiteNumber(input.value, fallback)).toFixed(2);
         updateNormalizationSummary();
       });
     });

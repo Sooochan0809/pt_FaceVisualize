@@ -7,7 +7,7 @@
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <title>normalizer</title>
     <script defer src="../modules/faceAPI/face-api.min.js"></script>
-    <script defer src="app.js?v=20260920-2"></script>
+    <script defer src="app.js?v=20260920-3"></script>
     <style>
         :root {
             --bg: #f0f0f0;
@@ -475,32 +475,22 @@
                 <div class="segments">
                     <div class="segment">
                         <i class="segmentColor" style="background:#88919c"></i>
-                        <div class="segmentTitle">0から動き始めるまで</div>
+                        <div class="segmentTitle">表情が発生するタイミング</div>
                         <div class="durationFlow">
-                            <span class="rawDuration" id="neutralRaw">raw 0.00秒</span>
+                            <span class="rawDuration" id="onsetRaw">raw 0.00秒</span>
                             <span class="durationArrow">→</span>
-                            <label class="durationField"><input id="neutralDuration" type="number" min="0.01"
-                                    step="0.01" value="0.3"><span>秒</span></label>
+                            <label class="durationField"><input id="onsetTime" type="number" min="0.01"
+                                    step="0.01" value="1.0"><span>秒</span></label>
                         </div>
                     </div>
                     <div class="segment">
                         <i class="segmentColor" style="background:var(--accent)"></i>
-                        <div class="segmentTitle">表情が発生している状態</div>
+                        <div class="segmentTitle">表情が発生して終了するまで</div>
                         <div class="durationFlow">
-                            <span class="rawDuration" id="riseRaw">raw 0.00秒</span>
+                            <span class="rawDuration" id="expressionRaw">raw 0.00秒</span>
                             <span class="durationArrow">→</span>
-                            <label class="durationField"><input id="riseDuration" type="number" min="0.01" step="0.01"
-                                    value="1.7"><span>秒</span></label>
-                        </div>
-                    </div>
-                    <div class="segment" id="settleSegment">
-                        <i class="segmentColor" style="background:#8b6fc0"></i>
-                        <div class="segmentTitle">発生から収束する状態</div>
-                        <div class="durationFlow">
-                            <span class="rawDuration" id="settleRaw">raw 0.00秒</span>
-                            <span class="durationArrow">→</span>
-                            <label class="durationField"><input id="settleDuration" type="number" min="0.01" step="0.01"
-                                    value="0.5"><span>秒</span></label>
+                            <label class="durationField"><input id="expressionDuration" type="number" min="0.01" step="0.01"
+                                    value="3.0"><span>秒</span></label>
                         </div>
                     </div>
                 </div>
