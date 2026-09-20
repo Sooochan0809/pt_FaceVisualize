@@ -1,7 +1,7 @@
 (() => {
     "use strict";
 
-    const MODEL_URL = "../../modules/faceAPI/models";
+    const MODEL_URL = "../modules/faceAPI/models";
     const BASE_EMOTION = "neutral";
     const EMOTIONS = ["neutral", "happy", "sad", "angry", "fearful", "disgusted", "surprised"];
     const EMOTION_LABELS = {
