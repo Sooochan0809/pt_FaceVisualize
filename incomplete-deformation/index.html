@@ -207,10 +207,15 @@
 
         .transport {
             display: grid;
-            grid-template-columns: auto 1fr auto;
+            grid-template-columns: auto minmax(0, 1fr) auto auto;
             align-items: center;
             gap: 10px;
             margin-top: 11px;
+        }
+
+        .transportLoop {
+            min-height: 0;
+            white-space: nowrap;
         }
 
         .transport button {
@@ -389,6 +394,24 @@
 
         .status.error {
             color: var(--danger);
+        }
+
+        .previewStatusRow {
+            min-height: 18px;
+            display: flex;
+            justify-content: flex-end;
+            align-items: center;
+            margin-bottom: 8px;
+            text-align: right;
+        }
+
+        .previewStatusRow .status {
+            flex: 0 1 auto;
+            min-width: 0;
+        }
+
+        .previewProgress {
+            margin: 0 0 9px;
         }
 
         progress {
@@ -642,12 +665,6 @@
             border-radius: 2px;
         }
 
-        .note {
-            color: var(--muted);
-            font-size: .65rem;
-            line-height: 1.55;
-        }
-
         @media (max-width: 940px) {
             .app {
                 grid-template-columns: 1fr;
@@ -675,6 +692,15 @@
             .editorRow {
                 grid-template-columns: 1fr;
             }
+
+            .transport {
+                grid-template-columns: auto minmax(0, 1fr) auto;
+            }
+
+            .transportLoop {
+                grid-column: 2 / -1;
+                justify-self: end;
+            }
         }
     </style>
 </head>
@@ -683,6 +709,10 @@
     <main class="app">
         <section class="workspace stack">
             <section class="panel">
+                <div class="previewStatusRow">
+                    <span class="status" id="status">MediaPipe / Face APIモデルを読み込んでいます</span>
+                </div>
+                <progress id="progress" class="previewProgress" min="0" max="1" value="0" hidden></progress>
                 <div class="stage" id="stage">
                     <canvas id="outputCanvas" width="1280" height="720"></canvas>
                     <video id="sourceVideo" playsinline muted preload="auto"></video>
@@ -698,6 +728,7 @@
                     <button id="playButton" type="button" disabled aria-label="プレビュー再生">▶</button>
                     <input id="playhead" type="range" min="0" max="1" value="0" step="0.001" disabled>
                     <output id="timeOutput" class="time">0.00 / 0.00s</output>
+                    <label class="checkField transportLoop"><input id="loopToggle" type="checkbox" checked> ループ再生</label>
                 </div>
                 <div class="sequenceTimeline" id="sequenceTimeline" aria-label="シーケンスタイムライン"></div>
                 <div class="timelineLegend" aria-label="タイムライン凡例">
@@ -716,7 +747,7 @@
             <section class="panel">
                 <div class="panelHeader">
                     <h2>素材</h2>
-                    <label class="fileButton">素材を追加<input id="fileInput" type="file" accept="video/*" multiple></label>
+                    <label class="fileButton">追加<input id="fileInput" type="file" accept="video/*" multiple></label>
                 </div>
                 <div class="buttonRow" style="margin-bottom:10px">
                     <button id="analyzeAllButton" class="accent" type="button" disabled>すべて解析</button>
@@ -764,14 +795,12 @@
                             <div class="boundaryValue" id="settleDuration">0.00s</div>
                         </div>
                     </div>
-                    <p class="note" style="margin-top:10px">
-                        MediaPipeの顔ランドマーク変位を主成分、ファイル名から選んだ感情値を補助成分として境界を検出します。各入力値は素材内の時刻です。</p>
                 </div>
             </section>
 
             <section class="panel">
                 <div class="panelHeader">
-                    <h2>シーケンス設定</h2>
+                    <h2>シーケンス</h2>
                     <button id="importJsonButton" class="compactButton" type="button">設定を読み込む</button>
                     <input id="jsonInput" type="file" accept="application/json,.json" hidden>
                 </div>
@@ -797,23 +826,17 @@
                     <label class="field">解析間隔（秒）
                         <input id="sampleInterval" type="number" min="0.04" max="1" step="0.01" value="0.08">
                     </label>
-                    <label class="checkField"><input id="loopToggle" type="checkbox" checked> ループ再生</label>
                 </div>
-                <p class="note" style="margin-top:10px">
-                    折返し位置が異なっても、導入→発生→折返し→発生→ホームを全素材で同じ尺に正規化します。1本目の冒頭→発生と、2本目以降の発生点モーフには同じ導入時間を使います。
-                </p>
             </section>
 
             <section class="panel">
                 <div class="panelHeader">
-                    <h2>出力</h2><span class="note">音声なし・30 fps</span>
+                    <h2>出力</h2>
                 </div>
                 <div class="buttonRow">
-                    <button id="exportButton" class="dark" type="button" disabled>書き出し</button>
-                    <button id="exportJsonButton" type="button" disabled>JSON（設定）</button>
-                    <span class="status" id="status">MediaPipe / Face APIモデルを読み込んでいます</span>
+                    <button id="exportButton" class="dark" type="button" disabled>書き出し（Webm）</button>
+                    <button id="exportJsonButton" type="button" disabled>設定（JSON）</button>
                 </div>
-                <progress id="progress" min="0" max="1" value="0" hidden></progress>
             </section>
         </aside>
     </main>
