@@ -135,6 +135,14 @@
             margin-bottom: 12px;
         }
 
+        .compactButton {
+            min-height: 28px;
+            padding: 0 9px;
+            border-radius: 6px;
+            font-size: .66rem;
+            white-space: nowrap;
+        }
+
         h1,
         h2,
         p {
@@ -708,7 +716,7 @@
             <section class="panel">
                 <div class="panelHeader">
                     <h2>素材</h2>
-                    <label class="fileButton">映像を追加<input id="fileInput" type="file" accept="video/*" multiple></label>
+                    <label class="fileButton">素材を追加<input id="fileInput" type="file" accept="video/*" multiple></label>
                 </div>
                 <div class="buttonRow" style="margin-bottom:10px">
                     <button id="analyzeAllButton" class="accent" type="button" disabled>すべて解析</button>
@@ -764,6 +772,8 @@
             <section class="panel">
                 <div class="panelHeader">
                     <h2>シーケンス設定</h2>
+                    <button id="importJsonButton" class="compactButton" type="button">設定を読み込む</button>
+                    <input id="jsonInput" type="file" accept="application/json,.json" hidden>
                 </div>
                 <div class="settingsGrid">
                     <label class="field">発生→折返し（秒）
@@ -792,10 +802,6 @@
                 <p class="note" style="margin-top:10px">
                     折返し位置が異なっても、導入→発生→折返し→発生→ホームを全素材で同じ尺に正規化します。1本目の冒頭→発生と、2本目以降の発生点モーフには同じ導入時間を使います。
                 </p>
-                <div class="buttonRow" style="margin-top:10px">
-                    <button id="importJsonButton" type="button">設定を読み込む</button>
-                    <input id="jsonInput" type="file" accept="application/json,.json" hidden>
-                </div>
             </section>
 
             <section class="panel">
