@@ -1,0 +1,816 @@
+<!doctype html>
+<html lang="ja">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <title>Incomplete Deformation</title>
+    <script defer src="../modules/faceAPI/face-api.min.js"></script>
+    <script defer src="app.js?v=20260922-3"></script>
+    <style>
+        :root {
+            --bg: #f2f1ee;
+            --panel: #fff;
+            --ink: #171a1d;
+            --muted: #74797e;
+            --line: #dcdedc;
+            --accent: #ff6b45;
+            --mint: #42d392;
+            --violet: #8b6fc0;
+            --danger: #c94c4c;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        html {
+            min-height: 100%;
+        }
+
+        body {
+            min-height: 100dvh;
+            margin: 0;
+            background: var(--bg);
+            color: var(--ink);
+            font-family: "Yu Gothic Medium", "Yu Gothic", system-ui, sans-serif;
+        }
+
+        button,
+        input,
+        select {
+            font: inherit;
+        }
+
+        button,
+        .fileButton {
+            min-height: 36px;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            background: var(--panel);
+            color: var(--ink);
+            cursor: pointer;
+        }
+
+        button {
+            padding: 0 12px;
+        }
+
+        button:disabled,
+        input:disabled,
+        select:disabled {
+            cursor: not-allowed;
+            opacity: .45;
+        }
+
+        .app {
+            width: min(1560px, 100%);
+            min-height: 100dvh;
+            margin: auto;
+            display: grid;
+            grid-template-columns: minmax(0, 1.55fr) minmax(390px, .85fr);
+        }
+
+        .workspace,
+        .sidebar {
+            min-width: 0;
+            padding: 18px;
+        }
+
+        .sidebar {
+            border-left: 1px solid var(--line);
+            background: rgba(255, 255, 255, .68);
+        }
+
+        @media (min-width: 941px) {
+
+            html,
+            body {
+                height: 100%;
+                overflow: hidden;
+            }
+
+            .app {
+                height: 100dvh;
+                min-height: 0;
+                overflow: hidden;
+            }
+
+            .workspace {
+                position: sticky;
+                top: 0;
+                height: 100dvh;
+                overflow: hidden;
+            }
+
+            .sidebar {
+                height: 100dvh;
+                overflow-x: hidden;
+                overflow-y: auto;
+                overscroll-behavior: contain;
+                scrollbar-gutter: stable;
+            }
+        }
+
+        .stack {
+            display: grid;
+            align-content: start;
+            gap: 14px;
+        }
+
+        .panel {
+            min-width: 0;
+            padding: 14px;
+            border: 1px solid var(--line);
+            border-radius: 11px;
+            background: var(--panel);
+        }
+
+        .panelHeader {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            margin-bottom: 12px;
+        }
+
+        h1,
+        h2,
+        p {
+            margin: 0;
+        }
+
+        h1 {
+            font-size: 1rem;
+            letter-spacing: .04em;
+        }
+
+        h2 {
+            font-size: .88rem;
+        }
+
+        .stage {
+            position: relative;
+            min-height: 360px;
+            display: grid;
+            place-items: center;
+            overflow: hidden;
+            border-radius: 9px;
+            background: #111416;
+        }
+
+        #outputCanvas {
+            display: block;
+            width: 100%;
+            max-height: 62dvh;
+            object-fit: contain;
+        }
+
+        #sourceVideo,
+        #transitionVideo {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .stageOverlay {
+            position: absolute;
+            inset: auto 12px 12px 12px;
+            display: flex;
+            justify-content: space-between;
+            align-items: end;
+            gap: 12px;
+            color: #fff;
+            pointer-events: none;
+            text-shadow: 0 1px 3px #000;
+        }
+
+        .stageTitle {
+            font-size: .78rem;
+        }
+
+        .stagePhase {
+            color: rgba(255, 255, 255, .72);
+            font: .67rem ui-monospace, monospace;
+        }
+
+        .transport {
+            display: grid;
+            grid-template-columns: auto 1fr auto;
+            align-items: center;
+            gap: 10px;
+            margin-top: 11px;
+        }
+
+        .transport button {
+            width: 44px;
+            padding: 0;
+        }
+
+        input[type="range"] {
+            width: 100%;
+            accent-color: var(--accent);
+        }
+
+        .time {
+            min-width: 92px;
+            color: var(--muted);
+            font: .7rem ui-monospace, monospace;
+            text-align: right;
+        }
+
+        .sequenceTimeline {
+            display: flex;
+            height: 42px;
+            overflow: hidden;
+            margin-top: 10px;
+            border: 1px solid var(--line);
+            border-radius: 7px;
+            background: #eee;
+        }
+
+        .timelineClip {
+            position: relative;
+            min-width: 4px;
+            display: flex;
+            overflow: hidden;
+            border-right: 1px solid rgba(255, 255, 255, .8);
+        }
+
+        .timelinePhase {
+            display: block;
+            min-width: 0;
+            height: 100%;
+        }
+
+        .timelinePhase.forward {
+            background: #d9dde1;
+        }
+
+        .timelinePhase.rewind {
+            background: repeating-linear-gradient(135deg, rgba(139, 111, 192, .9) 0 4px, rgba(139, 111, 192, .42) 4px 8px);
+        }
+
+        .timelinePhase.hold {
+            background: #8b6fc0;
+        }
+
+        .timelinePhase.morph {
+            background: repeating-linear-gradient(135deg, rgba(255, 107, 69, .95) 0 4px, rgba(255, 180, 151, .7) 4px 8px);
+        }
+
+        .timelinePhase.rewindMorph {
+            background: repeating-linear-gradient(135deg, rgba(139, 111, 192, .92) 0 4px, rgba(255, 107, 69, .88) 4px 8px);
+        }
+
+        .timelineOnsetMarker {
+            position: absolute;
+            z-index: 2;
+            top: 0;
+            bottom: 0;
+            width: 2px;
+            margin-left: -1px;
+            background: var(--mint);
+            box-shadow: 0 0 0 1px rgba(255, 255, 255, .72);
+            pointer-events: none;
+        }
+
+        .timelineClip.active {
+            outline: 2px solid var(--ink);
+            outline-offset: -2px;
+        }
+
+        .timelineLegend {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin-top: 7px;
+            color: var(--muted);
+            font-size: .62rem;
+        }
+
+        .timelineLegend span {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .timelineLegend i {
+            width: 18px;
+            height: 7px;
+            border-radius: 2px;
+        }
+
+        .timelineLegend .forward {
+            background: #d9dde1;
+        }
+
+        .timelineLegend .rewind {
+            background: repeating-linear-gradient(135deg, rgba(139, 111, 192, .9) 0 3px, rgba(139, 111, 192, .42) 3px 6px);
+        }
+
+        .timelineLegend .hold {
+            background: #8b6fc0;
+        }
+
+        .timelineLegend .morph {
+            background: repeating-linear-gradient(135deg, rgba(255, 107, 69, .95) 0 3px, rgba(255, 180, 151, .7) 3px 6px);
+        }
+
+        .timelineLegend .rewindMorph {
+            background: repeating-linear-gradient(135deg, rgba(139, 111, 192, .92) 0 3px, rgba(255, 107, 69, .88) 3px 6px);
+        }
+
+        .timelineLegend .onset {
+            width: 2px;
+            height: 11px;
+            margin: 0 8px;
+            background: var(--mint);
+            box-shadow: 0 0 0 1px rgba(255, 255, 255, .8);
+        }
+
+        .toolbar,
+        .buttonRow {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .fileButton {
+            position: relative;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            padding: 0 13px;
+            background: var(--ink);
+            border-color: var(--ink);
+            color: #fff;
+            font-size: .78rem;
+        }
+
+        .fileButton input {
+            position: absolute;
+            inset: 0;
+            opacity: 0;
+            cursor: pointer;
+        }
+
+        .accent {
+            background: var(--accent);
+            border-color: var(--accent);
+            color: #21100b;
+        }
+
+        .dark {
+            background: var(--ink);
+            border-color: var(--ink);
+            color: #fff;
+        }
+
+        .status {
+            flex: 1;
+            min-width: 180px;
+            color: var(--muted);
+            font-size: .72rem;
+        }
+
+        .status.error {
+            color: var(--danger);
+        }
+
+        progress {
+            width: 100%;
+            height: 7px;
+            margin-top: 9px;
+            accent-color: var(--accent);
+        }
+
+        progress[hidden] {
+            display: none;
+        }
+
+        .settingsGrid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 10px;
+        }
+
+        .field {
+            min-width: 0;
+            display: grid;
+            gap: 5px;
+            color: var(--muted);
+            font-size: .7rem;
+        }
+
+        .field input[type="number"],
+        .field select {
+            width: 100%;
+            height: 36px;
+            min-width: 0;
+            padding: 0 8px;
+            border: 1px solid var(--line);
+            border-radius: 7px;
+            background: #fff;
+            color: var(--ink);
+        }
+
+        .checkField {
+            display: flex;
+            align-items: center;
+            gap: 7px;
+            min-height: 36px;
+            color: var(--muted);
+            font-size: .72rem;
+        }
+
+        .clipList {
+            display: grid;
+            gap: 8px;
+        }
+
+        .clipEmpty {
+            padding: 22px 10px;
+            color: var(--muted);
+            font-size: .75rem;
+            text-align: center;
+            border: 1px dashed var(--line);
+            border-radius: 8px;
+        }
+
+        .clipCard {
+            padding: 10px;
+            border: 1px solid var(--line);
+            border-radius: 9px;
+            background: #fff;
+            cursor: pointer;
+        }
+
+        .clipCard.selected {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 1px var(--accent);
+        }
+
+        .clipTop {
+            display: grid;
+            grid-template-columns: 28px minmax(0, 1fr) auto;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .clipIndex {
+            width: 28px;
+            height: 28px;
+            display: grid;
+            place-items: center;
+            border-radius: 50%;
+            background: #f0f1f1;
+            font: .69rem ui-monospace, monospace;
+        }
+
+        .clipName {
+            overflow: hidden;
+            font-size: .76rem;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .clipMeta {
+            margin-top: 2px;
+            color: var(--muted);
+            font: .63rem ui-monospace, monospace;
+        }
+
+        .iconButton {
+            min-width: 30px;
+            min-height: 30px;
+            padding: 0 7px;
+        }
+
+        .clipActions {
+            display: flex;
+            gap: 4px;
+        }
+
+        .phaseBar {
+            display: flex;
+            height: 7px;
+            overflow: hidden;
+            margin-top: 9px;
+            border-radius: 4px;
+            background: #eee;
+        }
+
+        .phaseBar i {
+            display: block;
+            min-width: 1px;
+        }
+
+        .before {
+            background: #8b949d;
+        }
+
+        .rise {
+            background: var(--mint);
+        }
+
+        .settle {
+            background: var(--violet);
+        }
+
+        .phaseLabels {
+            display: flex;
+            justify-content: space-between;
+            gap: 5px;
+            margin-top: 5px;
+            color: var(--muted);
+            font: .59rem ui-monospace, monospace;
+        }
+
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            min-height: 21px;
+            padding: 0 7px;
+            border-radius: 10px;
+            background: #f0f1f1;
+            color: var(--muted);
+            font-size: .62rem;
+        }
+
+        .badge.ready {
+            background: #dff7eb;
+            color: #267353;
+        }
+
+        .editorPlaceholder {
+            padding: 28px 10px;
+            color: var(--muted);
+            font-size: .75rem;
+            text-align: center;
+        }
+
+        .editor[hidden],
+        .editorPlaceholder[hidden] {
+            display: none;
+        }
+
+        .boundaryGrid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 7px;
+            margin-top: 10px;
+        }
+
+        .boundary {
+            padding: 8px;
+            border-radius: 7px;
+            background: #f5f5f3;
+        }
+
+        .boundary label {
+            display: grid;
+            gap: 4px;
+            color: var(--muted);
+            font-size: .62rem;
+        }
+
+        .boundary input {
+            width: 100%;
+            min-width: 0;
+            border: 0;
+            border-bottom: 1px solid var(--line);
+            background: transparent;
+            color: var(--ink);
+            font: .78rem ui-monospace, monospace;
+        }
+
+        .boundaryValue {
+            margin-top: 5px;
+            color: var(--muted);
+            font: .6rem ui-monospace, monospace;
+        }
+
+        .editorRow {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+            gap: 8px;
+            align-items: end;
+            margin-top: 10px;
+        }
+
+        .miniCanvas {
+            width: 100%;
+            height: 104px;
+            display: block;
+            margin-top: 10px;
+            border: 1px solid var(--line);
+            border-radius: 7px;
+            background: #fff;
+        }
+
+        .legend {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            color: var(--muted);
+            font-size: .62rem;
+        }
+
+        .legend span {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .legend i {
+            width: 14px;
+            height: 3px;
+            border-radius: 2px;
+        }
+
+        .note {
+            color: var(--muted);
+            font-size: .65rem;
+            line-height: 1.55;
+        }
+
+        @media (max-width: 940px) {
+            .app {
+                grid-template-columns: 1fr;
+            }
+
+            .sidebar {
+                border-left: 0;
+                border-top: 1px solid var(--line);
+            }
+        }
+
+        @media (max-width: 560px) {
+
+            .workspace,
+            .sidebar {
+                padding: 10px;
+            }
+
+            .stage {
+                min-height: 240px;
+            }
+
+            .settingsGrid,
+            .boundaryGrid,
+            .editorRow {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <main class="app">
+        <section class="workspace stack">
+            <section class="panel">
+                <div class="stage" id="stage">
+                    <canvas id="outputCanvas" width="1280" height="720"></canvas>
+                    <video id="sourceVideo" playsinline muted preload="auto"></video>
+                    <video id="transitionVideo" playsinline muted preload="auto"></video>
+                    <div class="stageOverlay">
+                        <div>
+                            <div class="stageTitle" id="stageTitle"></div>
+                            <div class="stagePhase" id="stagePhase"></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="transport">
+                    <button id="playButton" type="button" disabled aria-label="プレビュー再生">▶</button>
+                    <input id="playhead" type="range" min="0" max="1" value="0" step="0.001" disabled>
+                    <output id="timeOutput" class="time">0.00 / 0.00s</output>
+                </div>
+                <div class="sequenceTimeline" id="sequenceTimeline" aria-label="シーケンスタイムライン"></div>
+                <div class="timelineLegend" aria-label="タイムライン凡例">
+                    <span><i class="forward"></i>順再生</span>
+                    <span><i class="rewind"></i>逆再生</span>
+                    <span><i class="hold"></i>ホールド</span>
+                    <span><i class="morph"></i>発生点モーフ</span>
+                    <span><i class="rewindMorph"></i>逆再生＋モーフ</span>
+                    <span><i class="onset"></i>表情発生</span>
+                </div>
+            </section>
+
+        </section>
+
+        <aside class="sidebar stack">
+            <section class="panel">
+                <div class="panelHeader">
+                    <h2>素材</h2>
+                    <label class="fileButton">映像を追加<input id="fileInput" type="file" accept="video/*" multiple></label>
+                </div>
+                <div class="buttonRow" style="margin-bottom:10px">
+                    <button id="analyzeAllButton" class="accent" type="button" disabled>すべて解析</button>
+                    <span class="badge" id="clipCount">0 clips</span>
+                </div>
+                <div class="clipList" id="clipList"></div>
+            </section>
+
+            <section class="panel">
+                <div id="editorPlaceholder" class="editorPlaceholder">素材を選択すると境界を編集できます</div>
+                <div id="clipEditor" class="editor" hidden>
+                    <div class="panelHeader">
+                        <h2 id="editorTitle">クリップ設定</h2>
+                        <button id="analyzeClipButton" class="accent" type="button">この素材を解析</button>
+                    </div>
+                    <div class="editorRow">
+                        <label class="field">対象の表情
+                            <select id="emotionSelect"></select>
+                        </label>
+                        <label class="field">ピーク前の折返し位置（%）
+                            <input id="clipCutRatio" type="number" min="10" max="99" step="1" value="85">
+                        </label>
+                        <span class="badge" id="detectionBadge">未解析</span>
+                    </div>
+                    <canvas id="analysisChart" class="miniCanvas"></canvas>
+                    <div class="legend">
+                        <span><i style="background:#7f8993"></i>無表情</span>
+                        <span><i style="background:var(--accent)"></i><b id="emotionLegend">喜び</b></span>
+                        <span><i style="background:#3478d4"></i>ランドマーク変位</span>
+                        <span><i style="background:#171a1d"></i>合成進行度</span>
+                        <span><i style="background:var(--mint)"></i>発生</span>
+                        <span><i style="background:var(--violet)"></i>ピーク / 収束</span>
+                    </div>
+                    <div class="boundaryGrid">
+                        <div class="boundary">
+                            <label>表情が発生するまで<input id="onsetInput" type="number" min="0" step="0.01"></label>
+                            <div class="boundaryValue" id="onsetDuration">0.00s</div>
+                        </div>
+                        <div class="boundary">
+                            <label>発生からピーク<input id="peakInput" type="number" min="0" step="0.01"></label>
+                            <div class="boundaryValue" id="riseDuration">0.00s</div>
+                        </div>
+                        <div class="boundary">
+                            <label>ピークから収束<input id="settleInput" type="number" min="0" step="0.01"></label>
+                            <div class="boundaryValue" id="settleDuration">0.00s</div>
+                        </div>
+                    </div>
+                    <p class="note" style="margin-top:10px">
+                        MediaPipeの顔ランドマーク変位を主成分、ファイル名から選んだ感情値を補助成分として境界を検出します。各入力値は素材内の時刻です。</p>
+                </div>
+            </section>
+
+            <section class="panel">
+                <div class="panelHeader">
+                    <h2>シーケンス設定</h2>
+                </div>
+                <div class="settingsGrid">
+                    <label class="field">発生→折返し（秒）
+                        <input id="risePlaybackDuration" type="number" min="0.05" max="5" step="0.05" value="0.45">
+                    </label>
+                    <label class="field">折返し→発生（秒）
+                        <input id="rewindDuration" type="number" min="0.05" max="5" step="0.05" value="0.45">
+                    </label>
+                    <label class="field">発生→ホーム（秒）
+                        <input id="returnDuration" type="number" min="0.05" max="5" step="0.05" value="0.30">
+                    </label>
+                    <label class="field">発生前への戻し量（秒）
+                        <input id="preOnsetReturn" type="number" min="0" max="2" step="0.05" value="0.30">
+                    </label>
+                    <label class="field">ホームでのホールド（秒）
+                        <input id="holdDuration" type="number" min="0" max="5" step="0.05" value="0.10">
+                    </label>
+                    <label class="field">導入・発生点モーフ（秒）
+                        <input id="morphDuration" type="number" min="0" max="1" step="0.05" value="0.20">
+                    </label>
+                    <label class="field">解析間隔（秒）
+                        <input id="sampleInterval" type="number" min="0.04" max="1" step="0.01" value="0.08">
+                    </label>
+                    <label class="checkField"><input id="loopToggle" type="checkbox" checked> ループ再生</label>
+                </div>
+                <p class="note" style="margin-top:10px">
+                    折返し位置が異なっても、導入→発生→折返し→発生→ホームを全素材で同じ尺に正規化します。1本目の冒頭→発生と、2本目以降の発生点モーフには同じ導入時間を使います。
+                </p>
+                <div class="buttonRow" style="margin-top:10px">
+                    <button id="importJsonButton" type="button">設定を読み込む</button>
+                    <input id="jsonInput" type="file" accept="application/json,.json" hidden>
+                </div>
+            </section>
+
+            <section class="panel">
+                <div class="panelHeader">
+                    <h2>出力</h2><span class="note">音声なし・30 fps</span>
+                </div>
+                <div class="buttonRow">
+                    <button id="exportButton" class="dark" type="button" disabled>書き出し</button>
+                    <button id="exportJsonButton" type="button" disabled>JSON（設定）</button>
+                    <span class="status" id="status">MediaPipe / Face APIモデルを読み込んでいます</span>
+                </div>
+                <progress id="progress" min="0" max="1" value="0" hidden></progress>
+            </section>
+        </aside>
+    </main>
+</body>
+
+</html>
