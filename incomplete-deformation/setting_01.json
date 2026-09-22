@@ -8,7 +8,8 @@
     "returnDuration": 1.5,
     "preOnsetReturn": 1,
     "holdDuration": 0,
-    "morphDuration": 1
+    "morphDuration": 1,
+    "sampleInterval": 0.08
   },
   "clips": [
     {
@@ -36,14 +37,14 @@
       "homeTime": 0,
       "homeMatch": null,
       "outputPhases": {
-        "intro": 0.5526843360224628,
+        "intro": 1,
         "morphIn": 0,
         "rise": 1.5,
         "rewind": 0.7,
         "returnHome": 1.5,
         "hold": 0
       },
-      "outputDuration": 4.252684336022463
+      "outputDuration": 4.7
     },
     {
       "order": 2,
