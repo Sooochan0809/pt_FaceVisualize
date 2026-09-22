@@ -444,7 +444,18 @@
         }
 
         .previewExportRow {
+            justify-content: space-between;
             margin-top: 12px;
+        }
+
+        .previewExportRow .status {
+            flex: 1;
+            min-width: 0;
+            text-align: left;
+        }
+
+        .previewExportRow button {
+            flex: 0 0 auto;
         }
 
         .accent {
@@ -468,20 +479,6 @@
 
         .status.error {
             color: var(--danger);
-        }
-
-        .previewStatusRow {
-            min-height: 18px;
-            display: flex;
-            justify-content: flex-end;
-            align-items: center;
-            margin-bottom: 8px;
-            text-align: right;
-        }
-
-        .previewStatusRow .status {
-            flex: 0 1 auto;
-            min-width: 0;
         }
 
         .previewProgress {
@@ -897,9 +894,6 @@
     <main class="app">
         <section class="workspace stack">
             <section class="panel">
-                <div class="previewStatusRow">
-                    <span class="status" id="status">MediaPipe / Face APIモデルを読み込んでいます</span>
-                </div>
                 <progress id="progress" class="previewProgress" min="0" max="1" value="0" hidden></progress>
                 <div class="stage">
                     <canvas id="outputCanvas" width="1280" height="720"></canvas>
@@ -931,6 +925,7 @@
                     <span><i class="fold"></i>折返し</span>
                 </div>
                 <div class="previewExportRow">
+                    <span class="status" id="status">MediaPipe / Face APIモデルを読み込んでいます</span>
                     <button id="exportButton" class="dark" type="button" disabled>書き出し</button>
                 </div>
             </section>
