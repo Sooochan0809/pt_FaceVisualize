@@ -420,6 +420,18 @@
             gap: 8px;
         }
 
+        .previewExportRow,
+        .sequenceHeaderActions {
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 8px;
+        }
+
+        .previewExportRow {
+            margin-top: 12px;
+        }
+
         .fileButton {
             position: relative;
             display: inline-flex;
@@ -923,6 +935,9 @@
                     <span><i class="onset"></i>表情発生</span>
                     <span><i class="fold"></i>折返し</span>
                 </div>
+                <div class="previewExportRow">
+                    <button id="exportButton" class="dark" type="button" disabled>書き出し</button>
+                </div>
             </section>
 
         </section>
@@ -983,7 +998,10 @@
             <section class="panel">
                 <div class="panelHeader">
                     <h2>シーケンス</h2>
-                    <button id="importJsonButton" class="compactButton" type="button">設定を読み込む</button>
+                    <div class="sequenceHeaderActions">
+                        <button id="importJsonButton" class="compactButton" type="button">設定を読み込む</button>
+                        <button id="exportJsonButton" class="compactButton" type="button" disabled>設定を書き出す</button>
+                    </div>
                     <input id="jsonInput" type="file" accept="application/json,.json" hidden>
                 </div>
                 <div class="settingsGrid">
@@ -1016,15 +1034,6 @@
                 </div>
             </section>
 
-            <section class="panel">
-                <div class="panelHeader">
-                    <h2>出力</h2>
-                </div>
-                <div class="buttonRow">
-                    <button id="exportButton" class="dark" type="button" disabled>書き出し（Webm）</button>
-                    <button id="exportJsonButton" type="button" disabled>設定（JSON）</button>
-                </div>
-            </section>
         </aside>
     </main>
 </body>
