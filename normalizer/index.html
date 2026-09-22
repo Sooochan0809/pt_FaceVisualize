@@ -7,7 +7,7 @@
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <title>normalizer</title>
     <script defer src="../modules/faceAPI/face-api.min.js"></script>
-    <script defer src="app.js?v=20260920-6"></script>
+    <script defer src="app.js?v=20260922-3"></script>
     <style>
         :root {
             --bg: #f0f0f0;
@@ -18,6 +18,8 @@
             --accent: #42d392;
             --base: #718096;
             --target: #ef7f45;
+            --landmark: #3478d4;
+            --progression: #1b2026;
             --danger: #c64b4b;
         }
 
@@ -423,7 +425,7 @@
                 </div>
                 <div class="toolbar">
                     <label class="fileButton">動画を選択<input id="fileInput" type="file" accept="video/*"></label>
-                    <span class="status" id="status">Face APIモデルを読み込んでいます</span>
+                    <span class="status" id="status">MediaPipe / Face APIモデルを読み込んでいます</span>
                 </div>
                 <progress id="analysisProgress" value="0" max="1" hidden></progress>
             </section>
@@ -435,6 +437,10 @@
                                 style="background:var(--base)"></i><span>無表情</span></span>
                         <span class="legendItem"><i class="swatch" style="background:var(--target)"></i><span
                                 id="targetLegend">喜び</span></span>
+                        <span class="legendItem"><i class="swatch"
+                                style="background:var(--landmark)"></i><span>MediaPipe</span></span>
+                        <span class="legendItem"><i class="swatch"
+                                style="background:var(--progression)"></i><span>統合判定</span></span>
                     </div>
                 </div>
                 <div class="chartWrap">
@@ -509,7 +515,7 @@
                         <div class="metricValue" id="targetDurationMetric">0.00秒</div>
                     </div>
                     <div class="metric">
-                        <div class="metricLabel">検出率</div>
+                        <div class="metricLabel">MediaPipe検出率</div>
                         <div class="metricValue" id="detectionMetric">—</div>
                     </div>
                 </div>

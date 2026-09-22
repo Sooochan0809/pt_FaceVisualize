@@ -2,6 +2,12 @@
   "use strict";
 
   const MODEL_URL = "../modules/faceAPI/models";
+  const MEDIAPIPE_TASKS_URL =
+    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.34";
+  const MEDIAPIPE_WASM_URL =
+    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.34/wasm";
+  const MEDIAPIPE_FACE_MODEL_URL =
+    "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/latest/face_landmarker.task";
   const BASE_EMOTION = "neutral";
   const EMOTIONS = [
     "neutral",
@@ -24,13 +30,13 @@
   const BOUNDARY_KEYS = ["start", "onset", "peak", "settle"];
   const CHART_PADDING = { left: 46, right: 18, top: 16, bottom: 30 };
   const EXPRESSION_LANDMARK_INDICES = [
-    17, 18, 19, 20, 21, 22, 23, 24, 25, 26,
-    36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47,
-    48, 49, 50, 51, 52, 53, 54, 55, 56, 57,
-    58, 59, 60, 61, 62, 63, 64, 65, 66, 67,
+    33, 46, 52, 53, 55, 61, 63, 65, 66, 70, 78, 80, 81, 82, 84, 87, 88, 91, 95,
+    101, 105, 107, 133, 144, 146, 153, 158, 160, 178, 181, 191, 205, 263, 276,
+    282, 283, 285, 291, 293, 295, 296, 300, 308, 310, 311, 312, 314, 317, 318,
+    321, 324, 330, 334, 336, 362, 373, 375, 380, 385, 387, 402, 405, 415, 425,
   ];
-  const COMPLETION_DISTANCE_RATIO = 0.18;
-  const COMPLETION_STABLE_SAMPLES = 3;
+  const LANDMARK_WEIGHT = 0.75;
+  const EXPRESSION_WEIGHT = 0.25;
   const EXPORT_FPS = 30;
   const EXPORT_BITRATE = 8_000_000;
   const MEDIABUNNY_URL =
@@ -83,11 +89,33 @@
   let previewPosition = 0;
   let previewStartedAt = 0;
   let previewFrameId = null;
+  let faceLandmarkerPromise = null;
+
+  function getFaceLandmarker() {
+    if (!faceLandmarkerPromise) {
+      faceLandmarkerPromise = import(MEDIAPIPE_TASKS_URL)
+        .then(async ({ FaceLandmarker, FilesetResolver }) => {
+          const vision = await FilesetResolver.forVisionTasks(MEDIAPIPE_WASM_URL);
+          return FaceLandmarker.createFromOptions(vision, {
+            baseOptions: { modelAssetPath: MEDIAPIPE_FACE_MODEL_URL },
+            runningMode: "IMAGE",
+            numFaces: 1,
+            minFaceDetectionConfidence: 0.35,
+            minFacePresenceConfidence: 0.35,
+          });
+        })
+        .catch((error) => {
+          faceLandmarkerPromise = null;
+          throw error;
+        });
+    }
+    return faceLandmarkerPromise;
+  }
 
   const models = Promise.all([
     faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
-    faceapi.nets.faceLandmark68TinyNet.loadFromUri(MODEL_URL),
     faceapi.nets.faceExpressionNet.loadFromUri(MODEL_URL),
+    getFaceLandmarker(),
   ]);
 
   function clamp(value, min, max) {
@@ -213,88 +241,89 @@
     return analysisCanvas;
   }
 
-  function averagePoint(points, indices) {
-    const sum = indices.reduce(
-      (result, index) => {
-        result.x += points[index].x;
-        result.y += points[index].y;
-        return result;
-      },
-      { x: 0, y: 0 },
+  function averageLandmarkPoint(points, indices) {
+    const valid = indices.map((index) => points[index]).filter(Boolean);
+    if (!valid.length) return null;
+    return valid.reduce(
+      (sum, point) => ({
+        x: sum.x + point.x / valid.length,
+        y: sum.y + point.y / valid.length,
+        z: sum.z + (point.z || 0) / valid.length,
+      }),
+      { x: 0, y: 0, z: 0 },
     );
-    return { x: sum.x / indices.length, y: sum.y / indices.length };
   }
 
-  function normalizeLandmarks(positions) {
-    const leftEye = averagePoint(positions, [36, 37, 38, 39, 40, 41]);
-    const rightEye = averagePoint(positions, [42, 43, 44, 45, 46, 47]);
+  function normalizeMediaPipeLandmarks(points) {
+    if (!points || points.length < 426) return null;
+    const leftEye = averageLandmarkPoint(points, [33, 133]);
+    const rightEye = averageLandmarkPoint(points, [362, 263]);
+    if (!leftEye || !rightEye) return null;
     const center = {
       x: (leftEye.x + rightEye.x) / 2,
       y: (leftEye.y + rightEye.y) / 2,
+      z: (leftEye.z + rightEye.z) / 2,
     };
     const dx = rightEye.x - leftEye.x;
     const dy = rightEye.y - leftEye.y;
-    const scale = Math.hypot(dx, dy) || 1;
+    const scale = Math.hypot(dx, dy);
+    if (scale < 1e-5) return null;
     const cos = dx / scale;
     const sin = dy / scale;
 
     return EXPRESSION_LANDMARK_INDICES.flatMap((index) => {
-      const x = positions[index].x - center.x;
-      const y = positions[index].y - center.y;
-      return [(x * cos + y * sin) / scale, (-x * sin + y * cos) / scale];
+      const point = points[index];
+      const x = point.x - center.x;
+      const y = point.y - center.y;
+      return [
+        (x * cos + y * sin) / scale,
+        (-x * sin + y * cos) / scale,
+        (((point.z || 0) - center.z) / scale) * 0.5,
+      ];
     });
   }
 
-  function averageShape(shapes) {
-    if (!shapes.length) return null;
-    return shapes[0].map(
+  function averageVector(vectors) {
+    if (!vectors.length) return null;
+    return vectors[0].map(
       (_, index) =>
-        shapes.reduce((sum, shape) => sum + shape[index], 0) / shapes.length,
+        vectors.reduce((sum, vector) => sum + vector[index], 0) / vectors.length,
     );
   }
 
-  function shapeDistance(a, b) {
-    if (!a || !b || a.length !== b.length) return Infinity;
-    const squaredDistance = a.reduce((sum, value, index) => {
-      const difference = value - b[index];
-      return sum + difference * difference;
-    }, 0);
-    return Math.sqrt(squaredDistance / a.length);
+  function vectorDistance(a, b) {
+    if (!a || !b || a.length !== b.length) return null;
+    return Math.sqrt(
+      a.reduce((sum, value, index) => sum + (value - b[index]) ** 2, 0) /
+        a.length,
+    );
   }
 
-  function detectLandmarkCompletion(data, onsetTime) {
-    const landmarkSamples = data.filter((sample) => sample.landmarks);
-    if (landmarkSamples.length < COMPLETION_STABLE_SAMPLES * 2) return null;
-
-    const referenceCount = Math.max(
-      COMPLETION_STABLE_SAMPLES,
-      Math.round(landmarkSamples.length * 0.2),
-    );
-    const baselineShape = averageShape(
-      landmarkSamples.slice(0, referenceCount).map((sample) => sample.landmarks),
-    );
-    const finalShape = averageShape(
-      landmarkSamples.slice(-referenceCount).map((sample) => sample.landmarks),
-    );
-    const totalMovement = shapeDistance(baselineShape, finalShape);
-    if (!Number.isFinite(totalMovement) || totalMovement < 0.005) return null;
-
-    const measured = landmarkSamples.map((sample) => ({
-      sample,
-      fromBaseline: shapeDistance(sample.landmarks, baselineShape) / totalMovement,
-      toFinal: shapeDistance(sample.landmarks, finalShape) / totalMovement,
-    }));
-    for (let index = 0; index <= measured.length - COMPLETION_STABLE_SAMPLES; index += 1) {
-      if (measured[index].sample.time <= onsetTime) continue;
-      const window = measured.slice(index, index + COMPLETION_STABLE_SAMPLES);
-      const stable = window.every(
-        (item) =>
-          item.fromBaseline >= 0.8 &&
-          item.toFinal <= COMPLETION_DISTANCE_RATIO,
-      );
-      if (stable) return measured[index].sample.time;
+  function prepareLandmarkDistances() {
+    const shapes = samples
+      .filter((sample) => sample.landmarks)
+      .map((sample) => sample.landmarks);
+    if (shapes.length < 3) {
+      samples.forEach((sample) => {
+        sample.landmarkDistance = null;
+      });
+      return;
     }
-    return null;
+    const baselineCount = Math.max(
+      3,
+      Math.min(shapes.length, Math.round(shapes.length * 0.15)),
+    );
+    const baselineShape = averageVector(shapes.slice(0, baselineCount));
+    samples.forEach((sample, index) => {
+      const nearbyShapes = samples
+        .slice(Math.max(0, index - 2), index + 3)
+        .map((item) => item.landmarks)
+        .filter(Boolean);
+      const shape = averageVector(nearbyShapes);
+      sample.landmarkDistance = shape
+        ? vectorDistance(shape, baselineShape)
+        : null;
+    });
   }
 
   function updateBoundaryLog() {
@@ -384,14 +413,14 @@
     return anchors.start;
   }
 
-  function updateRawDuration(node, rawDuration) {
-    node.textContent = `raw ${rawDuration.toFixed(2)}秒`;
+  function updateRawDuration(node, rawDuration, endLabel, endTime) {
+    node.textContent = `raw ${rawDuration.toFixed(2)}秒（${endLabel} ${endTime.toFixed(2)}s）`;
   }
 
   function updateNormalizationSummary() {
     const raw = rawDurations();
-    updateRawDuration(elements.onsetRaw, raw.onset);
-    updateRawDuration(elements.expressionRaw, raw.expression);
+    updateRawDuration(elements.onsetRaw, raw.onset, "発生", anchors.onset);
+    updateRawDuration(elements.expressionRaw, raw.expression, "完了", anchors.peak);
 
     const sourceEnd = expressionSourceEnd();
     elements.rawDurationMetric.textContent = formatSeconds(
@@ -412,19 +441,43 @@
     );
     const radius = Math.floor(windowSize / 2);
     return samples.map((sample, index) => {
-      if (!sample.detected) return { ...sample, smooth: null };
       const neighbors = samples
         .slice(Math.max(0, index - radius), index + radius + 1)
         .filter((item) => item.detected);
-      const smooth = Object.fromEntries(
-        EMOTIONS.map((emotion) => [
-          emotion,
-          neighbors.reduce((sum, item) => sum + item.expressions[emotion], 0) /
-            Math.max(1, neighbors.length),
-        ]),
-      );
-      return { ...sample, smooth };
+      const landmarkNeighbors = samples
+        .slice(Math.max(0, index - radius), index + radius + 1)
+        .filter((item) => Number.isFinite(item.landmarkDistance));
+      const smooth = neighbors.length
+        ? Object.fromEntries(
+            EMOTIONS.map((emotion) => [
+              emotion,
+              neighbors.reduce((sum, item) => sum + item.expressions[emotion], 0) /
+                neighbors.length,
+            ]),
+          )
+        : null;
+      const landmarkMotion = landmarkNeighbors.length
+        ? landmarkNeighbors.reduce(
+            (sum, item) => sum + item.landmarkDistance,
+            0,
+          ) / landmarkNeighbors.length
+        : null;
+      return Object.assign(sample, { smooth, landmarkMotion });
     });
+  }
+
+  function metricProfile(values, minimumAmplitude) {
+    const valid = values.filter(Number.isFinite);
+    if (valid.length < 3) return { baseline: 0, amplitude: 0, usable: false };
+    const baselineCount = Math.max(
+      1,
+      Math.min(valid.length, Math.round(valid.length * 0.15)),
+    );
+    const baseline =
+      valid.slice(0, baselineCount).reduce((sum, value) => sum + value, 0) /
+      baselineCount;
+    const amplitude = Math.max(...valid) - baseline;
+    return { baseline, amplitude, usable: amplitude >= minimumAmplitude };
   }
 
   function drawSeries(ctx, data, emotion, color, xFor, yFor) {
@@ -441,6 +494,27 @@
       }
       const x = xFor(sample.time);
       const y = yFor(source[emotion] || 0);
+      if (drawing) ctx.lineTo(x, y);
+      else ctx.moveTo(x, y);
+      drawing = true;
+    });
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawAnalysisSeries(ctx, data, key, color, width, xFor, yFor) {
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = width;
+    ctx.beginPath();
+    let drawing = false;
+    data.forEach((sample) => {
+      if (!Number.isFinite(sample[key])) {
+        drawing = false;
+        return;
+      }
+      const x = xFor(sample.time);
+      const y = yFor(sample[key]);
       if (drawing) ctx.lineTo(x, y);
       else ctx.moveTo(x, y);
       drawing = true;
@@ -509,6 +583,8 @@
       const target = elements.targetEmotion.value;
       drawSeries(ctx, smoothed, base, "#718096", xFor, yFor);
       drawSeries(ctx, smoothed, target, "#ef7f45", xFor, yFor);
+      drawAnalysisSeries(ctx, samples, "landmarkProgress", "#3478d4", 2, xFor, yFor);
+      drawAnalysisSeries(ctx, samples, "progression", "#1b2026", 2.5, xFor, yFor);
     }
 
     const markerColors = {
@@ -546,39 +622,77 @@
 
   function autoDetectBoundaries() {
     if (!samples.length) return null;
-    const data = getSmoothedSamples().filter(
-      (sample) => sample.detected && sample.smooth,
-    );
+    samples.forEach((sample) => {
+      sample.landmarkProgress = null;
+      sample.progression = null;
+    });
+    prepareLandmarkDistances();
+    const base = BASE_EMOTION;
+    const target = elements.targetEmotion.value;
+    const data = getSmoothedSamples()
+      .filter((sample) => sample.smooth || Number.isFinite(sample.landmarkMotion))
+      .map((sample) => ({
+        sample,
+        emotionValue: sample.smooth
+          ? sample.smooth[target] /
+            Math.max(0.0001, sample.smooth[base] + sample.smooth[target])
+          : null,
+        landmarkValue: sample.landmarkMotion,
+      }));
     if (data.length < 3) {
       setStatus("顔を検出できた点が少ないため、自動検出できません", 0, 0, true);
       return null;
     }
-    const base = BASE_EMOTION;
-    const target = elements.targetEmotion.value;
-    const progression = data.map((sample) => ({
-      sample,
-      value:
-        sample.smooth[target] /
-        Math.max(0.0001, sample.smooth[base] + sample.smooth[target]),
-    }));
+    const emotionProfile = metricProfile(
+      data.map((item) => item.emotionValue),
+      0.03,
+    );
+    const landmarkProfile = metricProfile(
+      data.map((item) => item.landmarkValue),
+      0.003,
+    );
+    if (!emotionProfile.usable && !landmarkProfile.usable) {
+      setStatus("MediaPipeまたは表情の変化を検出できません", 0, 0, true);
+      return null;
+    }
+    data.forEach((item) => {
+      const emotionProgress =
+        emotionProfile.usable && Number.isFinite(item.emotionValue)
+          ? clamp(
+              (item.emotionValue - emotionProfile.baseline) /
+                emotionProfile.amplitude,
+              0,
+              1,
+            )
+          : null;
+      const landmarkProgress =
+        landmarkProfile.usable && Number.isFinite(item.landmarkValue)
+          ? clamp(
+              (item.landmarkValue - landmarkProfile.baseline) /
+                landmarkProfile.amplitude,
+              0,
+              1,
+            )
+          : null;
+      let weightedValue = 0;
+      let weight = 0;
+      if (landmarkProgress !== null) {
+        weightedValue += landmarkProgress * LANDMARK_WEIGHT;
+        weight += LANDMARK_WEIGHT;
+      }
+      if (emotionProgress !== null) {
+        weightedValue += emotionProgress * EXPRESSION_WEIGHT;
+        weight += EXPRESSION_WEIGHT;
+      }
+      item.value = weight ? weightedValue / weight : 0;
+      item.sample.landmarkProgress = landmarkProgress;
+      item.sample.progression = item.value;
+    });
+    const progression = data;
     let peakIndex = 0;
     progression.forEach((item, index) => {
       if (item.value > progression[peakIndex].value) peakIndex = index;
     });
-    const beforePeak = progression.slice(0, peakIndex + 1);
-    const baselineCount = Math.max(
-      1,
-      Math.min(beforePeak.length, Math.round(beforePeak.length * 0.2)),
-    );
-    const baseline =
-      beforePeak
-        .slice(0, baselineCount)
-        .reduce((sum, item) => sum + item.value, 0) / baselineCount;
-    const amplitude = Math.max(0.01, progression[peakIndex].value - baseline);
-    const onsetLevel = baseline + amplitude * 0.05;
-    const peakLevel = baseline + amplitude * 0.95;
-    const settleLevel = baseline + amplitude * 0.2;
-
     const crossingTime = (
       items,
       level,
@@ -608,16 +722,14 @@
     };
 
     const onsetTime =
-      crossingTime(progression, onsetLevel, "rising", 1, peakIndex) ??
+      crossingTime(progression, 0.08, "rising", 1, peakIndex) ??
       progression[Math.max(0, peakIndex - 1)].sample.time;
-    const emotionPeakTime =
-      crossingTime(progression, peakLevel, "rising", 1, peakIndex) ??
+    const peakTime =
+      crossingTime(progression, 0.92, "rising", 1, peakIndex) ??
       progression[peakIndex].sample.time;
-    const landmarkCompletionTime = detectLandmarkCompletion(data, onsetTime);
-    const peakTime = landmarkCompletionTime ?? emotionPeakTime;
     const settleTime = crossingTime(
       progression,
-      settleLevel,
+      0.2,
       "falling",
       peakIndex + 1,
     );
@@ -639,9 +751,11 @@
     updateNormalizationSummary();
     updateBoundaryLog();
     drawChart();
-    const completionMethod = landmarkCompletionTime !== null
-      ? "顔形状の安定"
-      : "感情スコア";
+    const completionMethod = landmarkProfile.usable && emotionProfile.usable
+      ? "MediaPipe 75% + 感情 25%"
+      : landmarkProfile.usable
+        ? "MediaPipe"
+        : "感情スコア";
     setStatus(
       settleTime !== null
         ? `動き始め・変化完了・収束を自動検出しました（完了: ${completionMethod}）`
@@ -661,6 +775,7 @@
 
     try {
       await models;
+      const faceLandmarker = await getFaceLandmarker();
       const interval = clamp(
         finiteNumber(elements.sampleInterval.value, 0.05),
         0.03,
@@ -674,11 +789,15 @@
           index * interval,
           Math.max(0, elements.video.duration - 0.01),
         );
-        setStatus(`感情を解析中 ${index + 1} / ${total}`, index + 1, total);
+        setStatus(`MediaPipe / 感情を解析中 ${index + 1} / ${total}`, index + 1, total);
         await seekVideo(time);
+        const frame = drawAnalysisFrame();
+        const landmarkResult = faceLandmarker.detect(frame);
+        const landmarks = normalizeMediaPipeLandmarks(
+          landmarkResult.faceLandmarks?.[0],
+        );
         const detection = await faceapi
-          .detectSingleFace(drawAnalysisFrame(), detectorOptions)
-          .withFaceLandmarks(true)
+          .detectSingleFace(frame, detectorOptions)
           .withFaceExpressions();
         const expressions = Object.fromEntries(
           EMOTIONS.map((emotion) => [
@@ -689,26 +808,28 @@
         samples.push({
           time,
           detected: Boolean(detection),
+          mediapipeDetected: Boolean(landmarks),
           expressions,
-          landmarks: detection
-            ? normalizeLandmarks(detection.landmarks.positions)
-            : null,
+          landmarks,
         });
         if (index % 5 === 0) drawChart();
       }
       if (token !== analysisToken) return;
       const detectedCount = samples.filter((sample) => sample.detected).length;
-      elements.detectionMetric.textContent = `${Math.round((detectedCount / samples.length) * 100)}%`;
+      const mediaPipeCount = samples.filter(
+        (sample) => sample.mediapipeDetected,
+      ).length;
+      elements.detectionMetric.textContent = `${Math.round((mediaPipeCount / samples.length) * 100)}%`;
       const completionMethod = autoDetectBoundaries();
       setStatus(
         completionMethod
-          ? `${samples.length}点を解析しました（顔検出 ${detectedCount}点 / 変化完了: ${completionMethod}）`
-          : `${samples.length}点を解析しました（顔検出 ${detectedCount}点）`,
+          ? `${samples.length}点を解析しました（MediaPipe ${mediaPipeCount}点 / Face API ${detectedCount}点 / 判定: ${completionMethod}）`
+          : `${samples.length}点を解析しました（MediaPipe ${mediaPipeCount}点 / Face API ${detectedCount}点）`,
       );
     } catch (error) {
       console.error(error);
       setStatus(
-        "解析に失敗しました。動画形式とFace APIモデルを確認してください",
+        "解析に失敗しました。動画形式とMediaPipe / Face APIモデルを確認してください",
         0,
         0,
         true,
@@ -790,10 +911,22 @@
   }
 
   function exportCsv() {
-    const header = ["time", "detected", ...EMOTIONS];
+    const header = [
+      "time",
+      "faceApiDetected",
+      "mediapipeDetected",
+      "landmarkProgress",
+      "progression",
+      ...EMOTIONS,
+    ];
     const rows = samples.map((sample) => [
       sample.time.toFixed(4),
       sample.detected ? 1 : 0,
+      sample.mediapipeDetected ? 1 : 0,
+      Number.isFinite(sample.landmarkProgress)
+        ? sample.landmarkProgress.toFixed(6)
+        : "",
+      Number.isFinite(sample.progression) ? sample.progression.toFixed(6) : "",
       ...EMOTIONS.map((emotion) => sample.expressions[emotion].toFixed(6)),
     ]);
     const csv = [header, ...rows].map((row) => row.join(",")).join("\n");
@@ -805,7 +938,7 @@
 
   function exportJson() {
     const data = {
-      version: 3,
+      version: 4,
       source: sourceFileName,
       sourceDuration: elements.video.duration,
       analysis: {
@@ -813,8 +946,13 @@
         smoothingWindow: finiteNumber(elements.smoothWindow.value, 5),
         baseEmotion: BASE_EMOTION,
         targetEmotion: elements.targetEmotion.value,
-        detectionRate: samples.length
+        analysisMethod: "mediapipe-landmarks-75_expression-25",
+        faceApiDetectionRate: samples.length
           ? samples.filter((sample) => sample.detected).length / samples.length
+          : 0,
+        landmarkDetectionRate: samples.length
+          ? samples.filter((sample) => sample.mediapipeDetected).length /
+            samples.length
           : 0,
       },
       boundaries: { ...anchors },
@@ -1060,7 +1198,7 @@
       setStatus("動画を選択してください");
     } catch (error) {
       console.error(error);
-      setStatus("Face APIモデルの読み込みに失敗しました", 0, 0, true);
+      setStatus("MediaPipeまたはFace APIモデルの読み込みに失敗しました", 0, 0, true);
     }
     updateButtonStates();
   }
