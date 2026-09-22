@@ -96,9 +96,7 @@
       "morphDuration",
       "sampleInterval",
       "loopToggle",
-      "editorPlaceholder",
       "clipEditor",
-      "editorTitle",
       "analyzeClipButton",
       "emotionSelect",
       "clipCutRatio",
@@ -218,6 +216,8 @@
   function updateControls() {
     const hasClips = clips.length > 0;
     el.fileInput.disabled = busy;
+    const addClipButton = el.clipList.querySelector('[data-action="add"]');
+    if (addClipButton) addClipButton.disabled = busy;
     el.jsonInput.disabled = busy;
     el.importJsonButton.disabled = busy;
     el.analyzeAllButton.disabled = busy || !hasClips || !modelsReady;
@@ -1473,13 +1473,18 @@
 
   function renderClipList() {
     el.clipCount.textContent = `${clips.length} clips`;
+    const addButton = document.createElement("button");
+    addButton.type = "button";
+    addButton.className = "clipEmpty";
+    addButton.dataset.action = "add";
+    addButton.disabled = busy;
+    addButton.setAttribute("aria-label", "表情映像を追加");
+    addButton.innerHTML = '<img src="icon-plus.png" alt="">';
     if (!clips.length) {
-      el.clipList.innerHTML =
-        '<div class="clipEmpty"></div>';
+      el.clipList.replaceChildren(addButton);
       return;
     }
-    el.clipList.replaceChildren(
-      ...clips.map((clip, index) => {
+    const cards = clips.map((clip, index) => {
         const plan = clipPlan(clip, index);
         const card = document.createElement("article");
         card.className = `clipCard${clip.id === selectedId ? " selected" : ""}`;
@@ -1493,8 +1498,12 @@
         <div class="phaseBar"><i class="before" style="width:${phasePercent(clip.onset, clip.duration)}"></i><i class="rise" style="width:${phasePercent(clip.peak - clip.onset, clip.duration)}"></i><i class="settle" style="width:${phasePercent(clip.settle - clip.peak, clip.duration)}"></i></div>
         <div class="phaseLabels"><span>発生 ${seconds(clip.onset)}</span><span>ピーク ${seconds(clip.peak)}</span><span>${clip.samples.length ? `MP ${Math.round(clip.landmarkDetectionRate * 100)}%${clip.analyzed ? "" : " / 境界未検出"}` : "未解析"}</span></div>`;
         return card;
-      }),
+      });
+    el.clipList.replaceChildren(...cards, addButton);
+    const selectedCard = cards.find(
+      (card) => Number(card.dataset.id) === selectedId,
     );
+    if (selectedCard) selectedCard.append(el.clipEditor);
   }
 
   function escapeHtml(value) {
@@ -1507,42 +1516,80 @@
     const all = plans();
     const total = all.reduce((sum, plan) => sum + plan.duration, 0);
     el.sequenceTimeline.replaceChildren(
-      ...all.map((plan) => {
+      ...all.map((plan, index) => {
         const segment = document.createElement("div");
         segment.className = "timelineClip";
         segment.style.width = `${(plan.duration / Math.max(0.001, total)) * 100}%`;
+        const clipNumber = String(index + 1).padStart(2, "0");
+        const header = document.createElement("div");
+        header.className = "timelineClipLabel";
+        header.textContent = `${clipNumber} ${LABELS[plan.clip.emotion]} · ${seconds(plan.duration)}`;
+
+        const meaning = document.createElement("div");
+        meaning.className = "timelineMeaning";
+        const entryDuration = plan.intro + plan.morphIn;
+        const returnDuration = plan.morphOut + plan.returnReverse;
         const phases = [
-          ["forward", plan.intro, "冒頭→表情発生（テンポ同期）"],
-          ["morph", plan.morphIn, "発生点に重ねるモーフ"],
-          ["forward", plan.forward, "発生→折返し（テンポ同期）"],
-          ["rewind", plan.reverse, "折返し→発生（テンポ同期）"],
-          ["rewindMorph", plan.morphOut, "逆再生＋ホームモーフ"],
-          ["rewind", plan.returnReverse, "発生→ホーム"],
-          ["hold", plan.hold, "ホームでホールド"],
+          ["intro", entryDuration, "導入", index === 0 ? "冒頭→発生" : "HOME→発生"],
+          ["expression", plan.forward, "表情化→", "発生→折返し"],
+          ["rewind", plan.reverse, "←戻す", "折返し→発生"],
+          ["returnHome", returnDuration, "HOMEへ", "発生→ホーム"],
+          ["hold", plan.hold, "保持", "ホーム保持"],
         ];
         const phaseNodes = phases
           .filter(([, duration]) => duration > 0)
-          .map(([phase, duration, label]) => {
+          .map(([phase, duration, label, description]) => {
             const node = document.createElement("span");
             node.className = `timelinePhase ${phase}`;
             node.style.width = `${(duration / Math.max(0.001, plan.duration)) * 100}%`;
-            node.title = `${label} ${seconds(duration)}`;
+            node.setAttribute("aria-label", label);
+            node.title = `${description} ${seconds(duration)}`;
             return node;
           });
-        const onsetNodes = [];
+        meaning.replaceChildren(...phaseNodes);
+
+        const composition = document.createElement("div");
+        composition.className = "timelineComposition";
+        const sources = index === 0
+          ? [["single", plan.duration, `${clipNumber}のみ`, `${plan.clip.name}のみ`]]
+          : [
+              ["morph", plan.morphIn, `HOME→${clipNumber}`, `HOMEと${plan.clip.name}のモーフ`],
+              ["single", plan.forward + plan.reverse, `${clipNumber}のみ`, `${plan.clip.name}のみ`],
+              ["morph", plan.morphOut, `${clipNumber}→HOME`, `${plan.clip.name}とHOMEのモーフ`],
+              ["home", plan.hold, "HOME", "HOMEのみ"],
+            ];
+        const sourceNodes = sources
+          .filter(([, duration]) => duration > 0)
+          .map(([sourceClass, duration, label, description]) => {
+            const node = document.createElement("span");
+            node.className = `timelineSource ${sourceClass}`;
+            node.style.width = `${(duration / Math.max(0.001, plan.duration)) * 100}%`;
+            node.setAttribute("aria-label", label);
+            node.title = `${description} ${seconds(duration)}`;
+            return node;
+          });
+        composition.replaceChildren(...sourceNodes);
+
+        const events = [];
         const forwardOnset = document.createElement("i");
-        forwardOnset.className = "timelineOnsetMarker";
+        forwardOnset.className = "timelineEvent onset";
         const forwardOnsetOffset = plan.intro + plan.morphIn;
         forwardOnset.style.left = `${(forwardOnsetOffset / Math.max(0.001, plan.duration)) * 100}%`;
-        forwardOnset.title = `表情発生（順方向） ${seconds(plan.clip.onset)}`;
-        onsetNodes.push(forwardOnset);
+        forwardOnset.title = `表情発生↑ ${seconds(plan.clip.onset)}`;
+        events.push(forwardOnset);
+        const fold = document.createElement("i");
+        fold.className = "timelineEvent fold";
+        const foldOffset = forwardOnsetOffset + plan.forward;
+        fold.style.left = `${(foldOffset / Math.max(0.001, plan.duration)) * 100}%`;
+        fold.title = `折返し ${seconds(plan.cut)}`;
+        events.push(fold);
         const reverseOnset = document.createElement("i");
-        reverseOnset.className = "timelineOnsetMarker";
+        reverseOnset.className = "timelineEvent onset";
         const reverseOnsetOffset = plan.intro + plan.morphIn + plan.forward + plan.reverse;
         reverseOnset.style.left = `${(reverseOnsetOffset / Math.max(0.001, plan.duration)) * 100}%`;
-        reverseOnset.title = `表情発生（逆方向） ${seconds(plan.clip.onset)}`;
-        onsetNodes.push(reverseOnset);
-        segment.replaceChildren(...phaseNodes, ...onsetNodes);
+        reverseOnset.title = `表情発生↓ ${seconds(plan.clip.onset)}`;
+        events.push(reverseOnset);
+        segment.replaceChildren(header, meaning, composition, ...events);
         segment.title = `${plan.clip.name}: 合計 ${seconds(plan.duration)}`;
         return segment;
       }),
@@ -1552,10 +1599,8 @@
 
   function renderEditor() {
     const clip = selectedClip();
-    el.editorPlaceholder.hidden = Boolean(clip);
     el.clipEditor.hidden = !clip;
     if (!clip) return;
-    el.editorTitle.textContent = clip.name;
     el.emotionSelect.value = clip.emotion;
     el.clipCutRatio.value = String(clip.cutRatio);
     el.emotionLegend.textContent = LABELS[clip.emotion];
@@ -1729,6 +1774,7 @@
     applySetting(el.returnDuration, settings.returnDuration);
     applySetting(el.preOnsetReturn, settings.preOnsetReturn);
     applySetting(el.holdDuration, settings.holdDuration);
+    applySetting(el.sampleInterval, settings.sampleInterval);
     applySetting(
       el.morphDuration,
       settings.morphDuration ?? settings.introDuration,
@@ -1828,6 +1874,7 @@
         holdDuration: number(el.holdDuration.value, 0.1),
         introDuration: number(el.morphDuration.value, 0.2),
         morphDuration: number(el.morphDuration.value, 0.2),
+        sampleInterval: number(el.sampleInterval.value, 0.08),
       },
       clips: clips.map((clip, index) => {
         const plan = clipPlan(clip, index);
@@ -1986,6 +2033,10 @@
       if (clip) runAnalysis([clip]);
     });
     el.clipList.addEventListener("click", (event) => {
+      if (event.target.closest('[data-action="add"]')) {
+        el.fileInput.click();
+        return;
+      }
       const card = event.target.closest(".clipCard");
       if (!card) return;
       const id = Number(card.dataset.id);
@@ -1993,10 +2044,16 @@
       if (action === "up") moveClip(id, -1);
       else if (action === "down") moveClip(id, 1);
       else if (action === "remove") removeClip(id);
-      else {
+      else if (!event.target.closest(".clipEditorDisclosure")) {
+        if (selectedId !== id) el.clipEditor.open = false;
         selectedId = id;
         renderAll();
       }
+    });
+    el.clipEditor.addEventListener("toggle", () => {
+      if (!el.clipEditor.open) return;
+      const clip = selectedClip();
+      if (clip) requestAnimationFrame(() => drawChart(clip));
     });
     [el.onsetInput, el.peakInput, el.settleInput].forEach((input) =>
       input.addEventListener("change", updateSelectedBoundaries),

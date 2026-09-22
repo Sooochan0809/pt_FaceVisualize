@@ -7,7 +7,7 @@
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <title>Incomplete Deformation</title>
     <script defer src="../modules/faceAPI/face-api.min.js"></script>
-    <script defer src="app.js?v=20260922-3"></script>
+    <script defer src="app.js?v=20260922-10"></script>
     <style>
         :root {
             --bg: #f2f1ee;
@@ -237,7 +237,7 @@
 
         .sequenceTimeline {
             display: flex;
-            height: 42px;
+            min-height: 58px;
             overflow: hidden;
             margin-top: 10px;
             border: 1px solid var(--line);
@@ -248,47 +248,103 @@
         .timelineClip {
             position: relative;
             min-width: 4px;
-            display: flex;
+            display: grid;
+            grid-template-rows: 20px 38px;
             overflow: hidden;
             border-right: 1px solid rgba(255, 255, 255, .8);
         }
 
-        .timelinePhase {
-            display: block;
+        .timelineClipLabel {
+            grid-column: 1;
             min-width: 0;
-            height: 100%;
+            overflow: hidden;
+            padding: 3px 5px 0;
+            background: rgba(255, 255, 255, .82);
+            color: var(--muted);
+            font: .58rem ui-monospace, monospace;
+            text-overflow: ellipsis;
+            white-space: nowrap;
         }
 
-        .timelinePhase.forward {
-            background: #d9dde1;
+        .timelineMeaning,
+        .timelineComposition {
+            position: relative;
+            min-width: 0;
+            display: flex;
+            overflow: hidden;
+        }
+
+        .timelineMeaning {
+            grid-column: 1;
+            grid-row: 2;
+        }
+
+        .timelineComposition {
+            z-index: 2;
+            grid-column: 1;
+            grid-row: 2;
+            pointer-events: none;
+        }
+
+        .timelinePhase {
+            min-width: 0;
+            overflow: hidden;
+            border-right: 1px solid rgba(255, 255, 255, .72);
+        }
+
+        .timelinePhase.intro {
+            background: #dce8f4;
+        }
+
+        .timelinePhase.expression {
+            background: #f7d8ca;
         }
 
         .timelinePhase.rewind {
-            background: repeating-linear-gradient(135deg, rgba(139, 111, 192, .9) 0 4px, rgba(139, 111, 192, .42) 4px 8px);
+            background: #ddd3ee;
+        }
+
+        .timelinePhase.returnHome {
+            background: #d4eadc;
         }
 
         .timelinePhase.hold {
-            background: #8b6fc0;
+            background: #c9ced2;
         }
 
-        .timelinePhase.morph {
-            background: repeating-linear-gradient(135deg, rgba(255, 107, 69, .95) 0 4px, rgba(255, 180, 151, .7) 4px 8px);
+        .timelineSource {
+            min-width: 0;
+            overflow: hidden;
         }
 
-        .timelinePhase.rewindMorph {
-            background: repeating-linear-gradient(135deg, rgba(139, 111, 192, .92) 0 4px, rgba(255, 107, 69, .88) 4px 8px);
+        .timelineSource.single {
+            background: transparent;
         }
 
-        .timelineOnsetMarker {
+        .timelineSource.home {
+            background: rgba(88, 96, 104, .08);
+        }
+
+        .timelineSource.morph {
+            background: repeating-linear-gradient(135deg, rgba(255, 107, 69, .72) 0 4px, rgba(255, 255, 255, .12) 4px 8px);
+        }
+
+        .timelineEvent {
             position: absolute;
-            z-index: 2;
-            top: 0;
+            z-index: 3;
+            top: 20px;
             bottom: 0;
-            width: 2px;
-            margin-left: -1px;
-            background: var(--mint);
-            box-shadow: 0 0 0 1px rgba(255, 255, 255, .72);
+            width: 1px;
             pointer-events: none;
+        }
+
+        .timelineEvent.onset {
+            background: var(--mint);
+        }
+
+        .timelineEvent.fold {
+            width: 2px;
+            background: var(--ink);
         }
 
         .timelineClip.active {
@@ -317,24 +373,28 @@
             border-radius: 2px;
         }
 
-        .timelineLegend .forward {
-            background: #d9dde1;
+        .timelineLegend .intro {
+            background: #dce8f4;
+        }
+
+        .timelineLegend .expression {
+            background: #f7d8ca;
         }
 
         .timelineLegend .rewind {
-            background: repeating-linear-gradient(135deg, rgba(139, 111, 192, .9) 0 3px, rgba(139, 111, 192, .42) 3px 6px);
+            background: #ddd3ee;
+        }
+
+        .timelineLegend .returnHome {
+            background: #d4eadc;
         }
 
         .timelineLegend .hold {
-            background: #8b6fc0;
+            background: #c9ced2;
         }
 
         .timelineLegend .morph {
-            background: repeating-linear-gradient(135deg, rgba(255, 107, 69, .95) 0 3px, rgba(255, 180, 151, .7) 3px 6px);
-        }
-
-        .timelineLegend .rewindMorph {
-            background: repeating-linear-gradient(135deg, rgba(139, 111, 192, .92) 0 3px, rgba(255, 107, 69, .88) 3px 6px);
+            background: repeating-linear-gradient(135deg, rgba(255, 107, 69, .72) 0 3px, rgba(255, 180, 151, .42) 3px 6px);
         }
 
         .timelineLegend .onset {
@@ -343,6 +403,13 @@
             margin: 0 8px;
             background: var(--mint);
             box-shadow: 0 0 0 1px rgba(255, 255, 255, .8);
+        }
+
+        .timelineLegend .fold {
+            width: 2px;
+            height: 11px;
+            margin: 0 8px;
+            background: var(--ink);
         }
 
         .toolbar,
@@ -431,12 +498,29 @@
             gap: 10px;
         }
 
+        .settingsGroupLabel {
+            grid-column: 1 / -1;
+            margin-top: 2px;
+            padding-bottom: 4px;
+            border-bottom: 1px solid var(--line);
+            color: var(--ink);
+            font-size: .7rem;
+            font-weight: 600;
+        }
+
         .field {
             min-width: 0;
             display: grid;
             gap: 5px;
             color: var(--muted);
             font-size: .7rem;
+        }
+
+        .fieldHint {
+            min-height: 2.5em;
+            color: var(--muted);
+            font-size: .58rem;
+            line-height: 1.25;
         }
 
         .field input[type="number"],
@@ -466,12 +550,30 @@
         }
 
         .clipEmpty {
+            width: 100%;
+            min-height: 74px;
+            display: grid;
+            place-items: center;
+            gap: 3px;
             padding: 22px 10px;
             color: var(--muted);
             font-size: .75rem;
             text-align: center;
             border: 1px dashed var(--line);
             border-radius: 8px;
+            background: transparent;
+        }
+
+        .clipEmpty:hover:not(:disabled) {
+            border-color: var(--accent);
+            background: rgba(255, 107, 69, .04);
+        }
+
+        .clipEmpty img {
+            width: 40px;
+            height: 40px;
+            display: block;
+            object-fit: contain;
         }
 
         .clipCard {
@@ -485,6 +587,93 @@
         .clipCard.selected {
             border-color: var(--accent);
             box-shadow: 0 0 0 1px var(--accent);
+        }
+
+        .clipEditorDisclosure {
+            margin-top: 10px;
+            padding-top: 8px;
+            border-top: 1px solid var(--line);
+            cursor: default;
+        }
+
+        .clipEditorDisclosure>summary {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            color: var(--ink);
+            font-size: .7rem;
+            font-weight: 600;
+            cursor: pointer;
+            list-style: none;
+        }
+
+        .clipEditorDisclosure>summary::-webkit-details-marker {
+            display: none;
+        }
+
+        .clipEditorDisclosure>summary::before {
+            content: "›";
+            flex: 0 0 auto;
+            color: var(--muted);
+            font-size: 1rem;
+            line-height: 1;
+            transform: rotate(0deg);
+            transition: transform .15s ease;
+        }
+
+        .clipEditorDisclosure[open]>summary::before {
+            transform: rotate(90deg);
+        }
+
+        .clipEditorDisclosure>summary .badge {
+            margin-left: auto;
+            font-weight: 400;
+        }
+
+        .clipEditorBody {
+            padding-top: 10px;
+        }
+
+        .materialAnalysisSetting {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            grid-template-rows: auto 36px auto;
+            column-gap: 8px;
+            row-gap: 5px;
+            margin-bottom: 10px;
+            color: var(--muted);
+            font-size: .7rem;
+        }
+
+        .materialAnalysisSetting>label {
+            grid-column: 1 / -1;
+        }
+
+        .materialAnalysisSetting>input {
+            width: 100%;
+            height: 36px;
+            min-width: 0;
+            padding: 0 8px;
+            border: 1px solid var(--line);
+            border-radius: 7px;
+            background: #fff;
+            color: var(--ink);
+            align-self: center;
+        }
+
+        .materialAnalysisSetting>button {
+            grid-column: 2;
+            grid-row: 2;
+        }
+
+        #analyzeAllButton {
+            width: 100%;
+        }
+
+        .materialAnalysisSetting .fieldHint {
+            grid-column: 1 / -1;
+            min-height: 0;
         }
 
         .clipTop {
@@ -579,15 +768,7 @@
             color: #267353;
         }
 
-        .editorPlaceholder {
-            padding: 28px 10px;
-            color: var(--muted);
-            font-size: .75rem;
-            text-align: center;
-        }
-
-        .editor[hidden],
-        .editorPlaceholder[hidden] {
+        .editor[hidden] {
             display: none;
         }
 
@@ -728,16 +909,19 @@
                     <button id="playButton" type="button" disabled aria-label="プレビュー再生">▶</button>
                     <input id="playhead" type="range" min="0" max="1" value="0" step="0.001" disabled>
                     <output id="timeOutput" class="time">0.00 / 0.00s</output>
-                    <label class="checkField transportLoop"><input id="loopToggle" type="checkbox" checked> ループ再生</label>
+                    <label class="checkField transportLoop"><input id="loopToggle" type="checkbox" checked>
+                        ループ再生</label>
                 </div>
                 <div class="sequenceTimeline" id="sequenceTimeline" aria-label="シーケンスタイムライン"></div>
                 <div class="timelineLegend" aria-label="タイムライン凡例">
-                    <span><i class="forward"></i>順再生</span>
-                    <span><i class="rewind"></i>逆再生</span>
-                    <span><i class="hold"></i>ホールド</span>
-                    <span><i class="morph"></i>発生点モーフ</span>
-                    <span><i class="rewindMorph"></i>逆再生＋モーフ</span>
+                    <span><i class="intro"></i>導入</span>
+                    <span><i class="expression"></i>表情化</span>
+                    <span><i class="rewind"></i>巻戻し</span>
+                    <span><i class="returnHome"></i>ホーム復帰</span>
+                    <span><i class="hold"></i>保持</span>
+                    <span><i class="morph"></i>素材が重なるモーフ</span>
                     <span><i class="onset"></i>表情発生</span>
+                    <span><i class="fold"></i>折返し</span>
                 </div>
             </section>
 
@@ -747,55 +931,53 @@
             <section class="panel">
                 <div class="panelHeader">
                     <h2>素材</h2>
-                    <label class="fileButton">追加<input id="fileInput" type="file" accept="video/*" multiple></label>
-                </div>
-                <div class="buttonRow" style="margin-bottom:10px">
-                    <button id="analyzeAllButton" class="accent" type="button" disabled>すべて解析</button>
                     <span class="badge" id="clipCount">0 clips</span>
                 </div>
-                <div class="clipList" id="clipList"></div>
-            </section>
-
-            <section class="panel">
-                <div id="editorPlaceholder" class="editorPlaceholder">素材を選択すると境界を編集できます</div>
-                <div id="clipEditor" class="editor" hidden>
-                    <div class="panelHeader">
-                        <h2 id="editorTitle">クリップ設定</h2>
-                        <button id="analyzeClipButton" class="accent" type="button">この素材を解析</button>
-                    </div>
-                    <div class="editorRow">
-                        <label class="field">対象の表情
-                            <select id="emotionSelect"></select>
-                        </label>
-                        <label class="field">ピーク前の折返し位置（%）
-                            <input id="clipCutRatio" type="number" min="10" max="99" step="1" value="85">
-                        </label>
-                        <span class="badge" id="detectionBadge">未解析</span>
-                    </div>
-                    <canvas id="analysisChart" class="miniCanvas"></canvas>
-                    <div class="legend">
-                        <span><i style="background:#7f8993"></i>無表情</span>
-                        <span><i style="background:var(--accent)"></i><b id="emotionLegend">喜び</b></span>
-                        <span><i style="background:#3478d4"></i>ランドマーク変位</span>
-                        <span><i style="background:#171a1d"></i>合成進行度</span>
-                        <span><i style="background:var(--mint)"></i>発生</span>
-                        <span><i style="background:var(--violet)"></i>ピーク / 収束</span>
-                    </div>
-                    <div class="boundaryGrid">
-                        <div class="boundary">
-                            <label>表情が発生するまで<input id="onsetInput" type="number" min="0" step="0.01"></label>
-                            <div class="boundaryValue" id="onsetDuration">0.00s</div>
-                        </div>
-                        <div class="boundary">
-                            <label>発生からピーク<input id="peakInput" type="number" min="0" step="0.01"></label>
-                            <div class="boundaryValue" id="riseDuration">0.00s</div>
-                        </div>
-                        <div class="boundary">
-                            <label>ピークから収束<input id="settleInput" type="number" min="0" step="0.01"></label>
-                            <div class="boundaryValue" id="settleDuration">0.00s</div>
-                        </div>
-                    </div>
+                <input id="fileInput" type="file" accept="video/*" multiple hidden>
+                <div class="materialAnalysisSetting">
+                    <label for="sampleInterval">解析サンプル間隔（秒）</label>
+                    <input id="sampleInterval" type="number" min="0.04" max="1" step="0.01" value="0.08">
+                    <button id="analyzeAllButton" class="accent" type="button" disabled>すべて解析</button>
+                    <span class="fieldHint">小さいほど高精度になり、解析時間が増加</span>
                 </div>
+                <div class="clipList" id="clipList"></div>
+                <details id="clipEditor" class="editor clipEditorDisclosure" hidden>
+                    <summary><span>個別解析・境界調整</span><span class="badge" id="detectionBadge">未解析</span></summary>
+                    <div class="clipEditorBody">
+                        <div class="editorRow">
+                            <label class="field">対象の表情
+                                <select id="emotionSelect"></select>
+                            </label>
+                            <label class="field">ピーク前の折返し位置（%）
+                                <input id="clipCutRatio" type="number" min="10" max="99" step="1" value="85">
+                            </label>
+                            <button id="analyzeClipButton" class="accent" type="button">再解析</button>
+                        </div>
+                        <canvas id="analysisChart" class="miniCanvas"></canvas>
+                        <div class="legend">
+                            <span><i style="background:#7f8993"></i>無表情</span>
+                            <span><i style="background:var(--accent)"></i><b id="emotionLegend">喜び</b></span>
+                            <span><i style="background:#3478d4"></i>ランドマーク変位</span>
+                            <span><i style="background:#171a1d"></i>合成進行度</span>
+                            <span><i style="background:var(--mint)"></i>発生</span>
+                            <span><i style="background:var(--violet)"></i>ピーク / 収束</span>
+                        </div>
+                        <div class="boundaryGrid">
+                            <div class="boundary">
+                                <label>表情が発生するまで<input id="onsetInput" type="number" min="0" step="0.01"></label>
+                                <div class="boundaryValue" id="onsetDuration">0.00s</div>
+                            </div>
+                            <div class="boundary">
+                                <label>発生からピーク<input id="peakInput" type="number" min="0" step="0.01"></label>
+                                <div class="boundaryValue" id="riseDuration">0.00s</div>
+                            </div>
+                            <div class="boundary">
+                                <label>ピークから収束<input id="settleInput" type="number" min="0" step="0.01"></label>
+                                <div class="boundaryValue" id="settleDuration">0.00s</div>
+                            </div>
+                        </div>
+                    </div>
+                </details>
             </section>
 
             <section class="panel">
@@ -805,26 +987,31 @@
                     <input id="jsonInput" type="file" accept="application/json,.json" hidden>
                 </div>
                 <div class="settingsGrid">
-                    <label class="field">発生→折返し（秒）
+                    <div class="settingsGroupLabel">再生テンポ</div>
+                    <label class="field">表情化：発生→折返し（秒）
                         <input id="risePlaybackDuration" type="number" min="0.05" max="5" step="0.05" value="0.45">
+                        <span class="fieldHint">発生点から手動の折返し位置まで</span>
                     </label>
-                    <label class="field">折返し→発生（秒）
+                    <label class="field">巻戻し：折返し→発生（秒）
                         <input id="rewindDuration" type="number" min="0.05" max="5" step="0.05" value="0.45">
+                        <span class="fieldHint">折返し位置から発生点へ戻るまで</span>
                     </label>
-                    <label class="field">発生→ホーム（秒）
-                        <input id="returnDuration" type="number" min="0.05" max="5" step="0.05" value="0.30">
-                    </label>
-                    <label class="field">発生前への戻し量（秒）
-                        <input id="preOnsetReturn" type="number" min="0" max="2" step="0.05" value="0.30">
-                    </label>
-                    <label class="field">ホームでのホールド（秒）
-                        <input id="holdDuration" type="number" min="0" max="5" step="0.05" value="0.10">
-                    </label>
-                    <label class="field">導入・発生点モーフ（秒）
+                    <div class="settingsGroupLabel">ホームとの接続</div>
+                    <label class="field">初回導入／表情へのモーフ（秒）
                         <input id="morphDuration" type="number" min="0" max="1" step="0.05" value="0.20">
+                        <span class="fieldHint">1本目は導入尺、以降はHOME→素材のモーフ尺</span>
                     </label>
-                    <label class="field">解析間隔（秒）
-                        <input id="sampleInterval" type="number" min="0.04" max="1" step="0.01" value="0.08">
+                    <label class="field">ホーム復帰＋モーフ（秒）
+                        <input id="returnDuration" type="number" min="0.05" max="5" step="0.05" value="0.30">
+                        <span class="fieldHint">発生点からHOMEまで。区間全体でモーフ</span>
+                    </label>
+                    <label class="field">ホーム位置：発生の何秒前
+                        <input id="preOnsetReturn" type="number" min="0" max="2" step="0.05" value="0.30">
+                        <span class="fieldHint">各素材内で、発生点より前へ戻す量</span>
+                    </label>
+                    <label class="field">ホーム保持（秒）
+                        <input id="holdDuration" type="number" min="0" max="5" step="0.05" value="0.10">
+                        <span class="fieldHint">次の素材へ移る前にHOMEを見せる時間</span>
                     </label>
                 </div>
             </section>
