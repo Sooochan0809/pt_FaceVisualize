@@ -7,7 +7,7 @@
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <title>Incomplete Deformation</title>
     <script defer src="../modules/faceAPI/face-api.min.js"></script>
-    <script defer src="app.js?v=20260922-11"></script>
+    <script defer src="app.js?v=20260922-12"></script>
     <style>
         :root {
             --bg: #f2f1ee;
@@ -235,6 +235,8 @@
         }
 
         .sequenceTimeline {
+            --timeline-progress: 0%;
+            position: relative;
             display: flex;
             min-height: 58px;
             overflow: hidden;
@@ -242,6 +244,28 @@
             border: 1px solid var(--line);
             border-radius: 7px;
             background: #eee;
+        }
+
+        .sequenceTimeline::before,
+        .sequenceTimeline::after {
+            content: "";
+            position: absolute;
+            z-index: 5;
+            bottom: 0;
+            left: 0;
+            height: 4px;
+            pointer-events: none;
+        }
+
+        .sequenceTimeline::before {
+            width: 100%;
+            background: rgba(23, 26, 29, .18);
+        }
+
+        .sequenceTimeline::after {
+            width: var(--timeline-progress);
+            background: var(--accent);
+            transition: width 60ms linear;
         }
 
         .timelineClip {

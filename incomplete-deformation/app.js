@@ -913,6 +913,10 @@
     const total = sequenceDuration();
     el.playhead.max = String(Math.max(0.001, total));
     el.playhead.value = String(clamp(playPosition, 0, total));
+    el.sequenceTimeline.style.setProperty(
+      "--timeline-progress",
+      `${total ? clamp((playPosition / total) * 100, 0, 100) : 0}%`,
+    );
     el.timeOutput.textContent = `${playPosition.toFixed(2)} / ${total.toFixed(2)}s`;
     el.playButton.textContent = playing ? "❚❚" : "▶";
     [...el.sequenceTimeline.children].forEach((node, index) =>

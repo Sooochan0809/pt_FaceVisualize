@@ -1,0 +1,244 @@
+{
+  "version": 3,
+  "mode": "incomplete-deformation-home-anchor",
+  "algorithm": "fixed-tempo_onset-overlap_forward-reverse_home-loop",
+  "settings": {
+    "riseDuration": 1.5,
+    "rewindDuration": 0.7,
+    "returnDuration": 1.5,
+    "preOnsetReturn": 1,
+    "holdDuration": 0,
+    "morphDuration": 1
+  },
+  "clips": [
+    {
+      "order": 1,
+      "source": "01_happy_100.mov",
+      "duration": 2,
+      "emotion": "happy",
+      "cutRatio": 0.6,
+      "analysisMethod": "mediapipe-landmarks-75_expression-25",
+      "landmarkDetectionRate": 1,
+      "eyeAlignedToFirstClip": true,
+      "boundaries": {
+        "onset": 0.5526843360224628,
+        "peak": 1.048489185304906,
+        "settle": 2
+      },
+      "sourceStart": 0.5526843360224628,
+      "morphInRange": [
+        0,
+        0
+      ],
+      "cutTime": 0.8501672455919287,
+      "returnTime": 0,
+      "reverseMorphStart": 0.5526843360224628,
+      "homeTime": 0,
+      "homeMatch": null,
+      "outputPhases": {
+        "intro": 0.5526843360224628,
+        "morphIn": 0,
+        "rise": 1.5,
+        "rewind": 0.7,
+        "returnHome": 1.5,
+        "hold": 0
+      },
+      "outputDuration": 4.252684336022463
+    },
+    {
+      "order": 2,
+      "source": "02_sad_100.mov",
+      "duration": 2,
+      "emotion": "sad",
+      "cutRatio": 0.4,
+      "analysisMethod": "mediapipe-landmarks-75_expression-25",
+      "landmarkDetectionRate": 1,
+      "eyeAlignedToFirstClip": true,
+      "boundaries": {
+        "onset": 0.43262950391719407,
+        "peak": 1.04,
+        "settle": 2
+      },
+      "sourceStart": 0.43262950391719407,
+      "morphInRange": [
+        0,
+        0.43262950391719407
+      ],
+      "cutTime": 0.6755777023503164,
+      "returnTime": 0.08,
+      "reverseMorphStart": 0.43262950391719407,
+      "homeTime": 0,
+      "homeMatch": {
+        "homeTime": 0,
+        "entryTime": 0.43262950391719407,
+        "returnTime": 0.08,
+        "distance": 0.0006994903517493596
+      },
+      "outputPhases": {
+        "intro": 0,
+        "morphIn": 1,
+        "rise": 1.5,
+        "rewind": 0.7,
+        "returnHome": 1.5,
+        "hold": 0
+      },
+      "outputDuration": 4.7
+    },
+    {
+      "order": 3,
+      "source": "03_angry_99.mov",
+      "duration": 2.066667,
+      "emotion": "angry",
+      "cutRatio": 0.3,
+      "analysisMethod": "mediapipe-landmarks-75_expression-25",
+      "landmarkDetectionRate": 1,
+      "eyeAlignedToFirstClip": true,
+      "boundaries": {
+        "onset": 0.3806521976847606,
+        "peak": 1.0343768736902368,
+        "settle": 2.066667
+      },
+      "sourceStart": 0.3806521976847606,
+      "morphInRange": [
+        0,
+        0.3806521976847606
+      ],
+      "cutTime": 0.5767696004864035,
+      "returnTime": 0,
+      "reverseMorphStart": 0.3806521976847606,
+      "homeTime": 0,
+      "homeMatch": {
+        "homeTime": 0,
+        "entryTime": 0.3806521976847606,
+        "returnTime": 0,
+        "distance": 0.0005654636181446534
+      },
+      "outputPhases": {
+        "intro": 0,
+        "morphIn": 1,
+        "rise": 1.5,
+        "rewind": 0.7,
+        "returnHome": 1.5,
+        "hold": 0
+      },
+      "outputDuration": 4.7
+    },
+    {
+      "order": 4,
+      "source": "04_fearful_85.mov",
+      "duration": 2,
+      "emotion": "fearful",
+      "cutRatio": 0.1,
+      "analysisMethod": "mediapipe-landmarks-75_expression-25",
+      "landmarkDetectionRate": 1,
+      "eyeAlignedToFirstClip": true,
+      "boundaries": {
+        "onset": 0.1717482843995253,
+        "peak": 1.03491546786602,
+        "settle": 2
+      },
+      "sourceStart": 0.1717482843995253,
+      "morphInRange": [
+        0,
+        0.1717482843995253
+      ],
+      "cutTime": 0.2580650027461748,
+      "returnTime": 0.08,
+      "reverseMorphStart": 0.1717482843995253,
+      "homeTime": 0,
+      "homeMatch": {
+        "homeTime": 0,
+        "entryTime": 0.1717482843995253,
+        "returnTime": 0.08,
+        "distance": 0.0006994903517493596
+      },
+      "outputPhases": {
+        "intro": 0,
+        "morphIn": 1,
+        "rise": 1.5,
+        "rewind": 0.7,
+        "returnHome": 1.5,
+        "hold": 0
+      },
+      "outputDuration": 4.7
+    },
+    {
+      "order": 5,
+      "source": "05_surprised_100.mov",
+      "duration": 2,
+      "emotion": "surprised",
+      "cutRatio": 0.65,
+      "analysisMethod": "mediapipe-landmarks-75_expression-25",
+      "landmarkDetectionRate": 1,
+      "eyeAlignedToFirstClip": true,
+      "boundaries": {
+        "onset": 0.4029697860047966,
+        "peak": 0.9832594161966108,
+        "settle": 2
+      },
+      "sourceStart": 0.4029697860047966,
+      "morphInRange": [
+        0,
+        0.4029697860047966
+      ],
+      "cutTime": 0.7801580456294759,
+      "returnTime": 0.16,
+      "reverseMorphStart": 0.4029697860047966,
+      "homeTime": 0,
+      "homeMatch": {
+        "homeTime": 0,
+        "entryTime": 0.4029697860047966,
+        "returnTime": 0.16,
+        "distance": 0.000623320586604858
+      },
+      "outputPhases": {
+        "intro": 0,
+        "morphIn": 1,
+        "rise": 1.5,
+        "rewind": 0.7,
+        "returnHome": 1.5,
+        "hold": 0
+      },
+      "outputDuration": 4.7
+    },
+    {
+      "order": 6,
+      "source": "06_disgusted_99.mov",
+      "duration": 2,
+      "emotion": "disgusted",
+      "cutRatio": 0.55,
+      "analysisMethod": "mediapipe-landmarks-75_expression-25",
+      "landmarkDetectionRate": 1,
+      "eyeAlignedToFirstClip": true,
+      "boundaries": {
+        "onset": 0.5863258856035588,
+        "peak": 1.430807908485659,
+        "settle": 2
+      },
+      "sourceStart": 0.5863258856035588,
+      "morphInRange": [
+        0,
+        0.5863258856035588
+      ],
+      "cutTime": 1.050790998188714,
+      "returnTime": 0.08,
+      "reverseMorphStart": 0.5863258856035588,
+      "homeTime": 0,
+      "homeMatch": {
+        "homeTime": 0,
+        "entryTime": 0.5863258856035588,
+        "returnTime": 0.08,
+        "distance": 0.0006994903517493596
+      },
+      "outputPhases": {
+        "intro": 0,
+        "morphIn": 1,
+        "rise": 1.5,
+        "rewind": 0.7,
+        "returnHome": 1.5,
+        "hold": 0
+      },
+      "outputDuration": 4.7
+    }
+  ]
+}
