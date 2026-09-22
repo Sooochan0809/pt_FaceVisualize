@@ -139,7 +139,6 @@
   let loadedClipId = null;
   let transitionLoadedClipId = null;
   let lastRenderedTime = -1;
-  let analysisGeneration = 0;
   let nextId = 1;
   let importedConfig = null;
   let faceLandmarkerPromise = null;
@@ -273,11 +272,9 @@
         settle: 0,
         samples: [],
         analysisSeries: [],
-        baselineShape: null,
         alignmentPose: null,
         homeMatch: null,
         importedHomeMatch: null,
-        detectionRate: null,
         landmarkDetectionRate: null,
         analyzed: false,
       }));
@@ -319,30 +316,27 @@
   }
 
   function clipPlan(clip, index = clips.indexOf(clip)) {
+    const isHome = index === 0;
     const homeClip = clips[0] || clip;
     const homeTime = preOnsetTarget(homeClip);
     const cut = cutTime(clip);
-    const returnTime =
-      index === 0
-        ? clamp(homeTime, 0, cut)
-        : clamp(clip.homeMatch?.returnTime ?? preOnsetTarget(clip), 0, cut);
-    const morphIn = index > 0
-      ? clamp(number(el.morphDuration.value, 0.2), 0, 1)
-      : 0;
-    const morphInStart = index > 0
-      ? clamp(clip.onset - morphIn, 0, clip.onset)
-      : 0;
-    const morphInEnd = index > 0 ? clip.onset : 0;
-    const intro = index === 0
-      ? clamp(number(el.morphDuration.value, 0.2), 0, 1)
-      : 0;
+    const returnTime = isHome
+      ? clamp(homeTime, 0, cut)
+      : clamp(clip.homeMatch?.returnTime ?? preOnsetTarget(clip), 0, cut);
+    const transitionDuration = clamp(number(el.morphDuration.value, 0.2), 0, 1);
+    const morphIn = isHome ? 0 : transitionDuration;
+    const morphInStart = isHome
+      ? 0
+      : clamp(clip.onset - morphIn, 0, clip.onset);
+    const morphInEnd = isHome ? 0 : clip.onset;
+    const intro = isHome ? transitionDuration : 0;
     const sourceStart = clip.onset;
     const forward = clamp(number(el.risePlaybackDuration.value, 0.45), 0.05, 5);
     const reverse = clamp(number(el.rewindDuration.value, 0.45), 0.05, 5);
     const homeReturn = clamp(number(el.returnDuration.value, 0.3), 0.05, 5);
     const reverseMorphStart = clip.onset;
-    const morphOut = index > 0 ? homeReturn : 0;
-    const returnReverse = index === 0 ? homeReturn : 0;
+    const morphOut = isHome ? 0 : homeReturn;
+    const returnReverse = isHome ? homeReturn : 0;
     const hold = clamp(number(el.holdDuration.value, 0.1), 0, 5);
     return {
       clip,
@@ -362,13 +356,15 @@
       morphOut,
       returnReverse,
       hold,
-      duration: intro + morphIn + forward + reverse + morphOut + returnReverse + hold,
+      duration:
+        intro + morphIn + forward + reverse + morphOut + returnReverse + hold,
     };
   }
 
   function plans() {
     return clips.map(clipPlan);
   }
+
   function sequenceDuration() {
     return plans().reduce((sum, plan) => sum + plan.duration, 0);
   }
@@ -468,7 +464,8 @@
     return null;
   }
 
-  function loadVideoSlot(video, clip, secondary = false) {
+  function loadVideoSlot(video, clip) {
+    const secondary = video === el.transitionVideo;
     const loadedId = secondary ? transitionLoadedClipId : loadedClipId;
     if (loadedId === clip.id && video.src) return Promise.resolve();
     if (secondary) transitionLoadedClipId = clip.id;
@@ -501,7 +498,7 @@
     });
   }
 
-  const loadSource = (clip) => loadVideoSlot(el.sourceVideo, clip, false);
+  const loadSource = (clip) => loadVideoSlot(el.sourceVideo, clip);
   const seekSource = (time) => seekVideoSlot(el.sourceVideo, time);
 
   function sizeCanvas() {
@@ -760,8 +757,8 @@
       return;
     }
     await Promise.all([
-      loadVideoSlot(el.sourceVideo, mapped.clip, false),
-      loadVideoSlot(el.transitionVideo, nextClip, true),
+      loadVideoSlot(el.sourceVideo, mapped.clip),
+      loadVideoSlot(el.transitionVideo, nextClip),
     ]);
     await Promise.all([
       seekVideoSlot(el.sourceVideo, mapped.sourceTime),
@@ -1046,7 +1043,6 @@
       .filter((sample) => sample.landmarks)
       .map((sample) => sample.landmarks);
     if (shapes.length < 3) {
-      clip.baselineShape = null;
       clip.samples.forEach((sample) => {
         sample.landmarkDistance = null;
         sample.landmarkDelta = null;
@@ -1058,7 +1054,6 @@
       Math.min(shapes.length, Math.round(shapes.length * 0.15)),
     );
     const baselineShape = averageVector(shapes.slice(0, baselineCount));
-    clip.baselineShape = baselineShape;
     clip.samples.forEach((sample, index) => {
       const nearbyShapes = clip.samples
         .slice(Math.max(0, index - 2), index + 3)
@@ -1149,23 +1144,27 @@
     for (let index = 1; index < clips.length; index += 1) {
       const clip = clips[index];
       const importedMatch = clip.importedHomeMatch;
-      clip.homeMatch = findHomeMatch(homeClip, clip) || (
-        importedMatch && Number.isFinite(Number(importedMatch.returnTime))
+      clip.homeMatch =
+        findHomeMatch(homeClip, clip) ||
+        (importedMatch && Number.isFinite(Number(importedMatch.returnTime))
           ? {
               ...importedMatch,
               homeTime: preOnsetTarget(homeClip),
               entryTime: clip.onset,
-              returnTime: clamp(Number(importedMatch.returnTime), 0, clip.onset),
+              returnTime: clamp(
+                Number(importedMatch.returnTime),
+                0,
+                clip.onset,
+              ),
             }
-          : null
-      );
+          : null);
     }
   }
 
   function smoothed(clip) {
     return clip.samples.map((sample, index) => {
       const window = clip.samples.slice(Math.max(0, index - 2), index + 3);
-      const expressionSamples = window.filter((item) => item.faceApiDetected);
+      const expressionSamples = window.filter((item) => item.expressions);
       const landmarkSamples = window.filter((item) =>
         Number.isFinite(item.landmarkDistance),
       );
@@ -1338,12 +1337,7 @@
     return analysisCanvas;
   }
 
-  async function analyzeClip(
-    clip,
-    generation,
-    progressOffset = 0,
-    progressTotal = 1,
-  ) {
+  async function analyzeClip(clip, progressOffset = 0, progressTotal = 1) {
     await models;
     const faceLandmarker = await getFaceLandmarker();
     await loadSource(clip);
@@ -1352,7 +1346,6 @@
     clip.samples = [];
     clip.analysisSeries = [];
     for (let index = 0; index < count; index += 1) {
-      if (generation !== analysisGeneration) return;
       const time = Math.min(
         index * interval,
         Math.max(0, clip.duration - 0.01),
@@ -1370,7 +1363,6 @@
         detectedMesh?.map((point) => ({
           x: point.x,
           y: point.y,
-          z: point.z || 0,
         })) || null;
       const landmarks = normalizeMediaPipeLandmarks(detectedMesh);
       const eyePose = mediaPipeEyePose(detectedMesh);
@@ -1379,25 +1371,21 @@
         .withFaceExpressions();
       clip.samples.push({
         time,
-        detected: Boolean(detection || landmarks),
-        faceApiDetected: Boolean(detection),
-        mediapipeDetected: Boolean(landmarks),
         landmarks,
         faceMesh,
         eyePose,
-        expressions: Object.fromEntries(
-          EMOTIONS.map((emotion) => [
-            emotion,
-            detection?.expressions[emotion] || 0,
-          ]),
-        ),
+        expressions: detection
+          ? Object.fromEntries(
+              EMOTIONS.map((emotion) => [
+                emotion,
+                detection.expressions[emotion] || 0,
+              ]),
+            )
+          : null,
       });
     }
-    clip.detectionRate =
-      clip.samples.filter((sample) => sample.detected).length /
-      clip.samples.length;
     clip.landmarkDetectionRate =
-      clip.samples.filter((sample) => sample.mediapipeDetected).length /
+      clip.samples.filter((sample) => sample.landmarks).length /
       clip.samples.length;
     clip.analyzed = detectBoundaries(clip);
     clip.importedHomeMatch = null;
@@ -1407,11 +1395,10 @@
   async function runAnalysis(targets) {
     if (busy || !modelsReady || !targets.length) return;
     pause();
-    const generation = ++analysisGeneration;
     setBusy(true);
     try {
       for (let i = 0; i < targets.length; i += 1) {
-        await analyzeClip(targets[i], generation, i, targets.length);
+        await analyzeClip(targets[i], i, targets.length);
         renderAll();
       }
       const failed = targets.filter((clip) => !clip.analyzed).length;
@@ -1485,11 +1472,11 @@
       return;
     }
     const cards = clips.map((clip, index) => {
-        const plan = clipPlan(clip, index);
-        const card = document.createElement("article");
-        card.className = `clipCard${clip.id === selectedId ? " selected" : ""}`;
-        card.dataset.id = clip.id;
-        card.innerHTML = `
+      const plan = clipPlan(clip, index);
+      const card = document.createElement("article");
+      card.className = `clipCard${clip.id === selectedId ? " selected" : ""}`;
+      card.dataset.id = clip.id;
+      card.innerHTML = `
         <div class="clipTop">
           <span class="clipIndex">${String(index + 1).padStart(2, "0")}</span>
           <div><div class="clipName" title="${escapeHtml(clip.name)}">${escapeHtml(clip.name)}</div><div class="clipMeta">${LABELS[clip.emotion]} · IN ${seconds(plan.sourceStart)} · CUT ${seconds(plan.cut)} · OUT ${seconds(plan.returnTime)}</div></div>
@@ -1497,8 +1484,8 @@
         </div>
         <div class="phaseBar"><i class="before" style="width:${phasePercent(clip.onset, clip.duration)}"></i><i class="rise" style="width:${phasePercent(clip.peak - clip.onset, clip.duration)}"></i><i class="settle" style="width:${phasePercent(clip.settle - clip.peak, clip.duration)}"></i></div>
         <div class="phaseLabels"><span>発生 ${seconds(clip.onset)}</span><span>ピーク ${seconds(clip.peak)}</span><span>${clip.samples.length ? `MP ${Math.round(clip.landmarkDetectionRate * 100)}%${clip.analyzed ? "" : " / 境界未検出"}` : "未解析"}</span></div>`;
-        return card;
-      });
+      return card;
+    });
     el.clipList.replaceChildren(...cards, addButton);
     const selectedCard = cards.find(
       (card) => Number(card.dataset.id) === selectedId,
@@ -1510,6 +1497,24 @@
     const node = document.createElement("span");
     node.textContent = value;
     return node.innerHTML;
+  }
+
+  function timelinePart(baseClass, part, total) {
+    const [variant, duration, label, description] = part;
+    const node = document.createElement("span");
+    node.className = `${baseClass} ${variant}`;
+    node.style.width = `${(duration / Math.max(0.001, total)) * 100}%`;
+    node.setAttribute("aria-label", label);
+    node.title = `${description} ${seconds(duration)}`;
+    return node;
+  }
+
+  function timelineMarker(variant, offset, total, title) {
+    const marker = document.createElement("i");
+    marker.className = `timelineEvent ${variant}`;
+    marker.style.left = `${(offset / Math.max(0.001, total)) * 100}%`;
+    marker.title = title;
+    return marker;
   }
 
   function renderTimeline() {
@@ -1530,65 +1535,80 @@
         const entryDuration = plan.intro + plan.morphIn;
         const returnDuration = plan.morphOut + plan.returnReverse;
         const phases = [
-          ["intro", entryDuration, "導入", index === 0 ? "冒頭→発生" : "HOME→発生"],
+          [
+            "intro",
+            entryDuration,
+            "導入",
+            index === 0 ? "冒頭→発生" : "HOME→発生",
+          ],
           ["expression", plan.forward, "表情化→", "発生→折返し"],
           ["rewind", plan.reverse, "←戻す", "折返し→発生"],
           ["returnHome", returnDuration, "HOMEへ", "発生→ホーム"],
           ["hold", plan.hold, "保持", "ホーム保持"],
         ];
-        const phaseNodes = phases
-          .filter(([, duration]) => duration > 0)
-          .map(([phase, duration, label, description]) => {
-            const node = document.createElement("span");
-            node.className = `timelinePhase ${phase}`;
-            node.style.width = `${(duration / Math.max(0.001, plan.duration)) * 100}%`;
-            node.setAttribute("aria-label", label);
-            node.title = `${description} ${seconds(duration)}`;
-            return node;
-          });
-        meaning.replaceChildren(...phaseNodes);
+        meaning.replaceChildren(
+          ...phases
+            .filter(([, duration]) => duration > 0)
+            .map((part) => timelinePart("timelinePhase", part, plan.duration)),
+        );
 
         const composition = document.createElement("div");
         composition.className = "timelineComposition";
-        const sources = index === 0
-          ? [["single", plan.duration, `${clipNumber}のみ`, `${plan.clip.name}のみ`]]
-          : [
-              ["morph", plan.morphIn, `HOME→${clipNumber}`, `HOMEと${plan.clip.name}のモーフ`],
-              ["single", plan.forward + plan.reverse, `${clipNumber}のみ`, `${plan.clip.name}のみ`],
-              ["morph", plan.morphOut, `${clipNumber}→HOME`, `${plan.clip.name}とHOMEのモーフ`],
-              ["home", plan.hold, "HOME", "HOMEのみ"],
-            ];
-        const sourceNodes = sources
-          .filter(([, duration]) => duration > 0)
-          .map(([sourceClass, duration, label, description]) => {
-            const node = document.createElement("span");
-            node.className = `timelineSource ${sourceClass}`;
-            node.style.width = `${(duration / Math.max(0.001, plan.duration)) * 100}%`;
-            node.setAttribute("aria-label", label);
-            node.title = `${description} ${seconds(duration)}`;
-            return node;
-          });
-        composition.replaceChildren(...sourceNodes);
+        const sources =
+          index === 0
+            ? [
+                [
+                  "single",
+                  plan.duration,
+                  `${clipNumber}のみ`,
+                  `${plan.clip.name}のみ`,
+                ],
+              ]
+            : [
+                [
+                  "morph",
+                  plan.morphIn,
+                  `HOME→${clipNumber}`,
+                  `HOMEと${plan.clip.name}のモーフ`,
+                ],
+                [
+                  "single",
+                  plan.forward + plan.reverse,
+                  `${clipNumber}のみ`,
+                  `${plan.clip.name}のみ`,
+                ],
+                [
+                  "morph",
+                  plan.morphOut,
+                  `${clipNumber}→HOME`,
+                  `${plan.clip.name}とHOMEのモーフ`,
+                ],
+                ["home", plan.hold, "HOME", "HOMEのみ"],
+              ];
+        composition.replaceChildren(
+          ...sources
+            .filter(([, duration]) => duration > 0)
+            .map((part) => timelinePart("timelineSource", part, plan.duration)),
+        );
 
-        const events = [];
-        const forwardOnset = document.createElement("i");
-        forwardOnset.className = "timelineEvent onset";
         const forwardOnsetOffset = plan.intro + plan.morphIn;
-        forwardOnset.style.left = `${(forwardOnsetOffset / Math.max(0.001, plan.duration)) * 100}%`;
-        forwardOnset.title = `表情発生↑ ${seconds(plan.clip.onset)}`;
-        events.push(forwardOnset);
-        const fold = document.createElement("i");
-        fold.className = "timelineEvent fold";
         const foldOffset = forwardOnsetOffset + plan.forward;
-        fold.style.left = `${(foldOffset / Math.max(0.001, plan.duration)) * 100}%`;
-        fold.title = `折返し ${seconds(plan.cut)}`;
-        events.push(fold);
-        const reverseOnset = document.createElement("i");
-        reverseOnset.className = "timelineEvent onset";
-        const reverseOnsetOffset = plan.intro + plan.morphIn + plan.forward + plan.reverse;
-        reverseOnset.style.left = `${(reverseOnsetOffset / Math.max(0.001, plan.duration)) * 100}%`;
-        reverseOnset.title = `表情発生↓ ${seconds(plan.clip.onset)}`;
-        events.push(reverseOnset);
+        const reverseOnsetOffset = foldOffset + plan.reverse;
+        const events = [
+          [
+            "onset",
+            forwardOnsetOffset,
+            `表情発生↑ ${seconds(plan.clip.onset)}`,
+          ],
+          ["fold", foldOffset, `折返し ${seconds(plan.cut)}`],
+          [
+            "onset",
+            reverseOnsetOffset,
+            `表情発生↓ ${seconds(plan.clip.onset)}`,
+          ],
+        ].map(([variant, offset, title]) =>
+          timelineMarker(variant, offset, plan.duration, title),
+        );
         segment.replaceChildren(header, meaning, composition, ...events);
         segment.title = `${plan.clip.name}: 合計 ${seconds(plan.duration)}`;
         return segment;
@@ -1742,7 +1762,9 @@
       clip.duration,
     );
     if (clips[0]?.id === clip.id) {
-      clips.forEach((item) => { item.importedHomeMatch = null; });
+      clips.forEach((item) => {
+        item.importedHomeMatch = null;
+      });
     } else {
       clip.importedHomeMatch = null;
     }
@@ -1763,7 +1785,11 @@
   function applySetting(input, value) {
     if (!input || !Number.isFinite(Number(value))) return;
     input.value = String(
-      clamp(Number(value), number(input.min, -Infinity), number(input.max, Infinity)),
+      clamp(
+        Number(value),
+        number(input.min, -Infinity),
+        number(input.max, Infinity),
+      ),
     );
   }
 
@@ -1802,7 +1828,11 @@
       const ratio = number(saved.cutRatio, clip.cutRatio / 100);
       clip.cutRatio = clamp(ratio <= 1 ? ratio * 100 : ratio, 10, 99);
       const boundaries = saved.boundaries || {};
-      clip.onset = clamp(number(boundaries.onset, clip.onset), 0, clip.duration);
+      clip.onset = clamp(
+        number(boundaries.onset, clip.onset),
+        0,
+        clip.duration,
+      );
       clip.peak = clamp(
         number(boundaries.peak, clip.peak),
         clip.onset,
@@ -1813,11 +1843,11 @@
         clip.peak,
         clip.duration,
       );
-      clip.importedHomeMatch = saved.homeMatch || (
-        Number.isFinite(Number(saved.returnTime))
+      clip.importedHomeMatch =
+        saved.homeMatch ||
+        (Number.isFinite(Number(saved.returnTime))
           ? { returnTime: Number(saved.returnTime) }
-          : null
-      );
+          : null);
       if (clip.samples.length) updateAlignmentPose(clip);
       ordered.push(clip);
       matched += 1;
@@ -1825,7 +1855,7 @@
     clips = [...ordered, ...remaining];
     selectedId = clips.some((clip) => clip.id === selectedId)
       ? selectedId
-      : clips[0]?.id ?? null;
+      : (clips[0]?.id ?? null);
     rebuildTransitions();
     pause();
     playPosition = 0;
@@ -1848,7 +1878,11 @@
     setBusy(true);
     try {
       const config = JSON.parse(await file.text());
-      if (!config || typeof config !== "object" || !Array.isArray(config.clips)) {
+      if (
+        !config ||
+        typeof config !== "object" ||
+        !Array.isArray(config.clips)
+      ) {
         throw new Error("Incomplete Deformationの設定JSONではありません");
       }
       importedConfig = config;
@@ -2105,7 +2139,9 @@
           clamp(number(input.value), number(input.min), number(input.max)),
         );
         if (input === el.preOnsetReturn) {
-          clips.forEach((clip) => { clip.importedHomeMatch = null; });
+          clips.forEach((clip) => {
+            clip.importedHomeMatch = null;
+          });
         }
         rebuildTransitions();
         pause();
