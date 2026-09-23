@@ -176,23 +176,13 @@
         const video = $("video");
         const sampleVideo = $("sampleVideo");
         const status = $("status");
-        const cameraButton = $("cameraButton");
-        const sampleControls = $("sampleControls");
         const recordButton = $("recordButton");
         const countdown = $("countdown");
         const blink = $("blink");
         const shutterAudio = new Audio("shutter.mp3");
-        const VIDEO_BITRATE = 60_000_000;
         const wait = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
         const stopStream = (stream) => stream?.getTracks().forEach((track) => track.stop());
-        let activeSampleButton = null;
         let statusFrameCallback = 0;
-
-        function showWebcam() {
-            sampleVideo.pause();
-            sampleVideo.hidden = true;
-            activeSampleButton = null;
-        }
 
         function downloadRecording(blob) {
             const extension = blob.type.includes("mp4") ? "mp4" : "webm";
@@ -218,23 +208,23 @@
         function measureStatus(maximum) {
             const size = getRecordingSize();
             status.textContent = `${maximum}\n実測: ${size.width}x${size.height} / 計測中`;
-            let startedAt = null;
+            let startedAt;
             let frames = 0;
 
             const measure = (now) => {
-                if (startedAt !== null) frames += 1;
+                if (startedAt !== undefined) frames += 1;
                 else startedAt = now;
 
                 const elapsed = now - startedAt;
-                if (elapsed >= 1000) {
-                    const current = getRecordingSize();
-                    if (status.textContent.startsWith("最大:")) {
-                        status.textContent = `${maximum}\n実測: ${current.width}x${current.height} / ${Math.round(frames * 1000 / elapsed)}fps`;
-                    }
-                    statusFrameCallback = 0;
+                if (elapsed < 1000) {
+                    statusFrameCallback = video.requestVideoFrameCallback(measure);
                     return;
                 }
-                statusFrameCallback = video.requestVideoFrameCallback(measure);
+                const current = getRecordingSize();
+                if (status.textContent.startsWith("最大:")) {
+                    status.textContent = `${maximum}\n実測: ${current.width}x${current.height} / ${Math.round(frames * 1000 / elapsed)}fps`;
+                }
+                statusFrameCallback = 0;
             };
 
             statusFrameCallback = video.requestVideoFrameCallback(measure);
@@ -244,10 +234,10 @@
             if (typeof video.requestVideoFrameCallback !== "function") {
                 throw new Error("このブラウザは実フレーム同期録画に対応していません");
             }
-            const { width: recordingWidth, height: recordingHeight } = getRecordingSize();
+            const { width, height } = getRecordingSize();
             const canvas = document.createElement("canvas");
-            canvas.width = recordingWidth;
-            canvas.height = recordingHeight;
+            canvas.width = width;
+            canvas.height = height;
             const context = canvas.getContext("2d");
             context.setTransform(0, 1, 1, 0, 0, 0);
             const stream = canvas.captureStream(0);
@@ -287,8 +277,7 @@
                     audio: false
                 });
                 await video.play();
-                const track = video.srcObject.getVideoTracks()[0];
-                const capabilities = track.getCapabilities?.() || {};
+                const capabilities = video.srcObject.getVideoTracks()[0].getCapabilities?.() || {};
                 const max = (name) => Math.round(capabilities[name]?.max) || "-";
                 measureStatus(`最大: ${max("width")}x${max("height")} / ${max("frameRate")}fps`);
             } catch (error) {
@@ -307,7 +296,7 @@
                 const chunks = [];
                 const recording = createRecordingStream();
                 const recorder = new MediaRecorder(recording.stream, {
-                    videoBitsPerSecond: VIDEO_BITRATE
+                    videoBitsPerSecond: 60_000_000
                 });
                 recorder.addEventListener("dataavailable", (event) => {
                     if (event.data.size) chunks.push(event.data);
@@ -332,7 +321,7 @@
                 await wait(2000);
                 blink.hidden = false;
                 shutterAudio.currentTime = 0;
-                shutterAudio.play().catch(() => {});
+                shutterAudio.play().catch(() => { });
                 await wait(3000);
                 if (recorder.state === "recording") recorder.stop();
                 await stopped;
@@ -345,14 +334,17 @@
             }
         }
 
-        cameraButton.addEventListener("click", startCamera);
+        $("cameraButton").addEventListener("click", startCamera);
         recordButton.addEventListener("click", recordVideo);
-        sampleControls.addEventListener("click", (event) => {
-            const button = event.target.closest("button");
-            if (!button) return;
-            if (button === activeSampleButton) return showWebcam();
-            activeSampleButton = button;
-            sampleVideo.src = button.dataset.src;
+        $("sampleControls").addEventListener("click", (event) => {
+            const source = event.target.closest("button")?.dataset.src;
+            if (!source) return;
+            if (!sampleVideo.hidden && sampleVideo.getAttribute("src") === source) {
+                sampleVideo.pause();
+                sampleVideo.hidden = true;
+                return;
+            }
+            sampleVideo.src = source;
             sampleVideo.hidden = false;
             sampleVideo.play();
         });
