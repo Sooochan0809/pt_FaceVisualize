@@ -672,7 +672,7 @@
                     <h2>品質</h2>
                 </div>
                 <label class="playbackSetting resolutionSetting">解像度
-                    <input id="outputResolution" type="range" min="90" max="2160" value="720" step="90">
+                    <input id="outputResolution" type="range" min="360" max="2160" value="720" step="360">
                     <output id="resolutionOutput">720 × 1280</output>
                 </label>
                 <label class="playbackSetting">切替速度
@@ -698,7 +698,7 @@
                     <output id="shapeMaxPeriodOutput">30s</output>
                 </label>
                 <label class="playbackSetting">形状差下限
-                    <input id="shapeReachFloor" type="range" min="5" max="50" value="20" step="1">
+                    <input id="shapeReachFloor" type="range" min="5" max="50" value="20" step="5">
                     <output id="shapeReachFloorOutput">20%</output>
                 </label>
             </section>
@@ -721,6 +721,8 @@
         const TASKS_URL = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.34";
         const WASM_URL = `${TASKS_URL}/wasm`;
         const FACE_MODEL_URL = "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/latest/face_landmarker.task";
+        const MEDIABUNNY_URL = "https://cdn.jsdelivr.net/npm/mediabunny@1.59.0/+esm";
+        const SOURCE_FPS = 60;
         const EMOTIONS = ["neutral", "happy", "sad", "angry", "fearful", "disgusted", "surprised"];
         const LABELS = { neutral: "無表情", happy: "喜び", sad: "悲しみ", angry: "怒り", fearful: "恐れ", disgusted: "嫌悪", surprised: "驚き" };
         const FILE_EMOTION_PREFIXES = [["01_happy", "happy"], ["02_sad", "sad"], ["03_angry", "angry"], ["04_fearful", "fearful"], ["05_surprised", "surprised"], ["06_disgusted", "disgusted"]];
@@ -733,9 +735,11 @@
         const rawContext = el.rawCanvas.getContext("2d", { alpha: false });
         const analysisCanvas = document.createElement("canvas");
         const captureCanvas = document.createElement("canvas");
+        const compositionCanvas = document.createElement("canvas");
         const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
         const num = (value, fallback = 0) => Number.isFinite(Number(value)) ? Number(value) : fallback;
         const formatTime = (value) => `${Math.max(0, num(value)).toFixed(2)}s`;
+        const outputFrameRate = (speed = num(el.flickerFps.value, 20)) => speed <= 30 ? 30 : 60;
         const detectorOptions = new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: .35 });
 
         let sourceUrl = "";
@@ -750,6 +754,7 @@
         let boundaries = null;
         let flickerFrames = [];
         const frameShapes = new WeakMap();
+        const frameMetadata = new WeakMap();
         let frameHistory = [];
         let shapeCycleStartedAt = performance.now();
         let frameBuildId = 0;
@@ -757,9 +762,9 @@
         let nextCutAt = 0;
         let currentFrame = -1;
         let flickerPlaying = false;
-        let mediaRecorder = null;
-        let recordingStream = null;
-        let recordedChunks = [];
+        let recordingStartedAt = 0;
+        let recordingPlan = null;
+        let exporting = false;
         let rawPreviewRequest = 0;
         let rawPreviewTimer = 0;
 
@@ -831,17 +836,17 @@
 
         function updateControls() {
             const loaded = !!selectedClip();
-            el.fileInput.disabled = busy;
-            el.outputResolution.disabled = busy;
-            el.analyzeButton.disabled = busy || !loaded || !modelsReady;
-            el.analyzeAllButton.disabled = busy || !clips.length || !modelsReady;
-            [el.onsetInput, el.peakInput, el.settleInput].forEach((input) => input.disabled = busy || !loaded);
-            [el.rangeStart, el.rangeEnd, el.startInput, el.endInput].forEach((input) => input.disabled = busy || !loaded);
-            el.prepareButton.disabled = busy || !loaded;
-            el.playButton.disabled = !flickerFrames.length;
-            el.recordButton.disabled = mediaRecorder?.state === "recording"
-                ? false
-                : busy || !flickerFrames.length || !window.MediaRecorder || !el.outputCanvas.captureStream;
+            const sourceLocked = busy || !!recordingStartedAt;
+            el.fileInput.disabled = sourceLocked;
+            el.outputResolution.disabled = sourceLocked;
+            [el.flickerFps, el.shapeVariation, el.shapeMaxPeriod, el.shapeReachFloor].forEach((input) => input.disabled = busy);
+            el.analyzeButton.disabled = sourceLocked || !loaded || !modelsReady;
+            el.analyzeAllButton.disabled = sourceLocked || !clips.length || !modelsReady;
+            [el.onsetInput, el.peakInput, el.settleInput].forEach((input) => input.disabled = sourceLocked || !loaded);
+            [el.rangeStart, el.rangeEnd, el.startInput, el.endInput].forEach((input) => input.disabled = sourceLocked || !loaded);
+            el.prepareButton.disabled = sourceLocked || !loaded;
+            el.playButton.disabled = busy || !flickerFrames.length;
+            el.recordButton.disabled = recordingStartedAt ? false : exporting || busy || !flickerFrames.length;
         }
 
         function waitFor(video, event) {
@@ -873,6 +878,18 @@
             clip.rangeEnd = video.duration * .75;
         }
 
+        function updateResolutionLimit() {
+            const sourceLimit = clips.length
+                ? Math.min(...clips.map((clip) => Math.min(clip.width, clip.height * 9 / 16)))
+                : 2160;
+            const max = Math.max(90, Math.min(2160, Math.floor(sourceLimit / 360) * 360 || Math.floor(sourceLimit / 90) * 90));
+            el.outputResolution.min = Math.min(360, max);
+            el.outputResolution.max = max;
+            if (num(el.outputResolution.value) > max) el.outputResolution.value = max;
+            const width = num(el.outputResolution.value, max);
+            el.resolutionOutput.textContent = `${width} × ${width * 16 / 9}`;
+        }
+
         async function addFiles(fileList) {
             const files = [...fileList].filter((file) => file.type.startsWith("video/"));
             if (!files.length || busy) return;
@@ -884,6 +901,7 @@
             try {
                 for (const clip of additions) await readMetadata(clip);
                 clips.push(...additions);
+                updateResolutionLimit();
                 renderClipList();
             } catch (error) {
                 additions.forEach((clip) => URL.revokeObjectURL(clip.url));
@@ -972,25 +990,28 @@
             return left && right ? { left, right } : null;
         }
 
-        function eyePoseAt(time) {
-            if (!samples.length) return null;
+        function eyePoseFrom(sampleList, time) {
+            if (!sampleList.length) return null;
             let nearest = 0;
-            samples.forEach((sample, index) => {
-                if (Math.abs(sample.time - time) < Math.abs(samples[nearest].time - time)) nearest = index;
+            sampleList.forEach((sample, index) => {
+                if (Math.abs(sample.time - time) < Math.abs(sampleList[nearest].time - time)) nearest = index;
             });
-            const poses = samples.slice(Math.max(0, nearest - 2), nearest + 3).map((sample) => sample.eyePose).filter(Boolean);
+            const poses = sampleList.slice(Math.max(0, nearest - 2), nearest + 3).map((sample) => sample.eyePose).filter(Boolean);
             if (!poses.length) return null;
             const averageSide = (side) => poses.reduce((sum, pose) => ({ x: sum.x + pose[side].x / poses.length, y: sum.y + pose[side].y / poses.length }), { x: 0, y: 0 });
             return { left: averageSide("left"), right: averageSide("right") };
         }
 
-        function landmarkShapeAt(time) {
+        function landmarkShapeFrom(sampleList, time) {
             let nearest = null;
-            samples.forEach((sample) => {
+            sampleList.forEach((sample) => {
                 if (sample.landmarks && (!nearest || Math.abs(sample.time - time) < Math.abs(nearest.time - time))) nearest = sample;
             });
             return nearest?.landmarks || null;
         }
+
+        const eyePoseAt = (time) => eyePoseFrom(samples, time);
+        const landmarkShapeAt = (time) => landmarkShapeFrom(samples, time);
 
         const averageVector = (vectors) => vectors.length ? vectors[0].map((_, i) => vectors.reduce((sum, vector) => sum + vector[i], 0) / vectors.length) : null;
         const vectorDistance = (a, b) => !a || !b || a.length !== b.length ? null : Math.sqrt(a.reduce((sum, value, i) => sum + (value - b[i]) ** 2, 0) / a.length);
@@ -1192,13 +1213,20 @@
             if (ownsBusyState) setBusy(true);
             const buildId = ++frameBuildId;
             const { start, end } = currentRange();
-            const width = num(el.outputResolution.value, 720);
+            const width = Math.min(360, num(el.outputResolution.value, 720));
             const height = width * 16 / 9;
             const requestedCount = Math.max(8, Math.ceil((end - start) * Math.max(12, num(el.flickerFps.value, 18))));
-            const count = Math.min(72, requestedCount, Math.max(4, Math.floor(32_000_000 / (width * height))));
+            const count = Math.min(72, requestedCount);
             captureCanvas.width = width;
             captureCanvas.height = height;
             const captureCtx = captureCanvas.getContext("2d", { alpha: false });
+            const fullWidth = num(el.outputResolution.max, 2160);
+            const fullHeight = fullWidth * 16 / 9;
+            const resizesFrame = width !== fullWidth;
+            const renderCanvas = resizesFrame ? compositionCanvas : captureCanvas;
+            renderCanvas.width = fullWidth;
+            renderCanvas.height = fullHeight;
+            const renderCtx = renderCanvas.getContext("2d", { alpha: false });
             const frames = [];
             const alignsFace = samples.some((sample) => sample.eyePose);
             el.progress.hidden = false;
@@ -1209,9 +1237,15 @@
                     setStatus(`${sourceName} · ${alignsFace ? "顔位置を合わせながら" : ""}コマを準備中 ${i + 1} / ${count}`);
                     el.progress.value = (i + 1) / count;
                     await seek(el.captureVideo, Math.min(time, el.captureVideo.duration - .01));
-                    drawAlignedFrame(captureCtx, el.captureVideo, eyePoseAt(time));
+                    drawAlignedFrame(renderCtx, el.captureVideo, eyePoseAt(time));
+                    if (resizesFrame) {
+                        captureCtx.imageSmoothingEnabled = true;
+                        captureCtx.imageSmoothingQuality = "high";
+                        captureCtx.drawImage(renderCanvas, 0, 0, width, height);
+                    }
                     const frame = await createImageBitmap(captureCanvas);
                     frameShapes.set(frame, landmarkShapeAt(time));
+                    frameMetadata.set(frame, { clipId: clip.id, time });
                     frames.push(frame);
                 }
                 if (buildId !== frameBuildId) return frames.forEach((frame) => frame.close?.());
@@ -1221,7 +1255,7 @@
                 oldFrames.forEach((frame) => frame.close?.());
                 renderClipList();
                 if (!flickerPlaying) drawFlicker(performance.now());
-                setStatus(`切り出し完了 ${width}×${height}${alignsFace ? "（顔位置調整済み）" : ""}`);
+                setStatus(`プレビュー準備完了 ${width}×${height}${alignsFace ? "（顔位置調整済み）" : ""}`);
             } catch (error) {
                 frames.forEach((frame) => frame.close?.());
                 setStatus(`コマの準備に失敗しました: ${error.message}`, true);
@@ -1239,37 +1273,38 @@
         }
 
         function drawAlignedFrame(context, video, pose) {
+            const canvas = context.canvas;
             context.fillStyle = "#090909";
-            context.fillRect(0, 0, captureCanvas.width, captureCanvas.height);
-            if (!pose) return drawCoverOn(context, captureCanvas, video, video.videoWidth, video.videoHeight);
+            context.fillRect(0, 0, canvas.width, canvas.height);
+            if (!pose) return drawCoverOn(context, canvas, video, video.videoWidth, video.videoHeight);
             const left = { x: pose.left.x * video.videoWidth, y: pose.left.y * video.videoHeight };
             const right = { x: pose.right.x * video.videoWidth, y: pose.right.y * video.videoHeight };
             const dx = right.x - left.x;
             const dy = right.y - left.y;
             const eyeDistance = Math.hypot(dx, dy);
-            if (eyeDistance < 1) return drawCoverOn(context, captureCanvas, video, video.videoWidth, video.videoHeight);
-            const scale = clamp(captureCanvas.width * .34 / eyeDistance, .25, 4);
+            if (eyeDistance < 1) return drawCoverOn(context, canvas, video, video.videoWidth, video.videoHeight);
+            const scale = clamp(canvas.width * .34 / eyeDistance, .25, 4);
             context.save();
-            context.translate(captureCanvas.width * .5, captureCanvas.height * .36);
+            context.translate(canvas.width * .5, canvas.height * .36);
             context.rotate(-Math.atan2(dy, dx));
             context.scale(scale, scale);
             context.drawImage(video, -(left.x + right.x) / 2, -(left.y + right.y) / 2);
             context.restore();
         }
 
-        function drawCover(source, width, height) {
-            drawCoverOn(ctx, el.outputCanvas, source, width, height);
-        }
-
         function drawCurrentFrame() {
             ctx.fillStyle = "#090909";
             ctx.fillRect(0, 0, el.outputCanvas.width, el.outputCanvas.height);
             const frame = flickerFrames[currentFrame];
-            if (frame) drawCover(frame, frame.width, frame.height);
+            if (frame) {
+                ctx.imageSmoothingEnabled = true;
+                ctx.imageSmoothingQuality = "high";
+                ctx.drawImage(frame, 0, 0, el.outputCanvas.width, el.outputCanvas.height);
+            }
         }
 
         async function prepareAllFrames() {
-            const width = num(el.outputResolution.value, 720);
+            const width = Math.min(360, num(el.outputResolution.value, 720));
             const height = width * 16 / 9;
             if (busy || !clips.length) return;
             const originalId = selectedId;
@@ -1280,7 +1315,7 @@
                 if (clip.frames[0]?.width === width) completed += 1;
             }
             if (originalId !== selectedId) await selectClip(originalId);
-            setStatus(`${completed}/${clips.length}本を ${width}×${height} で切り出しました`, completed !== clips.length);
+            setStatus(`${completed}/${clips.length}本のプレビューを準備しました`, completed !== clips.length);
         }
 
         async function updateOutputResolution() {
@@ -1317,11 +1352,12 @@
             const smoothness = clamp(value / 100, 0, 1);
             return { smoothness, period: smoothness * clamp(maxPeriod, 15, 30), reach: 1 - smoothness * (1 - clamp(reachFloor, 5, 50) / 100) };
         };
-        const shapeAllowanceAt = (now, settings = shapeSettings()) => {
+        const shapeAllowanceForSeconds = (seconds, settings = shapeSettings()) => {
             if (!settings.smoothness) return 1;
-            const phase = ((now - shapeCycleStartedAt) / 1000 % settings.period) / settings.period;
+            const phase = (seconds % settings.period) / settings.period;
             return (1 - Math.cos(phase * Math.PI * 2)) / 2 * settings.reach;
         };
+        const shapeAllowanceAt = (now, settings = shapeSettings()) => shapeAllowanceForSeconds((now - shapeCycleStartedAt) / 1000, settings);
         console.assert(allowedCandidateCount(20, .25) === 5, "形状差の候補数が不正です");
         console.assert(shapeSettings(0).period === 0 && shapeSettings(0).reach === 1, "ランダム設定が不正です");
         console.assert(shapeSettings(100, 30, 10).period === 30 && Math.abs(shapeSettings(100, 30, 10).reach - .1) < 1e-9, "最大滑らかさ設定が不正です");
@@ -1348,12 +1384,34 @@
             return randomFrom(ranked.slice(0, allowedCandidateCount(ranked.length, shapeAllowanceAt(now, settings)))).index;
         }
 
+        function proxyFrameFor(candidate) {
+            let nearest = null;
+            flickerFrames.forEach((frame, index) => {
+                const metadata = frameMetadata.get(frame);
+                if (metadata?.clipId !== candidate.clip.id) return;
+                const distance = Math.abs(metadata.time - candidate.time);
+                if (!nearest || distance < nearest.distance) nearest = { index, distance };
+            });
+            return nearest?.index ?? (currentFrame >= 0 ? currentFrame : 0);
+        }
+
         function drawFlicker(now) {
             if (!flickerFrames.length) return;
             if (currentFrame >= 0 && now < nextCutAt) return;
-            currentFrame = chooseNextFrame(now);
-            frameHistory.push(currentFrame);
-            if (frameHistory.length > 9) frameHistory.shift();
+            if (recordingPlan) {
+                const seconds = Math.max(0, (now - recordingStartedAt) / 1000);
+                recordingPlan.frameRate = Math.max(recordingPlan.frameRate, outputFrameRate());
+                recordingPlan.current = chooseExportFrame(recordingPlan.candidates, recordingPlan.current, recordingPlan.history, seconds);
+                recordingPlan.history.push(recordingPlan.current);
+                if (recordingPlan.history.length > 9) recordingPlan.history.shift();
+                const candidate = recordingPlan.candidates[recordingPlan.current];
+                recordingPlan.cuts.push({ time: recordingPlan.cuts.length ? seconds : 0, candidate });
+                currentFrame = proxyFrameFor(candidate);
+            } else {
+                currentFrame = chooseNextFrame(now);
+                frameHistory.push(currentFrame);
+                if (frameHistory.length > 9) frameHistory.shift();
+            }
             nextCutAt = now + 1000 / num(el.flickerFps.value, 18);
             drawCurrentFrame();
         }
@@ -1383,59 +1441,173 @@
 
         function updateTransport() {
             el.playButton.textContent = flickerPlaying ? "停止" : "再生";
-            const recording = mediaRecorder?.state === "recording";
+            const recording = !!recordingStartedAt;
             el.recordButton.textContent = recording ? "録画停止" : "録画";
             el.recordButton.classList.toggle("recording", recording);
         }
 
-        function finishRecording() {
-            const type = mediaRecorder?.mimeType || recordedChunks[0]?.type || "video/webm";
-            const blob = new Blob(recordedChunks, { type });
-            recordingStream?.getTracks().forEach((track) => track.stop());
-            recordingStream = null;
-            mediaRecorder = null;
-            recordedChunks = [];
-            updateTransport();
-            updateControls();
-            if (!blob.size) return setStatus("録画データを作成できませんでした", true);
+        function downloadBlob(blob, extension = "mp4") {
             const url = URL.createObjectURL(blob);
             const link = document.createElement("a");
             link.href = url;
-            link.download = `flash-cut-${new Date().toISOString().replace(/[:.]/g, "-")}.${type.includes("mp4") ? "mp4" : "webm"}`;
+            link.download = `flash-cut-${new Date().toISOString().replace(/[:.]/g, "-")}.${extension}`;
             document.body.append(link);
             link.click();
             link.remove();
             setTimeout(() => URL.revokeObjectURL(url), 1000);
-            setStatus("録画を保存しました");
         }
 
-        function toggleRecording() {
-            if (mediaRecorder?.state === "recording") {
-                mediaRecorder.stop();
-                el.recordButton.disabled = true;
-                return;
+        function sourceFrameCandidates() {
+            return clips.flatMap((clip) => {
+                const first = Math.ceil(clip.rangeStart * SOURCE_FPS);
+                const last = Math.floor(Math.min(clip.rangeEnd, clip.duration - .001) * SOURCE_FPS);
+                const frames = [];
+                for (let index = first; index <= last; index += 1) {
+                    const time = index / SOURCE_FPS;
+                    frames.push({ clip, time, shape: landmarkShapeFrom(clip.samples, time) });
+                }
+                if (!frames.length) {
+                    const time = (clip.rangeStart + clip.rangeEnd) / 2;
+                    frames.push({ clip, time, shape: landmarkShapeFrom(clip.samples, time) });
+                }
+                return frames;
+            });
+        }
+
+        function chooseExportFrame(candidates, current, history, seconds) {
+            const indices = candidates.map((_, index) => index).filter((index) => index !== current);
+            if (!indices.length) return current < 0 ? 0 : current;
+            const settings = shapeSettings();
+            if (!settings.smoothness || current < 0) return randomFrom(indices);
+            let available = indices;
+            for (let depth = Math.min(8, history.length); depth > 0; depth -= 1) {
+                const recent = new Set(history.slice(-depth));
+                const filtered = indices.filter((index) => !recent.has(index));
+                if (filtered.length) { available = filtered; break; }
             }
-            if (mediaRecorder || busy || !flickerFrames.length) return;
+            const currentShape = candidates[current].shape;
+            if (!currentShape) return randomFrom(available);
+            const ranked = available.map((index) => ({ index, distance: vectorDistance(currentShape, candidates[index].shape) }))
+                .filter((candidate) => Number.isFinite(candidate.distance))
+                .sort((a, b) => a.distance - b.distance);
+            if (!ranked.length) return randomFrom(available);
+            return randomFrom(ranked.slice(0, allowedCandidateCount(ranked.length, shapeAllowanceForSeconds(seconds, settings)))).index;
+        }
+
+        async function createExportVideos() {
+            const entries = await Promise.all(clips.map(async (clip) => {
+                const video = document.createElement("video");
+                video.preload = "auto";
+                video.muted = true;
+                video.src = clip.url;
+                await waitFor(video, "loadedmetadata");
+                return [clip.id, video];
+            }));
+            return new Map(entries);
+        }
+
+        async function exportRecording(duration, plan, fileHandle) {
+            const { Output, Mp4OutputFormat, BufferTarget, StreamTarget, CanvasSource, Quality, getFirstEncodableVideoCodec } = await import(MEDIABUNNY_URL);
+            const width = num(el.outputResolution.value, 720);
+            const height = width * 16 / 9;
+            const canvas = document.createElement("canvas");
+            canvas.width = width;
+            canvas.height = height;
+            const exportCtx = canvas.getContext("2d", { alpha: false });
+            const fullWidth = num(el.outputResolution.max, 2160);
+            const fullCanvas = width === fullWidth ? canvas : compositionCanvas;
+            fullCanvas.width = fullWidth;
+            fullCanvas.height = fullWidth * 16 / 9;
+            const fullCtx = fullCanvas.getContext("2d", { alpha: false });
+            const frameRate = plan.frameRate;
+            const quality = new Quality({ bitrate: Math.max(2_000_000, Math.round(width * height * frameRate * .12)) });
+            const codec = await getFirstEncodableVideoCodec(["avc", "vp9"], { width, height, frameRate, quality });
+            if (!codec) throw new Error(`${width}×${height} / ${frameRate}fps を書き出せるコーデックがありません`);
+            const target = fileHandle ? new StreamTarget(await fileHandle.createWritable()) : new BufferTarget();
+            const output = new Output({ format: new Mp4OutputFormat(), target });
+            const videoSource = new CanvasSource(canvas, { codec, quality });
+            output.addVideoTrack(videoSource, { frameRate });
+            await output.start();
+            const videos = new Map();
             try {
-                const mimeType = ["video/webm;codecs=vp9", "video/webm;codecs=vp8", "video/webm", "video/mp4"]
-                    .find((type) => MediaRecorder.isTypeSupported(type));
-                recordingStream = el.outputCanvas.captureStream(60);
-                mediaRecorder = new MediaRecorder(recordingStream, { ...(mimeType && { mimeType }), videoBitsPerSecond: 20_000_000 });
-                recordedChunks = [];
-                mediaRecorder.addEventListener("dataavailable", (event) => { if (event.data.size) recordedChunks.push(event.data); });
-                mediaRecorder.addEventListener("stop", finishRecording, { once: true });
-                mediaRecorder.addEventListener("error", () => setStatus("録画中にエラーが発生しました", true), { once: true });
-                mediaRecorder.start(250);
+                if (!plan?.cuts.length) throw new Error("書き出せるコマがありません");
+                (await createExportVideos()).forEach((video, id) => videos.set(id, video));
+                const total = Math.max(1, Math.ceil(duration * frameRate));
+                let cutIndex = -1;
+                for (let index = 0; index < total; index += 1) {
+                    const time = index / frameRate;
+                    let changed = false;
+                    while (cutIndex + 1 < plan.cuts.length && plan.cuts[cutIndex + 1].time <= time + 1e-9) {
+                        cutIndex += 1;
+                        changed = true;
+                    }
+                    if (changed) {
+                        const candidate = plan.cuts[cutIndex].candidate;
+                        const video = videos.get(candidate.clip.id);
+                        await seek(video, Math.min(candidate.time, video.duration - .001));
+                        drawAlignedFrame(fullCtx, video, eyePoseFrom(candidate.clip.samples, candidate.time));
+                        if (fullCanvas !== canvas) {
+                            exportCtx.imageSmoothingEnabled = true;
+                            exportCtx.imageSmoothingQuality = "high";
+                            exportCtx.drawImage(fullCanvas, 0, 0, width, height);
+                        }
+                    }
+                    await videoSource.add(time, 1 / frameRate, { keyFrame: index % frameRate === 0 });
+                    el.progress.value = (index + 1) / total;
+                    if (index % 15 === 0 || index === total - 1) setStatus(`高品質書き出し中 ${index + 1} / ${total}`);
+                }
+                await output.finalize();
+                if (!fileHandle) {
+                    if (!target.buffer) throw new Error("書き出しデータを作成できませんでした");
+                    downloadBlob(new Blob([target.buffer], { type: "video/mp4" }));
+                }
+            } catch (error) {
+                if (output.state === "started") await output.cancel().catch(() => { });
+                throw error;
+            } finally {
+                videos.forEach((video) => { video.removeAttribute("src"); video.load(); });
+            }
+        }
+
+        async function toggleRecording() {
+            if (!recordingStartedAt) {
+                if (busy || !flickerFrames.length) return;
+                const candidates = sourceFrameCandidates();
+                if (!candidates.length) return setStatus("録画対象のコマがありません", true);
+                recordingPlan = { candidates, cuts: [], current: -1, history: [], frameRate: outputFrameRate() };
+                recordingStartedAt = performance.now();
                 if (!flickerPlaying) togglePlay();
+                setStatus("録画中…停止すると元動画から高品質で書き出します");
                 updateTransport();
                 updateControls();
+                return;
+            }
+            const duration = Math.max(.25, (performance.now() - recordingStartedAt) / 1000);
+            const plan = recordingPlan;
+            recordingStartedAt = 0;
+            recordingPlan = null;
+            stopFlicker();
+            exporting = true;
+            setBusy(true);
+            el.progress.hidden = false;
+            updateTransport();
+            try {
+                const fileHandle = window.showSaveFilePicker ? await window.showSaveFilePicker({
+                    suggestedName: `flash-cut-${new Date().toISOString().replace(/[:.]/g, "-")}.mp4`,
+                    types: [{ description: "MP4動画", accept: { "video/mp4": [".mp4"] } }]
+                }) : null;
+                await exportRecording(duration, plan, fileHandle);
+                setStatus(`高品質書き出し完了 ${duration.toFixed(2)}秒 / ${plan.frameRate}fps`);
             } catch (error) {
-                console.error(error);
-                recordingStream?.getTracks().forEach((track) => track.stop());
-                recordingStream = null;
-                mediaRecorder = null;
-                setStatus("このブラウザでは録画を開始できません", true);
-                updateControls();
+                if (error.name !== "AbortError") {
+                    console.error(error);
+                    setStatus(`書き出しに失敗しました: ${error.message}`, true);
+                } else setStatus("書き出しをキャンセルしました");
+            } finally {
+                exporting = false;
+                el.progress.hidden = true;
+                setBusy(false);
+                updateTransport();
             }
         }
 
@@ -1536,16 +1708,19 @@
         }
 
         function removeClip(id) {
-            if (busy) return;
+            if (busy || recordingStartedAt) return;
             const clip = clips.find((item) => item.id === id);
             if (!clip) return;
             clips = clips.filter((item) => item.id !== id);
+            updateResolutionLimit();
             refreshFrames();
             clip.frames.forEach((frame) => frame.close?.());
             URL.revokeObjectURL(clip.url);
             if (!flickerFrames.length) {
                 stopFlicker();
-                if (mediaRecorder?.state === "recording") mediaRecorder.stop();
+                recordingStartedAt = 0;
+                recordingPlan = null;
+                updateTransport();
             }
             if (selectedId !== id) return renderClipList();
             selectedId = null;
@@ -1628,7 +1803,6 @@
             new ResizeObserver(() => drawShapeWave()).observe(el.shapeWave);
             updateShapeControl();
             window.addEventListener("beforeunload", () => {
-                recordingStream?.getTracks().forEach((track) => track.stop());
                 clips.forEach((clip) => {
                     URL.revokeObjectURL(clip.url);
                     clip.frames.forEach((frame) => frame.close?.());
@@ -1658,6 +1832,7 @@
 
         console.assert(Math.abs(crossing([{ time: 0, value: 0 }, { time: 1, value: 1 }], .5, "up", 1, 1) - .5) < 1e-9, "boundary interpolation");
         console.assert(emotionFromFileName("03_angry_take01.mp4") === "angry", "filename emotion detection");
+        console.assert(outputFrameRate(30) === 30 && outputFrameRate(31) === 60, "output frame rate selection");
         initialize();
     </script>
 </body>
