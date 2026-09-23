@@ -165,8 +165,8 @@
                     if (status.textContent.startsWith("最大:")) {
                         status.textContent = `${maximum}\n実測: ${current.width}x${current.height} / ${Math.round(frames * 1000 / elapsed)}fps`;
                     }
-                    startedAt = now;
-                    frames = 0;
+                    statusFrameCallback = 0;
+                    return;
                 }
                 statusFrameCallback = video.requestVideoFrameCallback(measure);
             };
