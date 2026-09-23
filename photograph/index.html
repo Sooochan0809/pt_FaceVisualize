@@ -25,11 +25,10 @@
 
         video {
             position: absolute;
-            inset: 0;
-            width: 100%;
-            height: 100%;
+            left: 50%;
+            top: 50%;
             object-fit: cover;
-            transform: scaleX(-1);
+            transform: translate(-50%, -50%) scaleX(-1) rotate(90deg);
             display: block;
         }
 
@@ -80,6 +79,28 @@
             cursor: pointer;
         }
 
+        .recordButton:disabled {
+            opacity: 0.55;
+            cursor: wait;
+        }
+
+        .countdown {
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            z-index: 3;
+            transform: translate(-50%, -50%);
+            color: #fff;
+            font-size: clamp(72px, 10vw, 112px);
+            font-weight: 700;
+            text-shadow: 0 4px 18px rgba(0, 0, 0, 0.5);
+            pointer-events: none;
+        }
+
+        .countdown[hidden] {
+            display: none;
+        }
+
         output {
             bottom: 32px;
             white-space: pre-line;
@@ -91,40 +112,162 @@
     <main>
         <video id="video" autoplay muted playsinline></video>
         <div class="ellipseGuide" aria-hidden="true"></div>
+        <div id="countdown" class="countdown" aria-live="assertive" hidden></div>
         <button id="cameraButton" type="button">WebCam</button>
-        <button id="recordButton" class="recordButton" type="button"></button>
+        <button id="recordButton" class="recordButton" type="button">録画</button>
         <output id="status">カメラ起動中...</output>
     </main>
 
     <script>
         const video = document.getElementById("video");
+        const stage = document.querySelector("main");
         const status = document.getElementById("status");
+        const recordButton = document.getElementById("recordButton");
+        const countdown = document.getElementById("countdown");
+        const VIDEO_BITRATE = 60_000_000;
+        const wait = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
+        let recorder = null;
+        let recordedVideo = null;
+
+        function fitVideoToStage() {
+            video.style.width = `${stage.clientHeight}px`;
+            video.style.height = `${stage.clientWidth}px`;
+        }
+
+        function downloadRecording(blob, mimeType) {
+            const extension = mimeType.includes("mp4") ? "mp4" : "webm";
+            const now = new Date();
+            const pad = (number) => String(number).padStart(2, "0");
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement("a");
+            link.href = url;
+            link.download = `rec_${now.getFullYear()}-${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}.${extension}`;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            setTimeout(() => URL.revokeObjectURL(url), 1000);
+        }
+
+        function getRecordingSettings() {
+            const settings = video.srcObject.getVideoTracks()[0].getSettings();
+            const sourceWidth = settings.width || video.videoWidth;
+            const sourceHeight = settings.height || video.videoHeight;
+            return {
+                width: Math.round(sourceHeight / 2) * 2,
+                height: Math.round(sourceWidth / 2) * 2,
+                frameRate: Number(settings.frameRate) || 30
+            };
+        }
+
+        function createRecordingStream() {
+            if (typeof video.requestVideoFrameCallback !== "function") {
+                throw new Error("このブラウザは実フレーム同期録画に対応していません");
+            }
+            const { width: recordingWidth, height: recordingHeight } = getRecordingSettings();
+            const canvas = document.createElement("canvas");
+            canvas.width = recordingWidth;
+            canvas.height = recordingHeight;
+            const context = canvas.getContext("2d");
+            const stream = canvas.captureStream(0);
+            const canvasTrack = stream.getVideoTracks()[0];
+            if (typeof canvasTrack.requestFrame !== "function") {
+                stream.getTracks().forEach((track) => track.stop());
+                throw new Error("このブラウザは実フレーム同期録画に対応していません");
+            }
+            let frameCallback;
+
+            const drawFrame = () => {
+                context.setTransform(0, 1, 1, 0, 0, 0);
+                context.drawImage(video, 0, 0, video.videoWidth, video.videoHeight);
+                canvasTrack.requestFrame();
+                frameCallback = video.requestVideoFrameCallback(drawFrame);
+            };
+
+            frameCallback = video.requestVideoFrameCallback(drawFrame);
+            return {
+                stream,
+                stop: () => {
+                    video.cancelVideoFrameCallback(frameCallback);
+                    stream.getTracks().forEach((track) => track.stop());
+                }
+            };
+        }
 
         async function startCamera() {
             video.srcObject?.getTracks().forEach((track) => track.stop());
             try {
                 video.srcObject = await navigator.mediaDevices.getUserMedia({
                     video: {
-                        width: { ideal: 4096 },
-                        height: { ideal: 4096 },
+                        width: { ideal: 3840 },
+                        height: { ideal: 2160 },
                         frameRate: { ideal: 60 }
                     },
                     audio: false
                 });
                 await video.play();
+                fitVideoToStage();
                 const track = video.srcObject.getVideoTracks()[0];
-                const { width, height, frameRate } = track.getSettings();
                 const capabilities = track.getCapabilities?.() || {};
                 const maxWidth = Math.round(capabilities.width?.max) || "-";
                 const maxHeight = Math.round(capabilities.height?.max) || "-";
                 const maxFrameRate = Math.round(capabilities.frameRate?.max) || "-";
-                status.textContent = `最大: ${maxWidth}x${maxHeight} / ${maxFrameRate}fps\n録画: ${Math.round(width)}x${Math.round(height)} / ${Math.round(frameRate)}fps`;
+                const recording = getRecordingSettings();
+                status.textContent = `最大: ${maxWidth}x${maxHeight} / ${maxFrameRate}fps\n録画設定: ${recording.width}x${recording.height} / ${Math.round(recording.frameRate)}fps`;
             } catch (error) {
                 status.textContent = `カメラを開始できません: ${error.message}`;
             }
         }
 
+        async function toggleRecording() {
+            if (recorder?.state === "recording") {
+                recordButton.disabled = true;
+                recorder.stop();
+                return;
+            }
+            if (!(video.srcObject instanceof MediaStream)) {
+                status.textContent = "先にWebcamを起動してください";
+                return;
+            }
+
+            recordButton.disabled = true;
+            try {
+                for (let count = 3; count >= 1; count -= 1) {
+                    countdown.textContent = count;
+                    countdown.hidden = false;
+                    await wait(1000);
+                }
+
+                countdown.hidden = true;
+                const chunks = [];
+                const recording = createRecordingStream();
+                const activeRecorder = new MediaRecorder(recording.stream, {
+                    videoBitsPerSecond: VIDEO_BITRATE
+                });
+                recorder = activeRecorder;
+                activeRecorder.addEventListener("dataavailable", (event) => {
+                    if (event.data.size) chunks.push(event.data);
+                });
+                activeRecorder.addEventListener("stop", () => {
+                    recording.stop();
+                    recordedVideo = new Blob(chunks, { type: activeRecorder.mimeType });
+                    downloadRecording(recordedVideo, activeRecorder.mimeType);
+                    recorder = null;
+                    recordButton.textContent = "録画";
+                    recordButton.disabled = false;
+                }, { once: true });
+                activeRecorder.start();
+                recordButton.textContent = "停止";
+            } catch (error) {
+                status.textContent = `録画を開始できません: ${error.message}`;
+            } finally {
+                countdown.hidden = true;
+                recordButton.disabled = false;
+            }
+        }
+
         document.getElementById("cameraButton").addEventListener("click", startCamera);
+        recordButton.addEventListener("click", toggleRecording);
+        window.addEventListener("resize", fitVideoToStage);
         window.addEventListener("pagehide", () => video.srcObject?.getTracks().forEach((track) => track.stop()));
         startCamera();
     </script>
