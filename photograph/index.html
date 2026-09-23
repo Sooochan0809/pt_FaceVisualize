@@ -126,6 +126,7 @@
         const wait = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
         const stopStream = (stream) => stream?.getTracks().forEach((track) => track.stop());
         let recorder = null;
+        let statusFrameCallback = 0;
 
         function downloadRecording(blob) {
             const extension = blob.type.includes("mp4") ? "mp4" : "webm";
@@ -141,20 +142,43 @@
             setTimeout(() => URL.revokeObjectURL(url), 1000);
         }
 
-        function getRecordingSettings() {
-            const { width, height, frameRate } = video.srcObject.getVideoTracks()[0].getSettings();
+        function getRecordingSize() {
             return {
-                width: Math.round((height || video.videoHeight) / 2) * 2,
-                height: Math.round((width || video.videoWidth) / 2) * 2,
-                frameRate: Number(frameRate) || 30
+                width: Math.round(video.videoHeight / 2) * 2,
+                height: Math.round(video.videoWidth / 2) * 2
             };
+        }
+
+        function measureStatus(maximum) {
+            const size = getRecordingSize();
+            status.textContent = `${maximum}\n実測: ${size.width}x${size.height} / 計測中`;
+            let startedAt = null;
+            let frames = 0;
+
+            const measure = (now) => {
+                if (startedAt !== null) frames += 1;
+                else startedAt = now;
+
+                const elapsed = now - startedAt;
+                if (elapsed >= 1000) {
+                    const current = getRecordingSize();
+                    if (status.textContent.startsWith("最大:")) {
+                        status.textContent = `${maximum}\n実測: ${current.width}x${current.height} / ${Math.round(frames * 1000 / elapsed)}fps`;
+                    }
+                    startedAt = now;
+                    frames = 0;
+                }
+                statusFrameCallback = video.requestVideoFrameCallback(measure);
+            };
+
+            statusFrameCallback = video.requestVideoFrameCallback(measure);
         }
 
         function createRecordingStream() {
             if (typeof video.requestVideoFrameCallback !== "function") {
                 throw new Error("このブラウザは実フレーム同期録画に対応していません");
             }
-            const { width: recordingWidth, height: recordingHeight } = getRecordingSettings();
+            const { width: recordingWidth, height: recordingHeight } = getRecordingSize();
             const canvas = document.createElement("canvas");
             canvas.width = recordingWidth;
             canvas.height = recordingHeight;
@@ -185,6 +209,7 @@
         }
 
         async function startCamera() {
+            if (statusFrameCallback) video.cancelVideoFrameCallback(statusFrameCallback);
             stopStream(video.srcObject);
             try {
                 video.srcObject = await navigator.mediaDevices.getUserMedia({
@@ -199,8 +224,7 @@
                 const track = video.srcObject.getVideoTracks()[0];
                 const capabilities = track.getCapabilities?.() || {};
                 const max = (name) => Math.round(capabilities[name]?.max) || "-";
-                const recording = getRecordingSettings();
-                status.textContent = `最大: ${max("width")}x${max("height")} / ${max("frameRate")}fps\n録画設定: ${recording.width}x${recording.height} / ${Math.round(recording.frameRate)}fps`;
+                measureStatus(`最大: ${max("width")}x${max("height")} / ${max("frameRate")}fps`);
             } catch (error) {
                 status.textContent = `カメラを開始できません: ${error.message}`;
             }
@@ -254,7 +278,10 @@
 
         cameraButton.addEventListener("click", startCamera);
         recordButton.addEventListener("click", toggleRecording);
-        window.addEventListener("pagehide", () => stopStream(video.srcObject));
+        window.addEventListener("pagehide", () => {
+            if (statusFrameCallback) video.cancelVideoFrameCallback(statusFrameCallback);
+            stopStream(video.srcObject);
+        });
         startCamera();
     </script>
 </body>
