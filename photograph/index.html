@@ -50,6 +50,25 @@
             border-radius: 50%;
         }
 
+        .blink {
+            position: absolute;
+            inset: 0;
+            z-index: 4;
+            background:
+                linear-gradient(#000 0 0) top / 100% 0 no-repeat,
+                linear-gradient(#000 0 0) bottom / 100% 0 no-repeat;
+            animation: blink 600ms ease-in-out both;
+            pointer-events: none;
+        }
+
+        @keyframes blink {
+
+            45%,
+            55% {
+                background-size: 100% 50%;
+            }
+        }
+
         #cameraButton,
         output {
             position: absolute;
@@ -110,6 +129,7 @@
         <video id="video" autoplay muted playsinline></video>
         <div class="ellipseGuide" aria-hidden="true"></div>
         <div id="countdown" class="countdown" aria-live="assertive" hidden></div>
+        <div id="blink" class="blink" aria-hidden="true" hidden></div>
         <button id="cameraButton" type="button">WebCam</button>
         <button id="recordButton" class="recordButton" type="button">録画</button>
         <output id="status">カメラ起動中...</output>
@@ -122,10 +142,10 @@
         const cameraButton = $("cameraButton");
         const recordButton = $("recordButton");
         const countdown = $("countdown");
+        const blink = $("blink");
         const VIDEO_BITRATE = 60_000_000;
         const wait = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
         const stopStream = (stream) => stream?.getTracks().forEach((track) => track.stop());
-        let recorder = null;
         let statusFrameCallback = 0;
 
         function downloadRecording(blob) {
@@ -183,6 +203,7 @@
             canvas.width = recordingWidth;
             canvas.height = recordingHeight;
             const context = canvas.getContext("2d");
+            context.setTransform(0, 1, 1, 0, 0, 0);
             const stream = canvas.captureStream(0);
             const canvasTrack = stream.getVideoTracks()[0];
             if (typeof canvasTrack.requestFrame !== "function") {
@@ -192,7 +213,6 @@
             let frameCallback;
 
             const drawFrame = () => {
-                context.setTransform(0, 1, 1, 0, 0, 0);
                 context.drawImage(video, 0, 0, video.videoWidth, video.videoHeight);
                 canvasTrack.requestFrame();
                 frameCallback = video.requestVideoFrameCallback(drawFrame);
@@ -230,12 +250,7 @@
             }
         }
 
-        async function toggleRecording() {
-            if (recorder?.state === "recording") {
-                recordButton.disabled = true;
-                recorder.stop();
-                return;
-            }
+        async function recordVideo() {
             if (!(video.srcObject instanceof MediaStream)) {
                 status.textContent = "先にWebcamを起動してください";
                 return;
@@ -245,38 +260,45 @@
             try {
                 const chunks = [];
                 const recording = createRecordingStream();
-                const activeRecorder = new MediaRecorder(recording.stream, {
+                const recorder = new MediaRecorder(recording.stream, {
                     videoBitsPerSecond: VIDEO_BITRATE
                 });
-                recorder = activeRecorder;
-                activeRecorder.addEventListener("dataavailable", (event) => {
+                recorder.addEventListener("dataavailable", (event) => {
                     if (event.data.size) chunks.push(event.data);
                 });
-                activeRecorder.addEventListener("stop", () => {
-                    recording.stop();
-                    downloadRecording(new Blob(chunks, { type: activeRecorder.mimeType }));
-                    recorder = null;
-                    recordButton.textContent = "録画";
-                    recordButton.disabled = false;
-                }, { once: true });
-                activeRecorder.start();
-                recordButton.textContent = "停止";
+                const stopped = new Promise((resolve) => {
+                    recorder.addEventListener("stop", () => {
+                        recording.stop();
+                        downloadRecording(new Blob(chunks, { type: recorder.mimeType }));
+                        recordButton.textContent = "録画";
+                        resolve();
+                    }, { once: true });
+                });
+                recorder.start();
+                recordButton.textContent = "録画中";
 
                 countdown.hidden = false;
                 for (let count = 3; count >= 1; count -= 1) {
                     countdown.textContent = count;
                     await wait(1000);
                 }
+                countdown.hidden = true;
+                await wait(2000);
+                blink.hidden = false;
+                await wait(3000);
+                if (recorder.state === "recording") recorder.stop();
+                await stopped;
             } catch (error) {
                 status.textContent = `録画を開始できません: ${error.message}`;
             } finally {
                 countdown.hidden = true;
+                blink.hidden = true;
                 recordButton.disabled = false;
             }
         }
 
         cameraButton.addEventListener("click", startCamera);
-        recordButton.addEventListener("click", toggleRecording);
+        recordButton.addEventListener("click", recordVideo);
         window.addEventListener("pagehide", () => {
             if (statusFrameCallback) video.cancelVideoFrameCallback(statusFrameCallback);
             stopStream(video.srcObject);
