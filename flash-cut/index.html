@@ -1,0 +1,1352 @@
+<!doctype html>
+<html lang="ja">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <title>Flash Cut — Expression Flicker</title>
+    <script defer src="../modules/faceAPI/face-api.min.js"></script>
+    <style>
+        :root {
+            --bg: #f3f3f3;
+            --panel: #fff;
+            --ink: #222;
+            --muted: #777;
+            --line: #ddd;
+            --accent: #3478d4;
+            --danger: #b84638;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        html,
+        body {
+            min-height: 100%;
+        }
+
+        body {
+            margin: 0;
+            background: var(--bg);
+            color: var(--ink);
+            font-family: system-ui, "Yu Gothic", sans-serif;
+        }
+
+        button,
+        input,
+        select {
+            font: inherit;
+        }
+
+        button {
+            min-height: 36px;
+            padding: 0 12px;
+            border: 1px solid #bbb;
+            border-radius: 6px;
+            background: #fff;
+            color: var(--ink);
+            cursor: pointer;
+        }
+
+        button:hover:not(:disabled) {
+            background: #f5f5f5;
+        }
+
+        button:disabled,
+        input:disabled,
+        select:disabled {
+            opacity: .45;
+            cursor: not-allowed;
+        }
+
+        button.primary {
+            border-color: var(--accent);
+            background: var(--accent);
+            color: #fff;
+        }
+
+        .app {
+            width: min(1900px, 100%);
+            min-height: 100dvh;
+            margin: auto;
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) 480px minmax(0, 1fr);
+        }
+
+        .preview,
+        .controls {
+            min-width: 0;
+            padding: 18px;
+        }
+
+        .preview {
+            display: grid;
+            align-content: center;
+            gap: 12px;
+        }
+
+        .controls {
+            border-left: 1px solid var(--line);
+            border-right: 1px solid var(--line);
+            background: #fafafa;
+        }
+
+        @media (min-width: 1101px) {
+
+            html,
+            body {
+                height: 100%;
+                overflow: hidden;
+            }
+
+            .app {
+                height: 100dvh;
+                min-height: 0;
+            }
+
+            .preview {
+                height: 100dvh;
+                overflow: hidden;
+            }
+
+            .controls {
+                height: 100dvh;
+                overflow: auto;
+                scrollbar-gutter: stable;
+            }
+        }
+
+        h1,
+        h2,
+        p {
+            margin: 0;
+        }
+
+        h1 {
+            font-size: 1rem;
+        }
+
+        h2 {
+            font-size: .82rem;
+        }
+
+        .readout,
+        .status,
+        .badge {
+            color: var(--muted);
+            font-size: .7rem;
+        }
+
+        .previewTitle {
+            width: min(100%, 46.125dvh);
+            margin: 0 auto;
+            color: var(--muted);
+            font-size: .7rem;
+            font-weight: 600;
+            text-align: center;
+        }
+
+        .stage {
+            width: min(100%, 46.125dvh);
+            aspect-ratio: 9 / 16;
+            margin: 0 auto;
+            overflow: hidden;
+            display: grid;
+            place-items: center;
+            background: #111;
+            border-radius: 7px;
+        }
+
+        #outputCanvas,
+        #rawCanvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+
+        #sourceVideo,
+        #captureVideo {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .transport {
+            width: min(100%, 46.125dvh);
+            margin: 0 auto;
+            display: flex;
+            justify-content: center;
+        }
+
+        .transport button {
+            min-width: 88px;
+        }
+
+        .previewFooter {
+            width: min(100%, 46.125dvh);
+            margin: 0 auto;
+            display: flex;
+            gap: 12px;
+            justify-content: space-between;
+            color: var(--muted);
+            font-size: .7rem;
+        }
+
+        .previewFooter .readout {
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        input[type="range"] {
+            width: 100%;
+            accent-color: var(--accent);
+        }
+
+        .panel {
+            min-width: 0;
+            margin-bottom: 12px;
+            padding: 14px;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            background: var(--panel);
+        }
+
+        .panelHead {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            margin-bottom: 13px;
+        }
+
+        .badge {
+            padding: 3px 6px;
+            border-radius: 4px;
+            background: #eee;
+        }
+
+        .badge.ready {
+            background: #e7f1ff;
+            color: var(--accent);
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 10px;
+        }
+
+        .field {
+            display: grid;
+            gap: 5px;
+            color: var(--muted);
+            font-size: .68rem;
+        }
+
+        input[type="number"],
+        select {
+            width: 100%;
+            height: 36px;
+            padding: 0 8px;
+            border: 1px solid var(--line);
+            border-radius: 5px;
+            background: #fff;
+            color: var(--ink);
+        }
+
+        .grid>button {
+            height: 36px;
+            align-self: end;
+        }
+
+        #analysisChart {
+            width: 100%;
+            height: 150px;
+            display: block;
+            border: 1px solid var(--line);
+            background: #fff;
+        }
+
+        .legend {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 5px 10px;
+            margin-bottom: 8px;
+            color: var(--muted);
+            font-size: .6rem;
+        }
+
+        .legend span {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .legend i {
+            width: 12px;
+            height: 3px;
+            background: currentColor;
+        }
+
+        .legend .neutral {
+            color: #7f8993;
+        }
+
+        .legend .emotion {
+            color: #e06b4e;
+        }
+
+        .legend .mesh {
+            color: var(--accent);
+        }
+
+        .legend .mix {
+            color: var(--ink);
+        }
+
+        .rangeWrap {
+            position: relative;
+            height: 24px;
+            margin: 2px 0 5px;
+        }
+
+        .rangeWrap input {
+            position: absolute;
+            inset: 0;
+            margin: 0;
+            pointer-events: none;
+            background: transparent;
+        }
+
+        .rangeWrap input::-webkit-slider-thumb {
+            pointer-events: auto;
+        }
+
+        .rangeWrap input::-moz-range-thumb {
+            pointer-events: auto;
+        }
+
+        progress {
+            width: 100%;
+            height: 4px;
+            border: 0;
+            accent-color: var(--accent);
+        }
+
+        .status {
+            min-height: 2.7em;
+            margin-top: 8px;
+            color: var(--muted);
+            line-height: 1;
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            text-align: right;
+        }
+
+        .status.error {
+            color: var(--danger);
+        }
+
+        .clipList {
+            display: grid;
+            gap: 8px;
+        }
+
+        .clipEmpty {
+            width: 100%;
+            min-height: 74px;
+            display: grid;
+            place-items: center;
+            padding: 18px 10px;
+            border: 1px dashed var(--line);
+            border-radius: 8px;
+            background: transparent;
+            color: var(--muted);
+            font-size: .75rem;
+            text-align: center;
+            cursor: pointer;
+        }
+
+        .clipEmpty:hover {
+            border-color: var(--accent);
+            background: #f7faff;
+        }
+
+        .clipEmpty.drag {
+            border-color: var(--accent);
+            background: #f2f7ff;
+        }
+
+        .clipEmpty strong {
+            display: block;
+            margin-bottom: 3px;
+            color: var(--ink);
+            font-size: 1rem;
+        }
+
+        .clipCard {
+            padding: 10px;
+            border: 1px solid var(--line);
+            border-radius: 9px;
+            background: #fff;
+            cursor: pointer;
+        }
+
+        .clipCard.selected {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 1px var(--accent);
+        }
+
+        .clipTop {
+            display: grid;
+            grid-template-columns: 28px minmax(0, 1fr) auto;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .clipIndex {
+            width: 28px;
+            height: 28px;
+            display: grid;
+            place-items: center;
+            border-radius: 50%;
+            background: #f0f1f1;
+            font: .69rem ui-monospace, monospace;
+        }
+
+        .clipName {
+            overflow: hidden;
+            font-size: .76rem;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .clipMeta {
+            margin-top: 2px;
+            color: var(--muted);
+            font-size: .6rem;
+        }
+
+        .removeButton {
+            width: 28px;
+            min-height: 28px;
+            padding: 0;
+            border-color: var(--line);
+            color: var(--muted);
+        }
+
+        .clipEditorDisclosure {
+            margin-top: 10px;
+            padding-top: 8px;
+            border-top: 1px solid var(--line);
+        }
+
+        .clipEditorDisclosure>summary {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: .7rem;
+            font-weight: 600;
+            cursor: pointer;
+            list-style: none;
+        }
+
+        .clipEditorDisclosure>summary::-webkit-details-marker {
+            display: none;
+        }
+
+        .clipEditorDisclosure>summary::before {
+            content: "›";
+            color: var(--muted);
+            font-size: 1rem;
+            line-height: 1;
+            transition: transform .15s;
+        }
+
+        .clipEditorDisclosure[open]>summary::before {
+            transform: rotate(90deg);
+        }
+
+        .clipEditorDisclosure>summary .badge {
+            margin-left: auto;
+            font-weight: 400;
+        }
+
+        .clipEditorBody {
+            padding-top: 10px;
+        }
+
+        .analysisHint {
+            display: block;
+            margin: 6px 0 10px;
+            color: var(--muted);
+            font-size: .58rem;
+        }
+
+        .playbackSetting {
+            display: grid;
+            grid-template-columns: auto minmax(0, 1fr) auto;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 10px;
+            color: var(--muted);
+            font-size: .7rem;
+        }
+
+        @media (max-width: 1100px) {
+            .app {
+                display: block;
+            }
+
+            .controls {
+                border-left: 0;
+                border-right: 0;
+                border-top: 1px solid var(--line);
+                border-bottom: 1px solid var(--line);
+            }
+
+            .stage {
+                width: min(100%, 39.375dvh);
+            }
+
+            .previewTitle {
+                width: min(100%, 39.375dvh);
+            }
+
+            .transport {
+                width: min(100%, 39.375dvh);
+            }
+
+            .previewFooter {
+                width: min(100%, 39.375dvh);
+            }
+        }
+
+        @media (max-width: 560px) {
+
+            .preview,
+            .controls {
+                padding: 12px;
+            }
+
+            .grid {
+                grid-template-columns: 1fr;
+            }
+
+        }
+    </style>
+</head>
+
+<body>
+    <main class="app">
+        <section class="preview">
+            <div class="previewTitle">RAW</div>
+
+            <div class="stage">
+                <video id="sourceVideo" playsinline muted preload="auto"></video>
+                <video id="captureVideo" playsinline muted preload="auto"></video>
+                <canvas id="rawCanvas" width="720" height="1280"></canvas>
+            </div>
+            <div class="previewFooter">
+                <span class="readout" id="movieMeta">動画未選択</span>
+                <output id="rawTimeOutput">0.00s</output>
+            </div>
+        </section>
+
+        <aside class="controls">
+            <section class="panel">
+                <div class="panelHead">
+                    <h2>素材</h2><span class="badge" id="sourceBadge">0 clips</span>
+                </div>
+                <input id="fileInput" type="file" accept="video/*" multiple hidden>
+                <label class="playbackSetting">切替速度
+                    <input id="flickerFps" type="range" min="2" max="30" value="18" step="1">
+                    <output id="fpsOutput">18 fps</output>
+                </label>
+                <div class="clipList" id="clipList"></div>
+                <details class="clipEditorDisclosure" id="clipEditor" open hidden>
+                    <summary>個別解析・コマ抽出<span class="badge" id="analysisBadge">モデル読込中</span></summary>
+                    <div class="clipEditorBody">
+                        <div class="grid">
+                            <label class="field">対象の表情
+                                <select id="emotionSelect">
+                                    <option value="happy">喜び</option>
+                                    <option value="sad">悲しみ</option>
+                                    <option value="angry">怒り</option>
+                                    <option value="fearful">恐れ</option>
+                                    <option value="disgusted">嫌悪</option>
+                                    <option value="surprised">驚き</option>
+                                </select>
+                            </label>
+                            <label class="field">解析サンプル間隔（秒）
+                                <input id="sampleInterval" type="number" min="0.04" max="1" step="0.01" value="0.08">
+                            </label>
+                            <button id="analyzeButton" class="primary" type="button" disabled>解析</button>
+                        </div>
+                        <small class="analysisHint">ファイル名の先頭（01_happy〜06_disgusted）から対象表情を自動判定</small>
+                        <div class="legend">
+                            <span class="neutral"><i></i>無表情</span>
+                            <span class="emotion"><i></i>対象表情</span>
+                            <span class="mesh"><i></i>顔形状変位</span>
+                            <span class="mix"><i></i>合成進行度</span>
+                        </div>
+                        <canvas id="analysisChart"></canvas>
+                        <div class="rangeWrap">
+                            <input id="rangeStart" type="range" min="0" max="1" value="0" step="0.01" disabled
+                                aria-label="コマ抽出開始">
+                            <input id="rangeEnd" type="range" min="0" max="1" value="1" step="0.01" disabled
+                                aria-label="コマ抽出終了">
+                        </div>
+                        <div class="grid" style="margin-top:12px">
+                            <label class="field">発生（秒）<input id="onsetInput" type="number" min="0" step="0.01"
+                                    disabled></label>
+                            <label class="field">ピーク（秒）<input id="peakInput" type="number" min="0" step="0.01"
+                                    disabled></label>
+                            <label class="field">収束（秒）<input id="settleInput" type="number" min="0" step="0.01"
+                                    disabled></label>
+                        </div>
+                        <div class="grid">
+                            <label class="field">コマ抽出開始（秒）<input id="startInput" type="number" min="0" step="0.01"
+                                    disabled></label>
+                            <label class="field">コマ抽出終了（秒）<input id="endInput" type="number" min="0" step="0.01"
+                                    disabled></label>
+                            <button id="prepareButton" class="primary" type="button" disabled>切り出し</button>
+                        </div>
+                        <progress id="progress" max="1" value="0" hidden></progress>
+                    </div>
+                </details>
+                <p class="status" id="status">モデルを読み込んでいます…</p>
+            </section>
+        </aside>
+
+        <section class="preview">
+            <div class="previewTitle">OUTPUT</div>
+            <div class="stage">
+                <canvas id="outputCanvas" width="720" height="1280"></canvas>
+            </div>
+            <div class="transport">
+                <button id="playButton" type="button" disabled>再生</button>
+            </div>
+        </section>
+    </main>
+
+    <script type="module">
+        const MODEL_URL = "../modules/faceAPI/models";
+        const TASKS_URL = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.34";
+        const WASM_URL = `${TASKS_URL}/wasm`;
+        const FACE_MODEL_URL = "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/latest/face_landmarker.task";
+        const EMOTIONS = ["neutral", "happy", "sad", "angry", "fearful", "disgusted", "surprised"];
+        const LABELS = { neutral: "無表情", happy: "喜び", sad: "悲しみ", angry: "怒り", fearful: "恐れ", disgusted: "嫌悪", surprised: "驚き" };
+        const FILE_EMOTION_PREFIXES = [["01_happy", "happy"], ["02_sad", "sad"], ["03_angry", "angry"], ["04_fearful", "fearful"], ["05_surprised", "surprised"], ["06_disgusted", "disgusted"]];
+        const EXPRESSION_INDICES = [33, 46, 52, 53, 55, 61, 63, 65, 66, 70, 78, 80, 81, 82, 84, 87, 88, 91, 95, 101, 105, 107, 133, 144, 146, 153, 158, 160, 178, 181, 191, 205, 263, 276, 282, 283, 285, 291, 293, 295, 296, 300, 308, 310, 311, 312, 314, 317, 318, 321, 324, 330, 334, 336, 362, 373, 375, 380, 385, 387, 402, 405, 415, 425];
+        const COLORS = { neutral: "#7f8993", emotion: "#ff6948", mesh: "#4877ff", mix: "#151515", onset: "#53a86d", peak: "#8a62d1", settle: "#8a62d1" };
+        const $ = (id) => document.getElementById(id);
+        const ids = ["sourceVideo", "captureVideo", "rawCanvas", "rawTimeOutput", "outputCanvas", "movieMeta", "playButton", "fileInput", "clipList", "clipEditor", "sourceBadge", "analysisBadge", "emotionSelect", "sampleInterval", "analyzeButton", "progress", "analysisChart", "onsetInput", "peakInput", "settleInput", "rangeStart", "rangeEnd", "startInput", "endInput", "flickerFps", "fpsOutput", "prepareButton", "status"];
+        const el = Object.fromEntries(ids.map((id) => [id, $(id)]));
+        const ctx = el.outputCanvas.getContext("2d", { alpha: false });
+        const rawContext = el.rawCanvas.getContext("2d", { alpha: false });
+        const analysisCanvas = document.createElement("canvas");
+        const captureCanvas = document.createElement("canvas");
+        const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+        const num = (value, fallback = 0) => Number.isFinite(Number(value)) ? Number(value) : fallback;
+        const formatTime = (value) => `${Math.max(0, num(value)).toFixed(2)}s`;
+        const detectorOptions = new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: .35 });
+
+        let sourceUrl = "";
+        let sourceName = "";
+        let clips = [];
+        let selectedId = null;
+        let nextId = 1;
+        let modelsReady = false;
+        let busy = false;
+        let samples = [];
+        let analysisSeries = [];
+        let boundaries = null;
+        let flickerFrames = [];
+        let frameBuildId = 0;
+        let animationId = 0;
+        let nextCutAt = 0;
+        let currentFrame = -1;
+        let flickerPlaying = false;
+        let rawPreviewRequest = 0;
+        let rawPreviewTimer = 0;
+
+        const models = Promise.all([
+            faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
+            faceapi.nets.faceExpressionNet.loadFromUri(MODEL_URL),
+            import(TASKS_URL).then(async ({ FaceLandmarker, FilesetResolver }) => {
+                const vision = await FilesetResolver.forVisionTasks(WASM_URL);
+                return FaceLandmarker.createFromOptions(vision, {
+                    baseOptions: { modelAssetPath: FACE_MODEL_URL }, runningMode: "IMAGE", numFaces: 1,
+                    minFaceDetectionConfidence: .35, minFacePresenceConfidence: .35
+                });
+            })
+        ]);
+
+        const selectedClip = () => clips.find((clip) => clip.id === selectedId) || null;
+
+        function emotionFromFileName(fileName) {
+            const normalized = fileName.trim().toLowerCase();
+            return FILE_EMOTION_PREFIXES.find(([prefix]) => normalized.startsWith(prefix))?.[1] || "happy";
+        }
+
+        function escapeHtml(value) {
+            const node = document.createElement("span");
+            node.textContent = value;
+            return node.innerHTML;
+        }
+
+        function refreshFrames() {
+            flickerFrames = clips.flatMap((clip) => clip.frames);
+            currentFrame = -1;
+            nextCutAt = 0;
+        }
+
+        function renderClipList() {
+            el.sourceBadge.textContent = `${clips.length} clip${clips.length === 1 ? "" : "s"}`;
+            const cards = clips.map((clip, index) => {
+                const card = document.createElement("article");
+                card.className = `clipCard${clip.id === selectedId ? " selected" : ""}`;
+                card.dataset.id = clip.id;
+                card.innerHTML = `<div class="clipTop">
+                    <span class="clipIndex">${String(index + 1).padStart(2, "0")}</span>
+                    <div><div class="clipName">${escapeHtml(clip.name)}</div><div class="clipMeta">${LABELS[clip.emotion]} · ${clip.width}×${clip.height} · ${formatTime(clip.duration)} · ${clip.frames.length} frames</div></div>
+                    <button class="removeButton" data-action="remove" type="button" aria-label="削除">×</button>
+                </div>`;
+                return card;
+            });
+            const add = document.createElement("label");
+            add.className = "clipEmpty";
+            add.htmlFor = "fileInput";
+            add.innerHTML = "<span><strong>＋</strong>動画を追加</span>";
+            el.clipList.replaceChildren(...cards, add);
+            const selectedCard = cards.find((card) => Number(card.dataset.id) === selectedId);
+            el.clipEditor.hidden = !selectedCard;
+            if (selectedCard) selectedCard.append(el.clipEditor);
+        }
+
+        function setStatus(text, error = false) {
+            el.status.textContent = text;
+            el.status.classList.toggle("error", error);
+        }
+
+        function setBusy(value) {
+            busy = value;
+            updateControls();
+        }
+
+        function updateControls() {
+            const loaded = !!selectedClip();
+            el.fileInput.disabled = busy;
+            el.analyzeButton.disabled = busy || !loaded || !modelsReady;
+            [el.onsetInput, el.peakInput, el.settleInput].forEach((input) => input.disabled = busy || !loaded);
+            [el.rangeStart, el.rangeEnd, el.startInput, el.endInput].forEach((input) => input.disabled = busy || !loaded);
+            el.prepareButton.disabled = busy || !loaded;
+            el.playButton.disabled = !flickerFrames.length;
+        }
+
+        function waitFor(video, event) {
+            return new Promise((resolve, reject) => {
+                const done = () => { cleanup(); resolve(); };
+                const fail = () => { cleanup(); reject(new Error("動画を読み込めませんでした")); };
+                const cleanup = () => { video.removeEventListener(event, done); video.removeEventListener("error", fail); };
+                video.addEventListener(event, done, { once: true });
+                video.addEventListener("error", fail, { once: true });
+            });
+        }
+
+        async function seek(video, time) {
+            if (Math.abs(video.currentTime - time) < .002) return;
+            const ready = waitFor(video, "seeked");
+            video.currentTime = time;
+            await ready;
+        }
+
+        async function readMetadata(clip) {
+            const video = document.createElement("video");
+            video.preload = "metadata";
+            video.src = clip.url;
+            await waitFor(video, "loadedmetadata");
+            clip.duration = video.duration;
+            clip.width = video.videoWidth;
+            clip.height = video.videoHeight;
+            clip.rangeStart = video.duration * .25;
+            clip.rangeEnd = video.duration * .75;
+        }
+
+        async function addFiles(fileList) {
+            const files = [...fileList].filter((file) => file.type.startsWith("video/"));
+            if (!files.length || busy) return;
+            const additions = files.map((file) => ({
+                id: nextId++, name: file.name, url: URL.createObjectURL(file), duration: 0, width: 0, height: 0,
+                emotion: emotionFromFileName(file.name), samples: [], analysisSeries: [], boundaries: null, frames: [], rangeStart: 0, rangeEnd: 0
+            }));
+            setBusy(true);
+            try {
+                for (const clip of additions) await readMetadata(clip);
+                clips.push(...additions);
+                renderClipList();
+            } catch (error) {
+                additions.forEach((clip) => URL.revokeObjectURL(clip.url));
+                setStatus(error.message, true);
+                return;
+            } finally {
+                setBusy(false);
+            }
+            await selectClip(additions[0].id);
+            setStatus(`${additions.length}本を追加しました。素材を選び「個別解析」を押してください`);
+        }
+
+        async function selectClip(id) {
+            const clip = clips.find((item) => item.id === id);
+            if (!clip || busy) return;
+            clearTimeout(rawPreviewTimer);
+            rawPreviewRequest += 1;
+            selectedId = id;
+            sourceUrl = clip.url;
+            sourceName = clip.name;
+            samples = clip.samples;
+            analysisSeries = clip.analysisSeries;
+            boundaries = clip.boundaries;
+            refreshFrames();
+            renderClipList();
+            el.emotionSelect.value = clip.emotion;
+            el.analysisBadge.textContent = clip.samples.length ? (clip.boundaries ? "解析済み" : "境界未検出") : (modelsReady ? "未解析" : "モデル読込中");
+            el.analysisBadge.classList.toggle("ready", !!clip.boundaries);
+            el.sourceVideo.src = sourceUrl;
+            el.captureVideo.src = sourceUrl;
+            setBusy(true);
+            try {
+                await Promise.all([waitFor(el.sourceVideo, "loadedmetadata"), waitFor(el.captureVideo, "loadedmetadata")]);
+                const duration = clip.duration;
+                [el.rangeStart, el.rangeEnd].forEach((input) => input.max = duration);
+                [el.onsetInput, el.peakInput, el.settleInput, el.startInput, el.endInput].forEach((input) => input.max = duration);
+                setRange(clip.rangeStart, clip.rangeEnd, false);
+                if (boundaries) renderBoundaries();
+                else {
+                    el.onsetInput.value = clip.rangeStart.toFixed(2);
+                    el.peakInput.value = ((clip.rangeStart + clip.rangeEnd) / 2).toFixed(2);
+                    el.settleInput.value = clip.rangeEnd.toFixed(2);
+                }
+                el.movieMeta.textContent = `${clip.name} · ${clip.width}×${clip.height} · ${formatTime(duration)}`;
+                await previewRawAt(clip.rangeStart);
+                drawChart();
+                setStatus("コマ抽出範囲を設定するか、表情を解析してください");
+            } catch (error) {
+                setStatus(error.message, true);
+            } finally {
+                setBusy(false);
+                updateTransport();
+            }
+        }
+
+        function averagePoint(points, indices) {
+            const valid = indices.map((index) => points[index]).filter(Boolean);
+            if (!valid.length) return null;
+            return valid.reduce((sum, point) => ({ x: sum.x + point.x / valid.length, y: sum.y + point.y / valid.length, z: sum.z + (point.z || 0) / valid.length }), { x: 0, y: 0, z: 0 });
+        }
+
+        function normalizeLandmarks(points) {
+            if (!points || points.length < 426) return null;
+            const left = averagePoint(points, [33, 133]);
+            const right = averagePoint(points, [362, 263]);
+            if (!left || !right) return null;
+            const center = { x: (left.x + right.x) / 2, y: (left.y + right.y) / 2, z: (left.z + right.z) / 2 };
+            const dx = right.x - left.x;
+            const dy = right.y - left.y;
+            const scale = Math.hypot(dx, dy);
+            if (scale < 1e-5) return null;
+            const cos = dx / scale;
+            const sin = dy / scale;
+            return EXPRESSION_INDICES.flatMap((index) => {
+                const point = points[index];
+                const x = point.x - center.x;
+                const y = point.y - center.y;
+                return [(x * cos + y * sin) / scale, (-x * sin + y * cos) / scale, (((point.z || 0) - center.z) / scale) * .5];
+            });
+        }
+
+        function eyePose(points) {
+            if (!points || points.length < 363) return null;
+            const left = averagePoint(points, [33, 133]);
+            const right = averagePoint(points, [362, 263]);
+            return left && right ? { left, right } : null;
+        }
+
+        function eyePoseAt(time) {
+            if (!samples.length) return null;
+            let nearest = 0;
+            samples.forEach((sample, index) => {
+                if (Math.abs(sample.time - time) < Math.abs(samples[nearest].time - time)) nearest = index;
+            });
+            const poses = samples.slice(Math.max(0, nearest - 2), nearest + 3).map((sample) => sample.eyePose).filter(Boolean);
+            if (!poses.length) return null;
+            const averageSide = (side) => poses.reduce((sum, pose) => ({ x: sum.x + pose[side].x / poses.length, y: sum.y + pose[side].y / poses.length }), { x: 0, y: 0 });
+            return { left: averageSide("left"), right: averageSide("right") };
+        }
+
+        const averageVector = (vectors) => vectors.length ? vectors[0].map((_, i) => vectors.reduce((sum, vector) => sum + vector[i], 0) / vectors.length) : null;
+        const vectorDistance = (a, b) => !a || !b || a.length !== b.length ? null : Math.sqrt(a.reduce((sum, value, i) => sum + (value - b[i]) ** 2, 0) / a.length);
+
+        function prepareLandmarkDistances() {
+            const shapes = samples.filter((sample) => sample.landmarks).map((sample) => sample.landmarks);
+            if (shapes.length < 3) return samples.forEach((sample) => sample.landmarkDistance = null);
+            const baseline = averageVector(shapes.slice(0, Math.max(3, Math.min(shapes.length, Math.round(shapes.length * .15)))));
+            samples.forEach((sample, index) => {
+                const nearby = samples.slice(Math.max(0, index - 2), index + 3).map((item) => item.landmarks).filter(Boolean);
+                sample.landmarkDistance = vectorDistance(averageVector(nearby), baseline);
+            });
+        }
+
+        function smoothedSamples() {
+            return samples.map((sample, index) => {
+                const window = samples.slice(Math.max(0, index - 2), index + 3);
+                const expressions = window.filter((item) => item.expressions);
+                const landmarks = window.filter((item) => Number.isFinite(item.landmarkDistance));
+                const smooth = expressions.length ? Object.fromEntries(EMOTIONS.map((emotion) => [emotion, expressions.reduce((sum, item) => sum + item.expressions[emotion], 0) / expressions.length])) : null;
+                const landmarkMotion = landmarks.length ? landmarks.reduce((sum, item) => sum + item.landmarkDistance, 0) / landmarks.length : null;
+                return { ...sample, smooth, landmarkMotion };
+            });
+        }
+
+        function profile(values, minimumAmplitude) {
+            const valid = values.filter(Number.isFinite);
+            if (valid.length < 3) return { baseline: 0, amplitude: 0, usable: false };
+            const count = Math.max(1, Math.min(valid.length, Math.round(valid.length * .15)));
+            const baseline = valid.slice(0, count).reduce((sum, value) => sum + value, 0) / count;
+            const amplitude = Math.max(...valid) - baseline;
+            return { baseline, amplitude, usable: amplitude >= minimumAmplitude };
+        }
+
+        function crossing(items, level, direction, start, end) {
+            for (let i = Math.max(1, start); i <= end; i += 1) {
+                const a = items[i - 1], b = items[i];
+                const hit = direction === "up" ? a.value <= level && b.value >= level : a.value >= level && b.value <= level;
+                if (!hit) continue;
+                const ratio = Math.abs(b.value - a.value) < 1e-6 ? 0 : clamp((level - a.value) / (b.value - a.value), 0, 1);
+                return a.time + (b.time - a.time) * ratio;
+            }
+            return null;
+        }
+
+        function detectBoundaries() {
+            prepareLandmarkDistances();
+            const emotion = el.emotionSelect.value;
+            const data = smoothedSamples().filter((sample) => sample.smooth || Number.isFinite(sample.landmarkMotion)).map((sample) => ({
+                time: sample.time,
+                emotionValue: sample.smooth ? sample.smooth[emotion] / Math.max(.0001, sample.smooth.neutral + sample.smooth[emotion]) : null,
+                landmarkValue: sample.landmarkMotion
+            }));
+            if (data.length < 3) return null;
+            const emotionProfile = profile(data.map((item) => item.emotionValue), .03);
+            const landmarkProfile = profile(data.map((item) => item.landmarkValue), .003);
+            if (!emotionProfile.usable && !landmarkProfile.usable) return null;
+            data.forEach((item) => {
+                const ep = emotionProfile.usable && Number.isFinite(item.emotionValue) ? clamp((item.emotionValue - emotionProfile.baseline) / emotionProfile.amplitude, 0, 1) : null;
+                const lp = landmarkProfile.usable && Number.isFinite(item.landmarkValue) ? clamp((item.landmarkValue - landmarkProfile.baseline) / landmarkProfile.amplitude, 0, 1) : null;
+                const weight = (lp === null ? 0 : .75) + (ep === null ? 0 : .25);
+                item.emotionProgress = ep;
+                item.landmarkProgress = lp;
+                item.value = weight ? ((lp || 0) * .75 + (ep || 0) * .25) / weight : 0;
+            });
+            analysisSeries = data.map((item) => ({ time: item.time, landmark: item.landmarkProgress, progression: item.value }));
+            let peakIndex = 0;
+            data.forEach((item, index) => { if (item.value > data[peakIndex].value) peakIndex = index; });
+            const duration = el.sourceVideo.duration;
+            const onset = crossing(data, .08, "up", 1, peakIndex) ?? data[Math.max(0, peakIndex - 1)].time;
+            const peak = crossing(data, .92, "up", 1, peakIndex) ?? data[peakIndex].time;
+            const settle = crossing(data, .2, "down", peakIndex + 1, data.length - 1) ?? duration;
+            return { onset: clamp(onset, 0, duration), peak: clamp(Math.max(onset + .01, peak), 0, duration), settle: clamp(Math.max(peak, settle), 0, duration) };
+        }
+
+        function analysisFrame() {
+            const scale = Math.min(1, 320 / Math.max(el.sourceVideo.videoWidth, el.sourceVideo.videoHeight));
+            analysisCanvas.width = Math.max(1, Math.round(el.sourceVideo.videoWidth * scale));
+            analysisCanvas.height = Math.max(1, Math.round(el.sourceVideo.videoHeight * scale));
+            analysisCanvas.getContext("2d", { alpha: false }).drawImage(el.sourceVideo, 0, 0, analysisCanvas.width, analysisCanvas.height);
+            return analysisCanvas;
+        }
+
+        async function analyze() {
+            const clip = selectedClip();
+            if (busy || !clip || !modelsReady) return;
+            el.sourceVideo.pause();
+            setBusy(true);
+            samples = [];
+            analysisSeries = [];
+            boundaries = null;
+            clip.samples = samples;
+            clip.analysisSeries = analysisSeries;
+            clip.boundaries = null;
+            el.progress.hidden = false;
+            try {
+                const [, , faceLandmarker] = await models;
+                const interval = clamp(num(el.sampleInterval.value, .08), .04, 1);
+                el.sampleInterval.value = interval;
+                const count = Math.max(2, Math.ceil(el.sourceVideo.duration / interval));
+                for (let i = 0; i < count; i += 1) {
+                    const time = Math.min(i * interval, Math.max(0, el.sourceVideo.duration - .01));
+                    el.progress.value = (i + 1) / count;
+                    setStatus(`${sourceName} を解析中 ${i + 1} / ${count}`);
+                    await seek(el.sourceVideo, time);
+                    const frame = analysisFrame();
+                    const mesh = faceLandmarker.detect(frame).faceLandmarks?.[0];
+                    const detection = await faceapi.detectSingleFace(frame, detectorOptions).withFaceExpressions();
+                    samples.push({
+                        time,
+                        landmarks: normalizeLandmarks(mesh),
+                        eyePose: eyePose(mesh),
+                        expressions: detection ? Object.fromEntries(EMOTIONS.map((emotion) => [emotion, detection.expressions[emotion] || 0])) : null
+                    });
+                }
+                boundaries = detectBoundaries();
+                clip.analysisSeries = analysisSeries;
+                clip.boundaries = boundaries;
+                if (!boundaries) throw new Error("十分な表情変化を検出できませんでした。対象表情または解析間隔を調整してください");
+                renderBoundaries();
+                setRange(boundaries.onset, boundaries.settle, false);
+                el.analysisBadge.textContent = `検出 ${Math.round(samples.filter((sample) => sample.landmarks).length / samples.length * 100)}%`;
+                el.analysisBadge.classList.add("ready");
+                setStatus(`発生 ${formatTime(boundaries.onset)} / ピーク ${formatTime(boundaries.peak)} / 収束 ${formatTime(boundaries.settle)}`);
+                await prepareFrames();
+            } catch (error) {
+                el.analysisBadge.textContent = "解析失敗";
+                el.analysisBadge.classList.remove("ready");
+                setStatus(error.message, true);
+            } finally {
+                el.progress.hidden = true;
+                setBusy(false);
+                await previewRawAt(clip.rangeStart).catch(() => { });
+                drawChart();
+                renderClipList();
+            }
+        }
+
+        function renderBoundaries() {
+            if (!boundaries) return;
+            const clip = selectedClip();
+            if (clip) clip.boundaries = boundaries;
+            el.onsetInput.value = boundaries.onset.toFixed(2);
+            el.peakInput.value = boundaries.peak.toFixed(2);
+            el.settleInput.value = boundaries.settle.toFixed(2);
+            drawChart();
+            updateControls();
+        }
+
+        function updateBoundaries() {
+            if (!sourceUrl) return;
+            const duration = el.sourceVideo.duration;
+            const onset = clamp(num(el.onsetInput.value), 0, duration);
+            const peak = clamp(num(el.peakInput.value, onset), onset, duration);
+            const settle = clamp(num(el.settleInput.value, peak), peak, duration);
+            boundaries = { onset, peak, settle };
+            selectedClip().boundaries = boundaries;
+            renderBoundaries();
+        }
+
+        function currentRange() {
+            return { start: num(el.rangeStart.value), end: num(el.rangeEnd.value) };
+        }
+
+        function setRange(start, end, invalidate = true) {
+            if (!sourceUrl) return;
+            const duration = el.sourceVideo.duration;
+            start = clamp(num(start), 0, Math.max(0, duration - .02));
+            end = clamp(num(end, duration), start + .02, duration);
+            el.rangeStart.value = start;
+            el.rangeEnd.value = end;
+            el.startInput.value = start.toFixed(2);
+            el.endInput.value = end.toFixed(2);
+            const clip = selectedClip();
+            if (clip) {
+                clip.rangeStart = start;
+                clip.rangeEnd = end;
+            }
+            if (invalidate) setStatus("範囲が変わりました。「画像を切り出す」を押してください");
+            drawChart();
+        }
+
+        async function prepareFrames() {
+            const clip = selectedClip();
+            if (!clip) return;
+            if (busy && !samples.length) return;
+            const ownsBusyState = !busy;
+            if (ownsBusyState) setBusy(true);
+            const buildId = ++frameBuildId;
+            const { start, end } = currentRange();
+            const count = Math.min(72, Math.max(8, Math.ceil((end - start) * Math.max(12, num(el.flickerFps.value, 18)))));
+            captureCanvas.width = 540;
+            captureCanvas.height = 960;
+            const captureCtx = captureCanvas.getContext("2d", { alpha: false });
+            const frames = [];
+            const alignsFace = samples.some((sample) => sample.eyePose);
+            el.progress.hidden = false;
+            try {
+                for (let i = 0; i < count; i += 1) {
+                    if (buildId !== frameBuildId) return frames.forEach((frame) => frame.close?.());
+                    const time = count === 1 ? start : start + (end - start) * i / (count - 1);
+                    setStatus(`${alignsFace ? "顔位置を合わせながら" : ""}コマを準備中 ${i + 1} / ${count}`);
+                    el.progress.value = (i + 1) / count;
+                    await seek(el.captureVideo, Math.min(time, el.captureVideo.duration - .01));
+                    drawAlignedFrame(captureCtx, el.captureVideo, eyePoseAt(time));
+                    frames.push(await createImageBitmap(captureCanvas));
+                }
+                if (buildId !== frameBuildId) return frames.forEach((frame) => frame.close?.());
+                const oldFrames = clip.frames;
+                clip.frames = frames;
+                refreshFrames();
+                oldFrames.forEach((frame) => frame.close?.());
+                renderClipList();
+                if (!flickerPlaying) drawFlicker(performance.now());
+                setStatus(`切り出し完了${alignsFace ? "（顔位置調整済み）" : ""}`);
+            } catch (error) {
+                frames.forEach((frame) => frame.close?.());
+                setStatus(`コマの準備に失敗しました: ${error.message}`, true);
+            } finally {
+                el.progress.hidden = true;
+                if (ownsBusyState) setBusy(false);
+            }
+        }
+
+        function drawCoverOn(context, canvas, source, width, height) {
+            const scale = Math.max(canvas.width / width, canvas.height / height);
+            const cropWidth = canvas.width / scale;
+            const cropHeight = canvas.height / scale;
+            context.drawImage(source, (width - cropWidth) / 2, (height - cropHeight) / 2, cropWidth, cropHeight, 0, 0, canvas.width, canvas.height);
+        }
+
+        function drawAlignedFrame(context, video, pose) {
+            context.fillStyle = "#090909";
+            context.fillRect(0, 0, captureCanvas.width, captureCanvas.height);
+            if (!pose) return drawCoverOn(context, captureCanvas, video, video.videoWidth, video.videoHeight);
+            const left = { x: pose.left.x * video.videoWidth, y: pose.left.y * video.videoHeight };
+            const right = { x: pose.right.x * video.videoWidth, y: pose.right.y * video.videoHeight };
+            const dx = right.x - left.x;
+            const dy = right.y - left.y;
+            const eyeDistance = Math.hypot(dx, dy);
+            if (eyeDistance < 1) return drawCoverOn(context, captureCanvas, video, video.videoWidth, video.videoHeight);
+            const scale = clamp(captureCanvas.width * .34 / eyeDistance, .25, 4);
+            context.save();
+            context.translate(captureCanvas.width * .5, captureCanvas.height * .36);
+            context.rotate(-Math.atan2(dy, dx));
+            context.scale(scale, scale);
+            context.drawImage(video, -(left.x + right.x) / 2, -(left.y + right.y) / 2);
+            context.restore();
+        }
+
+        function drawCover(source, width, height) {
+            drawCoverOn(ctx, el.outputCanvas, source, width, height);
+        }
+
+        function drawRawSource() {
+            if (!sourceUrl || el.sourceVideo.readyState < 2) return;
+            rawContext.fillStyle = "#090909";
+            rawContext.fillRect(0, 0, el.rawCanvas.width, el.rawCanvas.height);
+            drawCoverOn(rawContext, el.rawCanvas, el.sourceVideo, el.sourceVideo.videoWidth, el.sourceVideo.videoHeight);
+            el.rawTimeOutput.textContent = formatTime(el.sourceVideo.currentTime);
+        }
+
+        async function previewRawAt(time) {
+            if (!sourceUrl) return;
+            const request = ++rawPreviewRequest;
+            await seek(el.sourceVideo, clamp(num(time), 0, Math.max(0, el.sourceVideo.duration - .01)));
+            if (request === rawPreviewRequest) drawRawSource();
+        }
+
+        function scheduleRawPreview(time) {
+            clearTimeout(rawPreviewTimer);
+            rawPreviewTimer = setTimeout(() => previewRawAt(time).catch(() => { }), 35);
+        }
+
+        function drawFlicker(now) {
+            if (!flickerFrames.length) return;
+            if (now >= nextCutAt) {
+                let next = Math.floor(Math.random() * flickerFrames.length);
+                if (flickerFrames.length > 1 && next === currentFrame) next = (next + 1) % flickerFrames.length;
+                currentFrame = next;
+                nextCutAt = now + 1000 / num(el.flickerFps.value, 18);
+            }
+            ctx.fillStyle = "#090909";
+            ctx.fillRect(0, 0, el.outputCanvas.width, el.outputCanvas.height);
+            const frame = flickerFrames[currentFrame];
+            drawCover(frame, frame.width, frame.height);
+        }
+
+        function tick(now) {
+            drawFlicker(now);
+            if (flickerPlaying) animationId = requestAnimationFrame(tick);
+        }
+
+        function stopFlicker() {
+            flickerPlaying = false;
+            cancelAnimationFrame(animationId);
+            updateTransport();
+        }
+
+        function togglePlay() {
+            if (!flickerFrames.length) return;
+            if (flickerPlaying) return stopFlicker();
+            if (busy) return;
+            flickerPlaying = true;
+            nextCutAt = 0;
+            updateTransport();
+            animationId = requestAnimationFrame(tick);
+        }
+
+        function updateTransport() {
+            el.playButton.textContent = flickerPlaying ? "停止" : "再生";
+        }
+
+        function drawChart() {
+            const canvas = el.analysisChart;
+            const rect = canvas.getBoundingClientRect();
+            if (!rect.width) return;
+            const dpr = window.devicePixelRatio || 1;
+            canvas.width = Math.round(rect.width * dpr);
+            canvas.height = Math.round(rect.height * dpr);
+            const chart = canvas.getContext("2d");
+            chart.setTransform(dpr, 0, 0, dpr, 0, 0);
+            chart.clearRect(0, 0, rect.width, rect.height);
+            const duration = num(el.sourceVideo.duration, 1);
+            const pad = { x: 7, y: 8, bottom: 15 };
+            const x = (time) => pad.x + time / duration * (rect.width - pad.x * 2);
+            const y = (value) => pad.y + (1 - clamp(value, 0, 1)) * (rect.height - pad.y - pad.bottom);
+            const range = sourceUrl ? currentRange() : { start: 0, end: 0 };
+            chart.fillStyle = "rgba(255,105,72,.1)";
+            chart.fillRect(x(range.start), pad.y, Math.max(0, x(range.end) - x(range.start)), rect.height - pad.y - pad.bottom);
+            chart.strokeStyle = "#ece8df";
+            [.25, .5, .75].forEach((value) => { chart.beginPath(); chart.moveTo(pad.x, y(value)); chart.lineTo(rect.width - pad.x, y(value)); chart.stroke(); });
+            const data = smoothedSamples();
+            [["neutral", COLORS.neutral], [el.emotionSelect.value, COLORS.emotion]].forEach(([emotion, color]) => {
+                chart.strokeStyle = color; chart.lineWidth = 2; chart.beginPath(); let started = false;
+                data.forEach((sample) => { if (!sample.smooth) return started = false; const px = x(sample.time), py = y(sample.smooth[emotion]); started ? chart.lineTo(px, py) : chart.moveTo(px, py); started = true; });
+                chart.stroke();
+            });
+            [["landmark", COLORS.mesh, 2], ["progression", COLORS.mix, 2.5]].forEach(([key, color, width]) => {
+                chart.strokeStyle = color; chart.lineWidth = width; chart.beginPath(); let started = false;
+                analysisSeries.forEach((sample) => { if (!Number.isFinite(sample[key])) return started = false; const px = x(sample.time), py = y(sample[key]); started ? chart.lineTo(px, py) : chart.moveTo(px, py); started = true; });
+                chart.stroke();
+            });
+            if (boundaries) [[boundaries.onset, COLORS.onset], [boundaries.peak, COLORS.peak], [boundaries.settle, COLORS.settle]].forEach(([time, color]) => {
+                chart.strokeStyle = color; chart.setLineDash([4, 3]); chart.beginPath(); chart.moveTo(x(time), pad.y); chart.lineTo(x(time), rect.height - pad.bottom); chart.stroke(); chart.setLineDash([]);
+            });
+        }
+
+        function removeClip(id) {
+            if (busy) return;
+            const clip = clips.find((item) => item.id === id);
+            if (!clip) return;
+            clips = clips.filter((item) => item.id !== id);
+            refreshFrames();
+            clip.frames.forEach((frame) => frame.close?.());
+            URL.revokeObjectURL(clip.url);
+            if (!flickerFrames.length) stopFlicker();
+            if (selectedId !== id) return renderClipList();
+            selectedId = null;
+            sourceUrl = "";
+            sourceName = "";
+            samples = [];
+            analysisSeries = [];
+            boundaries = null;
+            if (clips.length) return void selectClip(clips[0].id);
+            stopFlicker();
+            el.sourceVideo.removeAttribute("src");
+            el.captureVideo.removeAttribute("src");
+            el.movieMeta.textContent = "動画未選択";
+            el.rawTimeOutput.textContent = "0.00s";
+            rawContext.fillStyle = "#090909";
+            rawContext.fillRect(0, 0, el.rawCanvas.width, el.rawCanvas.height);
+            ctx.fillStyle = "#090909";
+            ctx.fillRect(0, 0, el.outputCanvas.width, el.outputCanvas.height);
+            renderClipList();
+            updateControls();
+        }
+
+        function bindEvents() {
+            el.fileInput.addEventListener("change", () => { addFiles(el.fileInput.files); el.fileInput.value = ""; });
+            ["dragenter", "dragover"].forEach((event) => el.clipList.addEventListener(event, (e) => { e.preventDefault(); el.clipList.querySelector(".clipEmpty")?.classList.add("drag"); }));
+            ["dragleave", "drop"].forEach((event) => el.clipList.addEventListener(event, (e) => { e.preventDefault(); el.clipList.querySelector(".clipEmpty")?.classList.remove("drag"); }));
+            el.clipList.addEventListener("drop", (event) => addFiles(event.dataTransfer.files));
+            el.clipList.addEventListener("click", (event) => {
+                const card = event.target.closest(".clipCard");
+                if (!card) return;
+                const id = Number(card.dataset.id);
+                if (event.target.closest('[data-action="remove"]')) removeClip(id);
+                else if (id !== selectedId) selectClip(id);
+            });
+            el.analyzeButton.addEventListener("click", analyze);
+            el.playButton.addEventListener("click", togglePlay);
+            [el.rangeStart, el.rangeEnd].forEach((input) => input.addEventListener("input", () => {
+                const start = Math.min(num(el.rangeStart.value), num(el.rangeEnd.value) - .02);
+                const end = Math.max(num(el.rangeEnd.value), start + .02);
+                setRange(start, end);
+                scheduleRawPreview(input === el.rangeStart ? start : end);
+            }));
+            [el.startInput, el.endInput].forEach((input) => input.addEventListener("change", () => {
+                setRange(el.startInput.value, el.endInput.value);
+                scheduleRawPreview(input === el.startInput ? el.startInput.value : el.endInput.value);
+            }));
+            [el.onsetInput, el.peakInput, el.settleInput].forEach((input) => input.addEventListener("change", updateBoundaries));
+            el.emotionSelect.addEventListener("change", () => {
+                const clip = selectedClip();
+                if (!clip) return;
+                clip.emotion = el.emotionSelect.value;
+                if (!samples.length) return;
+                boundaries = detectBoundaries();
+                clip.analysisSeries = analysisSeries;
+                clip.boundaries = boundaries;
+                if (boundaries) renderBoundaries();
+                else {
+                    el.analysisBadge.textContent = "境界未検出";
+                    el.analysisBadge.classList.remove("ready");
+                    setStatus("この表情では十分な変化を検出できませんでした", true);
+                    drawChart();
+                    updateControls();
+                }
+            });
+            el.flickerFps.addEventListener("input", () => {
+                el.fpsOutput.textContent = `${el.flickerFps.value} fps`;
+            });
+            el.prepareButton.addEventListener("click", prepareFrames);
+            new ResizeObserver(drawChart).observe(el.analysisChart);
+            window.addEventListener("beforeunload", () => clips.forEach((clip) => {
+                URL.revokeObjectURL(clip.url);
+                clip.frames.forEach((frame) => frame.close?.());
+            }));
+        }
+
+        async function initialize() {
+            bindEvents();
+            renderClipList();
+            ctx.fillStyle = "#090909";
+            ctx.fillRect(0, 0, el.outputCanvas.width, el.outputCanvas.height);
+            rawContext.fillStyle = "#090909";
+            rawContext.fillRect(0, 0, el.rawCanvas.width, el.rawCanvas.height);
+            try {
+                await models;
+                modelsReady = true;
+                el.analysisBadge.textContent = "準備完了";
+                setStatus("動画を追加してください");
+            } catch (error) {
+                console.error(error);
+                el.analysisBadge.textContent = "読込失敗";
+                setStatus("解析モデルの読み込みに失敗しました", true);
+            }
+            updateControls();
+        }
+
+        console.assert(Math.abs(crossing([{ time: 0, value: 0 }, { time: 1, value: 1 }], .5, "up", 1, 1) - .5) < 1e-9, "boundary interpolation");
+        console.assert(emotionFromFileName("03_angry_take01.mp4") === "angry", "filename emotion detection");
+        initialize();
+    </script>
+</body>
+
+</html>
