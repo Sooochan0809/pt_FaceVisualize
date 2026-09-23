@@ -27,21 +27,27 @@
             position: absolute;
             left: 50%;
             top: 50%;
+            width: 100dvh;
+            height: min(100vw, 75vh);
             object-fit: cover;
             transform: translate(-50%, -50%) scaleX(-1) rotate(90deg);
             display: block;
         }
 
-        .ellipseGuide {
+        .ellipseGuide,
+        .countdown {
             position: absolute;
             left: 50%;
             top: 50%;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+        }
+
+        .ellipseGuide {
             width: min(72%, 720px);
             height: min(76%, 1032px);
             border: 2px solid rgba(39, 194, 138, 0.88);
             border-radius: 50%;
-            transform: translate(-50%, -50%);
-            pointer-events: none;
         }
 
         #cameraButton,
@@ -68,7 +74,7 @@
             bottom: 32px;
             z-index: 2;
             width: 112px;
-            height: 112px;
+            aspect-ratio: 1;
             border: 0;
             border-radius: 999px;
             transform: translateX(-50%);
@@ -85,20 +91,11 @@
         }
 
         .countdown {
-            position: absolute;
-            left: 50%;
-            top: 50%;
             z-index: 3;
-            transform: translate(-50%, -50%);
             color: #fff;
             font-size: clamp(72px, 10vw, 112px);
             font-weight: 700;
             text-shadow: 0 4px 18px rgba(0, 0, 0, 0.5);
-            pointer-events: none;
-        }
-
-        .countdown[hidden] {
-            display: none;
         }
 
         output {
@@ -119,23 +116,19 @@
     </main>
 
     <script>
-        const video = document.getElementById("video");
-        const stage = document.querySelector("main");
-        const status = document.getElementById("status");
-        const recordButton = document.getElementById("recordButton");
-        const countdown = document.getElementById("countdown");
+        const $ = (id) => document.getElementById(id);
+        const video = $("video");
+        const status = $("status");
+        const cameraButton = $("cameraButton");
+        const recordButton = $("recordButton");
+        const countdown = $("countdown");
         const VIDEO_BITRATE = 60_000_000;
         const wait = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
+        const stopStream = (stream) => stream?.getTracks().forEach((track) => track.stop());
         let recorder = null;
-        let recordedVideo = null;
 
-        function fitVideoToStage() {
-            video.style.width = `${stage.clientHeight}px`;
-            video.style.height = `${stage.clientWidth}px`;
-        }
-
-        function downloadRecording(blob, mimeType) {
-            const extension = mimeType.includes("mp4") ? "mp4" : "webm";
+        function downloadRecording(blob) {
+            const extension = blob.type.includes("mp4") ? "mp4" : "webm";
             const now = new Date();
             const pad = (number) => String(number).padStart(2, "0");
             const url = URL.createObjectURL(blob);
@@ -149,13 +142,11 @@
         }
 
         function getRecordingSettings() {
-            const settings = video.srcObject.getVideoTracks()[0].getSettings();
-            const sourceWidth = settings.width || video.videoWidth;
-            const sourceHeight = settings.height || video.videoHeight;
+            const { width, height, frameRate } = video.srcObject.getVideoTracks()[0].getSettings();
             return {
-                width: Math.round(sourceHeight / 2) * 2,
-                height: Math.round(sourceWidth / 2) * 2,
-                frameRate: Number(settings.frameRate) || 30
+                width: Math.round((height || video.videoHeight) / 2) * 2,
+                height: Math.round((width || video.videoWidth) / 2) * 2,
+                frameRate: Number(frameRate) || 30
             };
         }
 
@@ -171,7 +162,7 @@
             const stream = canvas.captureStream(0);
             const canvasTrack = stream.getVideoTracks()[0];
             if (typeof canvasTrack.requestFrame !== "function") {
-                stream.getTracks().forEach((track) => track.stop());
+                stopStream(stream);
                 throw new Error("このブラウザは実フレーム同期録画に対応していません");
             }
             let frameCallback;
@@ -188,13 +179,13 @@
                 stream,
                 stop: () => {
                     video.cancelVideoFrameCallback(frameCallback);
-                    stream.getTracks().forEach((track) => track.stop());
+                    stopStream(stream);
                 }
             };
         }
 
         async function startCamera() {
-            video.srcObject?.getTracks().forEach((track) => track.stop());
+            stopStream(video.srcObject);
             try {
                 video.srcObject = await navigator.mediaDevices.getUserMedia({
                     video: {
@@ -205,14 +196,11 @@
                     audio: false
                 });
                 await video.play();
-                fitVideoToStage();
                 const track = video.srcObject.getVideoTracks()[0];
                 const capabilities = track.getCapabilities?.() || {};
-                const maxWidth = Math.round(capabilities.width?.max) || "-";
-                const maxHeight = Math.round(capabilities.height?.max) || "-";
-                const maxFrameRate = Math.round(capabilities.frameRate?.max) || "-";
+                const max = (name) => Math.round(capabilities[name]?.max) || "-";
                 const recording = getRecordingSettings();
-                status.textContent = `最大: ${maxWidth}x${maxHeight} / ${maxFrameRate}fps\n録画設定: ${recording.width}x${recording.height} / ${Math.round(recording.frameRate)}fps`;
+                status.textContent = `最大: ${max("width")}x${max("height")} / ${max("frameRate")}fps\n録画設定: ${recording.width}x${recording.height} / ${Math.round(recording.frameRate)}fps`;
             } catch (error) {
                 status.textContent = `カメラを開始できません: ${error.message}`;
             }
@@ -231,9 +219,9 @@
 
             recordButton.disabled = true;
             try {
+                countdown.hidden = false;
                 for (let count = 3; count >= 1; count -= 1) {
                     countdown.textContent = count;
-                    countdown.hidden = false;
                     await wait(1000);
                 }
 
@@ -249,8 +237,7 @@
                 });
                 activeRecorder.addEventListener("stop", () => {
                     recording.stop();
-                    recordedVideo = new Blob(chunks, { type: activeRecorder.mimeType });
-                    downloadRecording(recordedVideo, activeRecorder.mimeType);
+                    downloadRecording(new Blob(chunks, { type: activeRecorder.mimeType }));
                     recorder = null;
                     recordButton.textContent = "録画";
                     recordButton.disabled = false;
@@ -265,10 +252,9 @@
             }
         }
 
-        document.getElementById("cameraButton").addEventListener("click", startCamera);
+        cameraButton.addEventListener("click", startCamera);
         recordButton.addEventListener("click", toggleRecording);
-        window.addEventListener("resize", fitVideoToStage);
-        window.addEventListener("pagehide", () => video.srcObject?.getTracks().forEach((track) => track.stop()));
+        window.addEventListener("pagehide", () => stopStream(video.srcObject));
         startCamera();
     </script>
 </body>
