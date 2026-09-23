@@ -243,13 +243,6 @@
 
             recordButton.disabled = true;
             try {
-                countdown.hidden = false;
-                for (let count = 3; count >= 1; count -= 1) {
-                    countdown.textContent = count;
-                    await wait(1000);
-                }
-
-                countdown.hidden = true;
                 const chunks = [];
                 const recording = createRecordingStream();
                 const activeRecorder = new MediaRecorder(recording.stream, {
@@ -268,6 +261,12 @@
                 }, { once: true });
                 activeRecorder.start();
                 recordButton.textContent = "停止";
+
+                countdown.hidden = false;
+                for (let count = 3; count >= 1; count -= 1) {
+                    countdown.textContent = count;
+                    await wait(1000);
+                }
             } catch (error) {
                 status.textContent = `録画を開始できません: ${error.message}`;
             } finally {
