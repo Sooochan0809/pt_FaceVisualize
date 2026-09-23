@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-    <title>Flash Cut — Expression Flicker</title>
+    <title>FlashCut</title>
     <script defer src="../modules/faceAPI/face-api.min.js"></script>
     <style>
         :root {
@@ -365,13 +365,10 @@
             min-height: 74px;
             display: grid;
             place-items: center;
-            padding: 18px 10px;
+            padding: 12px;
             border: 1px dashed var(--line);
             border-radius: 8px;
             background: transparent;
-            color: var(--muted);
-            font-size: .75rem;
-            text-align: center;
             cursor: pointer;
         }
 
@@ -385,11 +382,10 @@
             background: #f2f7ff;
         }
 
-        .clipEmpty strong {
+        .clipEmpty img {
             display: block;
-            margin-bottom: 3px;
-            color: var(--ink);
-            font-size: 1rem;
+            width: 48px;
+            height: 48px;
         }
 
         .clipCard {
@@ -439,9 +435,20 @@
             width: 28px;
             min-height: 28px;
             padding: 0;
-            border-color: var(--line);
-            color: var(--muted);
+            border: none;
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
+
+        .removeButton img {
+            display: block;
+            width: 80%;
+            height: auto;
+            margin: 0;
+            position: static;
+        }
+   
 
         .clipEditorDisclosure {
             margin-top: 10px;
@@ -631,8 +638,8 @@
                     <h2>出力</h2>
                 </div>
                 <label class="playbackSetting">切替速度
-                    <input id="flickerFps" type="range" min="2" max="30" value="18" step="1">
-                    <output id="fpsOutput">18 fps</output>
+                    <input id="flickerFps" type="range" min="2" max="60" value="20" step="1">
+                    <output id="fpsOutput">20 fps</output>
                 </label>
             </section>
         </aside>
@@ -729,14 +736,15 @@
                 card.innerHTML = `<div class="clipTop">
                     <span class="clipIndex">${String(index + 1).padStart(2, "0")}</span>
                     <div><div class="clipName">${escapeHtml(clip.name)}</div><div class="clipMeta">${LABELS[clip.emotion]} · ${clip.width}×${clip.height} · ${formatTime(clip.duration)} · ${clip.frames.length} frames</div></div>
-                    <button class="removeButton" data-action="remove" type="button" aria-label="削除">×</button>
+                    <button class="removeButton" data-action="remove" type="button" aria-label="削除"><img src="icon-clause.png" alt=""></button>
                 </div>`;
                 return card;
             });
             const add = document.createElement("label");
             add.className = "clipEmpty";
             add.htmlFor = "fileInput";
-            add.innerHTML = "<span><strong>＋</strong>動画を追加</span>";
+            add.setAttribute("aria-label", "動画を追加");
+            add.innerHTML = '<img src="icon-plus.png" alt="">';
             el.clipList.replaceChildren(...cards, add);
             const selectedCard = cards.find((card) => Number(card.dataset.id) === selectedId);
             el.clipEditor.hidden = !selectedCard;
