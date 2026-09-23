@@ -180,11 +180,18 @@
             width: min(100%, 46.125dvh);
             margin: 0 auto;
             display: flex;
+            gap: 8px;
             justify-content: center;
         }
 
         .transport button {
             min-width: 88px;
+        }
+
+        .transport button.recording {
+            border-color: var(--danger);
+            background: var(--danger);
+            color: #fff;
         }
 
         .previewFooter {
@@ -532,7 +539,7 @@
 
         .batchActions {
             display: grid;
-            grid-template-columns: repeat(2, minmax(0, 1fr));
+            grid-template-columns: 1fr;
             gap: 8px;
             margin-bottom: 10px;
         }
@@ -605,7 +612,6 @@
                 <input id="fileInput" type="file" accept="video/*" multiple hidden>
                 <div class="batchActions">
                     <button id="analyzeAllButton" class="primary" type="button" disabled>すべて解析</button>
-                    <button id="prepareAllButton" class="primary" type="button" disabled>すべて切り出し</button>
                 </div>
                 <div class="clipList" id="clipList"></div>
                 <details class="clipEditorDisclosure" id="clipEditor" open hidden>
@@ -705,6 +711,7 @@
             </div>
             <div class="transport">
                 <button id="playButton" type="button" disabled>再生</button>
+                <button id="recordButton" type="button" disabled>録画</button>
             </div>
         </section>
     </main>
@@ -720,7 +727,7 @@
         const EXPRESSION_INDICES = [33, 46, 52, 53, 55, 61, 63, 65, 66, 70, 78, 80, 81, 82, 84, 87, 88, 91, 95, 101, 105, 107, 133, 144, 146, 153, 158, 160, 178, 181, 191, 205, 263, 276, 282, 283, 285, 291, 293, 295, 296, 300, 308, 310, 311, 312, 314, 317, 318, 321, 324, 330, 334, 336, 362, 373, 375, 380, 385, 387, 402, 405, 415, 425];
         const COLORS = { neutral: "#7f8993", emotion: "#ff6948", mesh: "#4877ff", mix: "#151515", onset: "#53a86d", peak: "#8a62d1", settle: "#8a62d1" };
         const $ = (id) => document.getElementById(id);
-        const ids = ["sourceVideo", "captureVideo", "rawCanvas", "rawTimeOutput", "outputCanvas", "outputResolution", "resolutionOutput", "shapeVariation", "shapeOutput", "shapeMaxPeriod", "shapeMaxPeriodOutput", "shapeReachFloor", "shapeReachFloorOutput", "shapePeriodOutput", "shapeReachOutput", "shapeWave", "movieMeta", "playButton", "fileInput", "clipList", "clipEditor", "sourceBadge", "analysisBadge", "emotionSelect", "sampleInterval", "analyzeButton", "analyzeAllButton", "prepareAllButton", "progress", "analysisChart", "onsetInput", "peakInput", "settleInput", "rangeStart", "rangeEnd", "startInput", "endInput", "flickerFps", "fpsOutput", "prepareButton", "status"];
+        const ids = ["sourceVideo", "captureVideo", "rawCanvas", "rawTimeOutput", "outputCanvas", "outputResolution", "resolutionOutput", "shapeVariation", "shapeOutput", "shapeMaxPeriod", "shapeMaxPeriodOutput", "shapeReachFloor", "shapeReachFloorOutput", "shapePeriodOutput", "shapeReachOutput", "shapeWave", "movieMeta", "playButton", "recordButton", "fileInput", "clipList", "clipEditor", "sourceBadge", "analysisBadge", "emotionSelect", "sampleInterval", "analyzeButton", "analyzeAllButton", "progress", "analysisChart", "onsetInput", "peakInput", "settleInput", "rangeStart", "rangeEnd", "startInput", "endInput", "flickerFps", "fpsOutput", "prepareButton", "status"];
         const el = Object.fromEntries(ids.map((id) => [id, $(id)]));
         const ctx = el.outputCanvas.getContext("2d", { alpha: false });
         const rawContext = el.rawCanvas.getContext("2d", { alpha: false });
@@ -750,6 +757,9 @@
         let nextCutAt = 0;
         let currentFrame = -1;
         let flickerPlaying = false;
+        let mediaRecorder = null;
+        let recordingStream = null;
+        let recordedChunks = [];
         let rawPreviewRequest = 0;
         let rawPreviewTimer = 0;
 
@@ -825,11 +835,13 @@
             el.outputResolution.disabled = busy;
             el.analyzeButton.disabled = busy || !loaded || !modelsReady;
             el.analyzeAllButton.disabled = busy || !clips.length || !modelsReady;
-            el.prepareAllButton.disabled = busy || !clips.length;
             [el.onsetInput, el.peakInput, el.settleInput].forEach((input) => input.disabled = busy || !loaded);
             [el.rangeStart, el.rangeEnd, el.startInput, el.endInput].forEach((input) => input.disabled = busy || !loaded);
             el.prepareButton.disabled = busy || !loaded;
             el.playButton.disabled = !flickerFrames.length;
+            el.recordButton.disabled = mediaRecorder?.state === "recording"
+                ? false
+                : busy || !flickerFrames.length || !window.MediaRecorder || !el.outputCanvas.captureStream;
         }
 
         function waitFor(video, event) {
@@ -1371,6 +1383,60 @@
 
         function updateTransport() {
             el.playButton.textContent = flickerPlaying ? "停止" : "再生";
+            const recording = mediaRecorder?.state === "recording";
+            el.recordButton.textContent = recording ? "録画停止" : "録画";
+            el.recordButton.classList.toggle("recording", recording);
+        }
+
+        function finishRecording() {
+            const type = mediaRecorder?.mimeType || recordedChunks[0]?.type || "video/webm";
+            const blob = new Blob(recordedChunks, { type });
+            recordingStream?.getTracks().forEach((track) => track.stop());
+            recordingStream = null;
+            mediaRecorder = null;
+            recordedChunks = [];
+            updateTransport();
+            updateControls();
+            if (!blob.size) return setStatus("録画データを作成できませんでした", true);
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement("a");
+            link.href = url;
+            link.download = `flash-cut-${new Date().toISOString().replace(/[:.]/g, "-")}.${type.includes("mp4") ? "mp4" : "webm"}`;
+            document.body.append(link);
+            link.click();
+            link.remove();
+            setTimeout(() => URL.revokeObjectURL(url), 1000);
+            setStatus("録画を保存しました");
+        }
+
+        function toggleRecording() {
+            if (mediaRecorder?.state === "recording") {
+                mediaRecorder.stop();
+                el.recordButton.disabled = true;
+                return;
+            }
+            if (mediaRecorder || busy || !flickerFrames.length) return;
+            try {
+                const mimeType = ["video/webm;codecs=vp9", "video/webm;codecs=vp8", "video/webm", "video/mp4"]
+                    .find((type) => MediaRecorder.isTypeSupported(type));
+                recordingStream = el.outputCanvas.captureStream(60);
+                mediaRecorder = new MediaRecorder(recordingStream, { ...(mimeType && { mimeType }), videoBitsPerSecond: 20_000_000 });
+                recordedChunks = [];
+                mediaRecorder.addEventListener("dataavailable", (event) => { if (event.data.size) recordedChunks.push(event.data); });
+                mediaRecorder.addEventListener("stop", finishRecording, { once: true });
+                mediaRecorder.addEventListener("error", () => setStatus("録画中にエラーが発生しました", true), { once: true });
+                mediaRecorder.start(250);
+                if (!flickerPlaying) togglePlay();
+                updateTransport();
+                updateControls();
+            } catch (error) {
+                console.error(error);
+                recordingStream?.getTracks().forEach((track) => track.stop());
+                recordingStream = null;
+                mediaRecorder = null;
+                setStatus("このブラウザでは録画を開始できません", true);
+                updateControls();
+            }
         }
 
         function drawShapeWave(now = performance.now()) {
@@ -1477,7 +1543,10 @@
             refreshFrames();
             clip.frames.forEach((frame) => frame.close?.());
             URL.revokeObjectURL(clip.url);
-            if (!flickerFrames.length) stopFlicker();
+            if (!flickerFrames.length) {
+                stopFlicker();
+                if (mediaRecorder?.state === "recording") mediaRecorder.stop();
+            }
             if (selectedId !== id) return renderClipList();
             selectedId = null;
             sourceUrl = "";
@@ -1513,8 +1582,8 @@
             });
             el.analyzeButton.addEventListener("click", analyze);
             el.analyzeAllButton.addEventListener("click", analyzeAll);
-            el.prepareAllButton.addEventListener("click", prepareAllFrames);
             el.playButton.addEventListener("click", togglePlay);
+            el.recordButton.addEventListener("click", toggleRecording);
             [el.rangeStart, el.rangeEnd].forEach((input) => input.addEventListener("input", () => {
                 const start = Math.min(num(el.rangeStart.value), num(el.rangeEnd.value) - .02);
                 const end = Math.max(num(el.rangeEnd.value), start + .02);
@@ -1558,10 +1627,13 @@
             new ResizeObserver(drawChart).observe(el.analysisChart);
             new ResizeObserver(() => drawShapeWave()).observe(el.shapeWave);
             updateShapeControl();
-            window.addEventListener("beforeunload", () => clips.forEach((clip) => {
-                URL.revokeObjectURL(clip.url);
-                clip.frames.forEach((frame) => frame.close?.());
-            }));
+            window.addEventListener("beforeunload", () => {
+                recordingStream?.getTracks().forEach((track) => track.stop());
+                clips.forEach((clip) => {
+                    URL.revokeObjectURL(clip.url);
+                    clip.frames.forEach((frame) => frame.close?.());
+                });
+            });
         }
 
         async function initialize() {
