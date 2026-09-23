@@ -403,19 +403,9 @@
 
         .clipTop {
             display: grid;
-            grid-template-columns: 28px minmax(0, 1fr) auto;
+            grid-template-columns: minmax(0, 1fr) auto;
             align-items: center;
             gap: 8px;
-        }
-
-        .clipIndex {
-            width: 28px;
-            height: 28px;
-            display: grid;
-            place-items: center;
-            border-radius: 50%;
-            background: #f0f1f1;
-            font: .69rem ui-monospace, monospace;
         }
 
         .clipName {
@@ -500,11 +490,20 @@
 
         .playbackSetting {
             display: grid;
-            grid-template-columns: auto minmax(0, 1fr) auto;
+            grid-template-columns: 56px minmax(0, 1fr) 64px;
             align-items: center;
             gap: 8px;
             color: var(--muted);
             font-size: .7rem;
+        }
+
+        .playbackSetting output {
+            text-align: right;
+            white-space: nowrap;
+        }
+
+        .resolutionSetting {
+            margin-bottom: 12px;
         }
 
         #analyzeAllButton {
@@ -578,7 +577,7 @@
                     <h2>素材</h2><span class="badge" id="sourceBadge">0 clips</span>
                 </div>
                 <input id="fileInput" type="file" accept="video/*" multiple hidden>
-                <button id="analyzeAllButton" type="button" disabled>すべて解析</button>
+                <button id="analyzeAllButton" class="primary" type="button" disabled>すべて解析</button>
                 <div class="clipList" id="clipList"></div>
                 <details class="clipEditorDisclosure" id="clipEditor" open hidden>
                     <summary>個別解析・コマ抽出<span class="badge" id="analysisBadge">モデル読込中</span></summary>
@@ -637,6 +636,10 @@
                 <div class="panelHead">
                     <h2>出力</h2>
                 </div>
+                <label class="playbackSetting resolutionSetting">解像度
+                    <input id="outputResolution" type="range" min="90" max="2160" value="720" step="90">
+                    <output id="resolutionOutput">720 × 1280</output>
+                </label>
                 <label class="playbackSetting">切替速度
                     <input id="flickerFps" type="range" min="2" max="60" value="20" step="1">
                     <output id="fpsOutput">20 fps</output>
@@ -647,7 +650,7 @@
         <section class="preview">
             <div class="previewTitle">OUTPUT</div>
             <div class="stage">
-                <canvas id="outputCanvas" width="720" height="1280"></canvas>
+                <canvas id="outputCanvas" width="2160" height="3840"></canvas>
             </div>
             <div class="transport">
                 <button id="playButton" type="button" disabled>再生</button>
@@ -666,7 +669,7 @@
         const EXPRESSION_INDICES = [33, 46, 52, 53, 55, 61, 63, 65, 66, 70, 78, 80, 81, 82, 84, 87, 88, 91, 95, 101, 105, 107, 133, 144, 146, 153, 158, 160, 178, 181, 191, 205, 263, 276, 282, 283, 285, 291, 293, 295, 296, 300, 308, 310, 311, 312, 314, 317, 318, 321, 324, 330, 334, 336, 362, 373, 375, 380, 385, 387, 402, 405, 415, 425];
         const COLORS = { neutral: "#7f8993", emotion: "#ff6948", mesh: "#4877ff", mix: "#151515", onset: "#53a86d", peak: "#8a62d1", settle: "#8a62d1" };
         const $ = (id) => document.getElementById(id);
-        const ids = ["sourceVideo", "captureVideo", "rawCanvas", "rawTimeOutput", "outputCanvas", "movieMeta", "playButton", "fileInput", "clipList", "clipEditor", "sourceBadge", "analysisBadge", "emotionSelect", "sampleInterval", "analyzeButton", "analyzeAllButton", "progress", "analysisChart", "onsetInput", "peakInput", "settleInput", "rangeStart", "rangeEnd", "startInput", "endInput", "flickerFps", "fpsOutput", "prepareButton", "status"];
+        const ids = ["sourceVideo", "captureVideo", "rawCanvas", "rawTimeOutput", "outputCanvas", "outputResolution", "resolutionOutput", "movieMeta", "playButton", "fileInput", "clipList", "clipEditor", "sourceBadge", "analysisBadge", "emotionSelect", "sampleInterval", "analyzeButton", "analyzeAllButton", "progress", "analysisChart", "onsetInput", "peakInput", "settleInput", "rangeStart", "rangeEnd", "startInput", "endInput", "flickerFps", "fpsOutput", "prepareButton", "status"];
         const el = Object.fromEntries(ids.map((id) => [id, $(id)]));
         const ctx = el.outputCanvas.getContext("2d", { alpha: false });
         const rawContext = el.rawCanvas.getContext("2d", { alpha: false });
@@ -729,12 +732,11 @@
 
         function renderClipList() {
             el.sourceBadge.textContent = `${clips.length} clip${clips.length === 1 ? "" : "s"}`;
-            const cards = clips.map((clip, index) => {
+            const cards = clips.map((clip) => {
                 const card = document.createElement("article");
                 card.className = `clipCard${clip.id === selectedId ? " selected" : ""}`;
                 card.dataset.id = clip.id;
                 card.innerHTML = `<div class="clipTop">
-                    <span class="clipIndex">${String(index + 1).padStart(2, "0")}</span>
                     <div><div class="clipName">${escapeHtml(clip.name)}</div><div class="clipMeta">${LABELS[clip.emotion]} · ${clip.width}×${clip.height} · ${formatTime(clip.duration)} · ${clip.frames.length} frames</div></div>
                     <button class="removeButton" data-action="remove" type="button" aria-label="削除"><img src="icon-clause.png" alt=""></button>
                 </div>`;
@@ -764,6 +766,7 @@
         function updateControls() {
             const loaded = !!selectedClip();
             el.fileInput.disabled = busy;
+            el.outputResolution.disabled = busy;
             el.analyzeButton.disabled = busy || !loaded || !modelsReady;
             el.analyzeAllButton.disabled = busy || !clips.length || !modelsReady;
             [el.onsetInput, el.peakInput, el.settleInput].forEach((input) => input.disabled = busy || !loaded);
@@ -1112,9 +1115,12 @@
             if (ownsBusyState) setBusy(true);
             const buildId = ++frameBuildId;
             const { start, end } = currentRange();
-            const count = Math.min(72, Math.max(8, Math.ceil((end - start) * Math.max(12, num(el.flickerFps.value, 18)))));
-            captureCanvas.width = 540;
-            captureCanvas.height = 960;
+            const width = num(el.outputResolution.value, 720);
+            const height = width * 16 / 9;
+            const requestedCount = Math.max(8, Math.ceil((end - start) * Math.max(12, num(el.flickerFps.value, 18))));
+            const count = Math.min(72, requestedCount, Math.max(4, Math.floor(32_000_000 / (width * height))));
+            captureCanvas.width = width;
+            captureCanvas.height = height;
             const captureCtx = captureCanvas.getContext("2d", { alpha: false });
             const frames = [];
             const alignsFace = samples.some((sample) => sample.eyePose);
@@ -1123,7 +1129,7 @@
                 for (let i = 0; i < count; i += 1) {
                     if (buildId !== frameBuildId) return frames.forEach((frame) => frame.close?.());
                     const time = count === 1 ? start : start + (end - start) * i / (count - 1);
-                    setStatus(`${alignsFace ? "顔位置を合わせながら" : ""}コマを準備中 ${i + 1} / ${count}`);
+                    setStatus(`${sourceName} · ${alignsFace ? "顔位置を合わせながら" : ""}コマを準備中 ${i + 1} / ${count}`);
                     el.progress.value = (i + 1) / count;
                     await seek(el.captureVideo, Math.min(time, el.captureVideo.duration - .01));
                     drawAlignedFrame(captureCtx, el.captureVideo, eyePoseAt(time));
@@ -1136,7 +1142,7 @@
                 oldFrames.forEach((frame) => frame.close?.());
                 renderClipList();
                 if (!flickerPlaying) drawFlicker(performance.now());
-                setStatus(`切り出し完了${alignsFace ? "（顔位置調整済み）" : ""}`);
+                setStatus(`切り出し完了 ${width}×${height}${alignsFace ? "（顔位置調整済み）" : ""}`);
             } catch (error) {
                 frames.forEach((frame) => frame.close?.());
                 setStatus(`コマの準備に失敗しました: ${error.message}`, true);
@@ -1176,6 +1182,29 @@
             drawCoverOn(ctx, el.outputCanvas, source, width, height);
         }
 
+        function drawCurrentFrame() {
+            ctx.fillStyle = "#090909";
+            ctx.fillRect(0, 0, el.outputCanvas.width, el.outputCanvas.height);
+            const frame = flickerFrames[currentFrame];
+            if (frame) drawCover(frame, frame.width, frame.height);
+        }
+
+        async function updateOutputResolution() {
+            const width = num(el.outputResolution.value, 720);
+            const height = width * 16 / 9;
+            el.resolutionOutput.textContent = `${width} × ${height}`;
+            if (busy || !clips.length) return void setStatus(`切り出すコマの解像度を ${width}×${height} に設定しました`);
+            const originalId = selectedId;
+            let completed = 0;
+            for (const clip of [...clips]) {
+                await selectClip(clip.id);
+                await prepareFrames();
+                if (clip.frames[0]?.width === width) completed += 1;
+            }
+            if (originalId !== selectedId) await selectClip(originalId);
+            setStatus(`${completed}/${clips.length}本を ${width}×${height} で再切り出ししました`, completed !== clips.length);
+        }
+
         function drawRawSource() {
             if (!sourceUrl || el.sourceVideo.readyState < 2) return;
             rawContext.fillStyle = "#090909";
@@ -1198,16 +1227,12 @@
 
         function drawFlicker(now) {
             if (!flickerFrames.length) return;
-            if (now >= nextCutAt) {
-                let next = Math.floor(Math.random() * flickerFrames.length);
-                if (flickerFrames.length > 1 && next === currentFrame) next = (next + 1) % flickerFrames.length;
-                currentFrame = next;
-                nextCutAt = now + 1000 / num(el.flickerFps.value, 18);
-            }
-            ctx.fillStyle = "#090909";
-            ctx.fillRect(0, 0, el.outputCanvas.width, el.outputCanvas.height);
-            const frame = flickerFrames[currentFrame];
-            drawCover(frame, frame.width, frame.height);
+            if (currentFrame >= 0 && now < nextCutAt) return;
+            let next = Math.floor(Math.random() * flickerFrames.length);
+            if (flickerFrames.length > 1 && next === currentFrame) next = (next + 1) % flickerFrames.length;
+            currentFrame = next;
+            nextCutAt = now + 1000 / num(el.flickerFps.value, 18);
+            drawCurrentFrame();
         }
 
         function tick(now) {
@@ -1346,6 +1371,11 @@
             el.flickerFps.addEventListener("input", () => {
                 el.fpsOutput.textContent = `${el.flickerFps.value} fps`;
             });
+            el.outputResolution.addEventListener("input", () => {
+                const width = num(el.outputResolution.value, 720);
+                el.resolutionOutput.textContent = `${width} × ${width * 16 / 9}`;
+            });
+            el.outputResolution.addEventListener("change", updateOutputResolution);
             el.prepareButton.addEventListener("click", prepareFrames);
             new ResizeObserver(drawChart).observe(el.analysisChart);
             window.addEventListener("beforeunload", () => clips.forEach((clip) => {
