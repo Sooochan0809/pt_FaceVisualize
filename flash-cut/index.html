@@ -496,9 +496,13 @@
             grid-template-columns: auto minmax(0, 1fr) auto;
             align-items: center;
             gap: 8px;
-            margin-bottom: 10px;
             color: var(--muted);
             font-size: .7rem;
+        }
+
+        #analyzeAllButton {
+            width: 100%;
+            margin-bottom: 10px;
         }
 
         @media (max-width: 1100px) {
@@ -567,10 +571,7 @@
                     <h2>素材</h2><span class="badge" id="sourceBadge">0 clips</span>
                 </div>
                 <input id="fileInput" type="file" accept="video/*" multiple hidden>
-                <label class="playbackSetting">切替速度
-                    <input id="flickerFps" type="range" min="2" max="30" value="18" step="1">
-                    <output id="fpsOutput">18 fps</output>
-                </label>
+                <button id="analyzeAllButton" type="button" disabled>すべて解析</button>
                 <div class="clipList" id="clipList"></div>
                 <details class="clipEditorDisclosure" id="clipEditor" open hidden>
                     <summary>個別解析・コマ抽出<span class="badge" id="analysisBadge">モデル読込中</span></summary>
@@ -625,6 +626,15 @@
                 </details>
                 <p class="status" id="status">モデルを読み込んでいます…</p>
             </section>
+            <section class="panel">
+                <div class="panelHead">
+                    <h2>出力</h2>
+                </div>
+                <label class="playbackSetting">切替速度
+                    <input id="flickerFps" type="range" min="2" max="30" value="18" step="1">
+                    <output id="fpsOutput">18 fps</output>
+                </label>
+            </section>
         </aside>
 
         <section class="preview">
@@ -649,7 +659,7 @@
         const EXPRESSION_INDICES = [33, 46, 52, 53, 55, 61, 63, 65, 66, 70, 78, 80, 81, 82, 84, 87, 88, 91, 95, 101, 105, 107, 133, 144, 146, 153, 158, 160, 178, 181, 191, 205, 263, 276, 282, 283, 285, 291, 293, 295, 296, 300, 308, 310, 311, 312, 314, 317, 318, 321, 324, 330, 334, 336, 362, 373, 375, 380, 385, 387, 402, 405, 415, 425];
         const COLORS = { neutral: "#7f8993", emotion: "#ff6948", mesh: "#4877ff", mix: "#151515", onset: "#53a86d", peak: "#8a62d1", settle: "#8a62d1" };
         const $ = (id) => document.getElementById(id);
-        const ids = ["sourceVideo", "captureVideo", "rawCanvas", "rawTimeOutput", "outputCanvas", "movieMeta", "playButton", "fileInput", "clipList", "clipEditor", "sourceBadge", "analysisBadge", "emotionSelect", "sampleInterval", "analyzeButton", "progress", "analysisChart", "onsetInput", "peakInput", "settleInput", "rangeStart", "rangeEnd", "startInput", "endInput", "flickerFps", "fpsOutput", "prepareButton", "status"];
+        const ids = ["sourceVideo", "captureVideo", "rawCanvas", "rawTimeOutput", "outputCanvas", "movieMeta", "playButton", "fileInput", "clipList", "clipEditor", "sourceBadge", "analysisBadge", "emotionSelect", "sampleInterval", "analyzeButton", "analyzeAllButton", "progress", "analysisChart", "onsetInput", "peakInput", "settleInput", "rangeStart", "rangeEnd", "startInput", "endInput", "flickerFps", "fpsOutput", "prepareButton", "status"];
         const el = Object.fromEntries(ids.map((id) => [id, $(id)]));
         const ctx = el.outputCanvas.getContext("2d", { alpha: false });
         const rawContext = el.rawCanvas.getContext("2d", { alpha: false });
@@ -747,6 +757,7 @@
             const loaded = !!selectedClip();
             el.fileInput.disabled = busy;
             el.analyzeButton.disabled = busy || !loaded || !modelsReady;
+            el.analyzeAllButton.disabled = busy || !clips.length || !modelsReady;
             [el.onsetInput, el.peakInput, el.settleInput].forEach((input) => input.disabled = busy || !loaded);
             [el.rangeStart, el.rangeEnd, el.startInput, el.endInput].forEach((input) => input.disabled = busy || !loaded);
             el.prepareButton.disabled = busy || !loaded;
@@ -802,7 +813,7 @@
                 setBusy(false);
             }
             await selectClip(additions[0].id);
-            setStatus(`${additions.length}本を追加しました。素材を選び「個別解析」を押してください`);
+            setStatus(`${additions.length}本を追加しました。個別または一括で解析できます`);
         }
 
         async function selectClip(id) {
@@ -1028,6 +1039,17 @@
                 drawChart();
                 renderClipList();
             }
+        }
+
+        async function analyzeAll() {
+            if (busy || !clips.length || !modelsReady) return;
+            const targets = [...clips];
+            for (const clip of targets) {
+                await selectClip(clip.id);
+                await analyze();
+            }
+            const completed = targets.filter((clip) => clip.boundaries).length;
+            setStatus(`${completed}/${targets.length}本をファイル名に合わせて解析しました`, completed !== targets.length);
         }
 
         function renderBoundaries() {
@@ -1283,6 +1305,7 @@
                 else if (id !== selectedId) selectClip(id);
             });
             el.analyzeButton.addEventListener("click", analyze);
+            el.analyzeAllButton.addEventListener("click", analyzeAll);
             el.playButton.addEventListener("click", togglePlay);
             [el.rangeStart, el.rangeEnd].forEach((input) => input.addEventListener("input", () => {
                 const start = Math.min(num(el.rangeStart.value), num(el.rangeEnd.value) - .02);
