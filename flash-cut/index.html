@@ -742,8 +742,6 @@
         const outputFrameRate = (speed = num(el.flickerFps.value, 20)) => speed <= 30 ? 30 : 60;
         const detectorOptions = new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: .35 });
 
-        let sourceUrl = "";
-        let sourceName = "";
         let clips = [];
         let selectedId = null;
         let nextId = 1;
@@ -762,9 +760,7 @@
         let nextCutAt = 0;
         let currentFrame = -1;
         let flickerPlaying = false;
-        let recordingStartedAt = 0;
         let recordingPlan = null;
-        let exporting = false;
         let rawPreviewRequest = 0;
         let rawPreviewTimer = 0;
 
@@ -836,7 +832,7 @@
 
         function updateControls() {
             const loaded = !!selectedClip();
-            const sourceLocked = busy || !!recordingStartedAt;
+            const sourceLocked = busy || !!recordingPlan;
             el.fileInput.disabled = sourceLocked;
             el.outputResolution.disabled = sourceLocked;
             [el.flickerFps, el.shapeVariation, el.shapeMaxPeriod, el.shapeReachFloor].forEach((input) => input.disabled = busy);
@@ -846,7 +842,7 @@
             [el.rangeStart, el.rangeEnd, el.startInput, el.endInput].forEach((input) => input.disabled = sourceLocked || !loaded);
             el.prepareButton.disabled = sourceLocked || !loaded;
             el.playButton.disabled = busy || !flickerFrames.length;
-            el.recordButton.disabled = recordingStartedAt ? false : exporting || busy || !flickerFrames.length;
+            el.recordButton.disabled = recordingPlan ? false : busy || !flickerFrames.length;
         }
 
         function waitFor(video, event) {
@@ -882,7 +878,8 @@
             const sourceLimit = clips.length
                 ? Math.min(...clips.map((clip) => Math.min(clip.width, clip.height * 9 / 16)))
                 : 2160;
-            const max = Math.max(90, Math.min(2160, Math.floor(sourceLimit / 360) * 360 || Math.floor(sourceLimit / 90) * 90));
+            const rounded = Math.floor(sourceLimit / 360) * 360 || Math.floor(sourceLimit / 90) * 90;
+            const max = clamp(rounded, 90, 2160);
             el.outputResolution.min = Math.min(360, max);
             el.outputResolution.max = max;
             if (num(el.outputResolution.value) > max) el.outputResolution.value = max;
@@ -920,8 +917,6 @@
             clearTimeout(rawPreviewTimer);
             rawPreviewRequest += 1;
             selectedId = id;
-            sourceUrl = clip.url;
-            sourceName = clip.name;
             samples = clip.samples;
             analysisSeries = clip.analysisSeries;
             boundaries = clip.boundaries;
@@ -930,8 +925,8 @@
             el.emotionSelect.value = clip.emotion;
             el.analysisBadge.textContent = clip.samples.length ? (clip.boundaries ? "解析済み" : "境界未検出") : (modelsReady ? "未解析" : "モデル読込中");
             el.analysisBadge.classList.toggle("ready", !!clip.boundaries);
-            el.sourceVideo.src = sourceUrl;
-            el.captureVideo.src = sourceUrl;
+            el.sourceVideo.src = clip.url;
+            el.captureVideo.src = clip.url;
             setBusy(true);
             try {
                 await Promise.all([waitFor(el.sourceVideo, "loadedmetadata"), waitFor(el.captureVideo, "loadedmetadata")]);
@@ -1009,9 +1004,6 @@
             });
             return nearest?.landmarks || null;
         }
-
-        const eyePoseAt = (time) => eyePoseFrom(samples, time);
-        const landmarkShapeAt = (time) => landmarkShapeFrom(samples, time);
 
         const averageVector = (vectors) => vectors.length ? vectors[0].map((_, i) => vectors.reduce((sum, vector) => sum + vector[i], 0) / vectors.length) : null;
         const vectorDistance = (a, b) => !a || !b || a.length !== b.length ? null : Math.sqrt(a.reduce((sum, value, i) => sum + (value - b[i]) ** 2, 0) / a.length);
@@ -1115,7 +1107,7 @@
                 for (let i = 0; i < count; i += 1) {
                     const time = Math.min(i * interval, Math.max(0, el.sourceVideo.duration - .01));
                     el.progress.value = (i + 1) / count;
-                    setStatus(`${sourceName} を解析中 ${i + 1} / ${count}`);
+                    setStatus(`${clip.name} を解析中 ${i + 1} / ${count}`);
                     await seek(el.sourceVideo, time);
                     const frame = analysisFrame();
                     const mesh = faceLandmarker.detect(frame).faceLandmarks?.[0];
@@ -1173,7 +1165,7 @@
         }
 
         function updateBoundaries() {
-            if (!sourceUrl) return;
+            if (!selectedClip()) return;
             const duration = el.sourceVideo.duration;
             const onset = clamp(num(el.onsetInput.value), 0, duration);
             const peak = clamp(num(el.peakInput.value, onset), onset, duration);
@@ -1188,7 +1180,7 @@
         }
 
         function setRange(start, end, invalidate = true) {
-            if (!sourceUrl) return;
+            if (!selectedClip()) return;
             const duration = el.sourceVideo.duration;
             start = clamp(num(start), 0, Math.max(0, duration - .02));
             end = clamp(num(end, duration), start + .02, duration);
@@ -1234,17 +1226,17 @@
                 for (let i = 0; i < count; i += 1) {
                     if (buildId !== frameBuildId) return frames.forEach((frame) => frame.close?.());
                     const time = count === 1 ? start : start + (end - start) * i / (count - 1);
-                    setStatus(`${sourceName} · ${alignsFace ? "顔位置を合わせながら" : ""}コマを準備中 ${i + 1} / ${count}`);
+                    setStatus(`${clip.name} · ${alignsFace ? "顔位置を合わせながら" : ""}コマを準備中 ${i + 1} / ${count}`);
                     el.progress.value = (i + 1) / count;
                     await seek(el.captureVideo, Math.min(time, el.captureVideo.duration - .01));
-                    drawAlignedFrame(renderCtx, el.captureVideo, eyePoseAt(time));
+                    drawAlignedFrame(renderCtx, el.captureVideo, eyePoseFrom(samples, time));
                     if (resizesFrame) {
                         captureCtx.imageSmoothingEnabled = true;
                         captureCtx.imageSmoothingQuality = "high";
                         captureCtx.drawImage(renderCanvas, 0, 0, width, height);
                     }
                     const frame = await createImageBitmap(captureCanvas);
-                    frameShapes.set(frame, landmarkShapeAt(time));
+                    frameShapes.set(frame, landmarkShapeFrom(samples, time));
                     frameMetadata.set(frame, { clipId: clip.id, time });
                     frames.push(frame);
                 }
@@ -1272,10 +1264,14 @@
             context.drawImage(source, (width - cropWidth) / 2, (height - cropHeight) / 2, cropWidth, cropHeight, 0, 0, canvas.width, canvas.height);
         }
 
+        function clearCanvas(context) {
+            context.fillStyle = "#090909";
+            context.fillRect(0, 0, context.canvas.width, context.canvas.height);
+        }
+
         function drawAlignedFrame(context, video, pose) {
             const canvas = context.canvas;
-            context.fillStyle = "#090909";
-            context.fillRect(0, 0, canvas.width, canvas.height);
+            clearCanvas(context);
             if (!pose) return drawCoverOn(context, canvas, video, video.videoWidth, video.videoHeight);
             const left = { x: pose.left.x * video.videoWidth, y: pose.left.y * video.videoHeight };
             const right = { x: pose.right.x * video.videoWidth, y: pose.right.y * video.videoHeight };
@@ -1293,8 +1289,7 @@
         }
 
         function drawCurrentFrame() {
-            ctx.fillStyle = "#090909";
-            ctx.fillRect(0, 0, el.outputCanvas.width, el.outputCanvas.height);
+            clearCanvas(ctx);
             const frame = flickerFrames[currentFrame];
             if (frame) {
                 ctx.imageSmoothingEnabled = true;
@@ -1305,7 +1300,6 @@
 
         async function prepareAllFrames() {
             const width = Math.min(360, num(el.outputResolution.value, 720));
-            const height = width * 16 / 9;
             if (busy || !clips.length) return;
             const originalId = selectedId;
             let completed = 0;
@@ -1327,7 +1321,7 @@
         }
 
         function drawRawSource() {
-            if (!sourceUrl || el.sourceVideo.readyState < 2) return;
+            if (!selectedClip() || el.sourceVideo.readyState < 2) return;
             rawContext.fillStyle = "#090909";
             rawContext.fillRect(0, 0, el.rawCanvas.width, el.rawCanvas.height);
             drawCoverOn(rawContext, el.rawCanvas, el.sourceVideo, el.sourceVideo.videoWidth, el.sourceVideo.videoHeight);
@@ -1335,7 +1329,7 @@
         }
 
         async function previewRawAt(time) {
-            if (!sourceUrl) return;
+            if (!selectedClip()) return;
             const request = ++rawPreviewRequest;
             await seek(el.sourceVideo, clamp(num(time), 0, Math.max(0, el.sourceVideo.duration - .01)));
             if (request === rawPreviewRequest) drawRawSource();
@@ -1357,31 +1351,34 @@
             const phase = (seconds % settings.period) / settings.period;
             return (1 - Math.cos(phase * Math.PI * 2)) / 2 * settings.reach;
         };
-        const shapeAllowanceAt = (now, settings = shapeSettings()) => shapeAllowanceForSeconds((now - shapeCycleStartedAt) / 1000, settings);
         console.assert(allowedCandidateCount(20, .25) === 5, "形状差の候補数が不正です");
         console.assert(shapeSettings(0).period === 0 && shapeSettings(0).reach === 1, "ランダム設定が不正です");
         console.assert(shapeSettings(100, 30, 10).period === 30 && Math.abs(shapeSettings(100, 30, 10).reach - .1) < 1e-9, "最大滑らかさ設定が不正です");
         console.assert(Math.abs(shapeSettings(50, 30, 30).reach - .65) < 1e-9, "形状差下限の計算が不正です");
 
-        function chooseNextFrame(now) {
-            const candidates = flickerFrames.map((_, index) => index).filter((index) => index !== currentFrame);
-            if (!candidates.length) return currentFrame < 0 ? 0 : currentFrame;
+        function chooseFrame(candidates, current, history, shapeAt, seconds) {
+            const alternatives = candidates.map((_, index) => index).filter((index) => index !== current);
+            if (!alternatives.length) return current < 0 ? 0 : current;
             const settings = shapeSettings();
-            if (!settings.smoothness || currentFrame < 0) return randomFrom(candidates);
-            let available = candidates;
-            for (let depth = Math.min(8, frameHistory.length); depth > 0; depth -= 1) {
-                const recent = new Set(frameHistory.slice(-depth));
-                const filtered = candidates.filter((index) => !recent.has(index));
+            if (!settings.smoothness || current < 0) return randomFrom(alternatives);
+            let available = alternatives;
+            for (let depth = Math.min(8, history.length); depth > 0; depth -= 1) {
+                const recent = new Set(history.slice(-depth));
+                const filtered = alternatives.filter((index) => !recent.has(index));
                 if (filtered.length) { available = filtered; break; }
             }
-            const currentShape = frameShapes.get(flickerFrames[currentFrame]);
+            const currentShape = shapeAt(current);
             if (!currentShape) return randomFrom(available);
-            const ranked = available.map((index) => ({
-                index,
-                distance: vectorDistance(currentShape, frameShapes.get(flickerFrames[index]))
-            })).filter((candidate) => Number.isFinite(candidate.distance)).sort((a, b) => a.distance - b.distance);
+            const ranked = available.map((index) => ({ index, distance: vectorDistance(currentShape, shapeAt(index)) }))
+                .filter((candidate) => Number.isFinite(candidate.distance))
+                .sort((a, b) => a.distance - b.distance);
             if (!ranked.length) return randomFrom(available);
-            return randomFrom(ranked.slice(0, allowedCandidateCount(ranked.length, shapeAllowanceAt(now, settings)))).index;
+            return randomFrom(ranked.slice(0, allowedCandidateCount(ranked.length, shapeAllowanceForSeconds(seconds, settings)))).index;
+        }
+
+        function rememberFrame(history, index) {
+            history.push(index);
+            if (history.length > 9) history.shift();
         }
 
         function proxyFrameFor(candidate) {
@@ -1399,18 +1396,28 @@
             if (!flickerFrames.length) return;
             if (currentFrame >= 0 && now < nextCutAt) return;
             if (recordingPlan) {
-                const seconds = Math.max(0, (now - recordingStartedAt) / 1000);
+                const seconds = Math.max(0, (now - recordingPlan.startedAt) / 1000);
                 recordingPlan.frameRate = Math.max(recordingPlan.frameRate, outputFrameRate());
-                recordingPlan.current = chooseExportFrame(recordingPlan.candidates, recordingPlan.current, recordingPlan.history, seconds);
-                recordingPlan.history.push(recordingPlan.current);
-                if (recordingPlan.history.length > 9) recordingPlan.history.shift();
+                recordingPlan.current = chooseFrame(
+                    recordingPlan.candidates,
+                    recordingPlan.current,
+                    recordingPlan.history,
+                    (index) => recordingPlan.candidates[index].shape,
+                    seconds
+                );
+                rememberFrame(recordingPlan.history, recordingPlan.current);
                 const candidate = recordingPlan.candidates[recordingPlan.current];
                 recordingPlan.cuts.push({ time: recordingPlan.cuts.length ? seconds : 0, candidate });
                 currentFrame = proxyFrameFor(candidate);
             } else {
-                currentFrame = chooseNextFrame(now);
-                frameHistory.push(currentFrame);
-                if (frameHistory.length > 9) frameHistory.shift();
+                currentFrame = chooseFrame(
+                    flickerFrames,
+                    currentFrame,
+                    frameHistory,
+                    (index) => frameShapes.get(flickerFrames[index]),
+                    (now - shapeCycleStartedAt) / 1000
+                );
+                rememberFrame(frameHistory, currentFrame);
             }
             nextCutAt = now + 1000 / num(el.flickerFps.value, 18);
             drawCurrentFrame();
@@ -1441,16 +1448,16 @@
 
         function updateTransport() {
             el.playButton.textContent = flickerPlaying ? "停止" : "再生";
-            const recording = !!recordingStartedAt;
+            const recording = !!recordingPlan;
             el.recordButton.textContent = recording ? "録画停止" : "録画";
             el.recordButton.classList.toggle("recording", recording);
         }
 
-        function downloadBlob(blob, extension = "mp4") {
+        function downloadBlob(blob) {
             const url = URL.createObjectURL(blob);
             const link = document.createElement("a");
             link.href = url;
-            link.download = `flash-cut-${new Date().toISOString().replace(/[:.]/g, "-")}.${extension}`;
+            link.download = `flash-cut-${new Date().toISOString().replace(/[:.]/g, "-")}.mp4`;
             document.body.append(link);
             link.click();
             link.remove();
@@ -1472,26 +1479,6 @@
                 }
                 return frames;
             });
-        }
-
-        function chooseExportFrame(candidates, current, history, seconds) {
-            const indices = candidates.map((_, index) => index).filter((index) => index !== current);
-            if (!indices.length) return current < 0 ? 0 : current;
-            const settings = shapeSettings();
-            if (!settings.smoothness || current < 0) return randomFrom(indices);
-            let available = indices;
-            for (let depth = Math.min(8, history.length); depth > 0; depth -= 1) {
-                const recent = new Set(history.slice(-depth));
-                const filtered = indices.filter((index) => !recent.has(index));
-                if (filtered.length) { available = filtered; break; }
-            }
-            const currentShape = candidates[current].shape;
-            if (!currentShape) return randomFrom(available);
-            const ranked = available.map((index) => ({ index, distance: vectorDistance(currentShape, candidates[index].shape) }))
-                .filter((candidate) => Number.isFinite(candidate.distance))
-                .sort((a, b) => a.distance - b.distance);
-            if (!ranked.length) return randomFrom(available);
-            return randomFrom(ranked.slice(0, allowedCandidateCount(ranked.length, shapeAllowanceForSeconds(seconds, settings)))).index;
         }
 
         async function createExportVideos() {
@@ -1530,7 +1517,7 @@
             await output.start();
             const videos = new Map();
             try {
-                if (!plan?.cuts.length) throw new Error("書き出せるコマがありません");
+                if (!plan.cuts.length) throw new Error("書き出せるコマがありません");
                 (await createExportVideos()).forEach((video, id) => videos.set(id, video));
                 const total = Math.max(1, Math.ceil(duration * frameRate));
                 let cutIndex = -1;
@@ -1570,24 +1557,21 @@
         }
 
         async function toggleRecording() {
-            if (!recordingStartedAt) {
+            if (!recordingPlan) {
                 if (busy || !flickerFrames.length) return;
                 const candidates = sourceFrameCandidates();
                 if (!candidates.length) return setStatus("録画対象のコマがありません", true);
-                recordingPlan = { candidates, cuts: [], current: -1, history: [], frameRate: outputFrameRate() };
-                recordingStartedAt = performance.now();
+                recordingPlan = { candidates, cuts: [], current: -1, history: [], frameRate: outputFrameRate(), startedAt: performance.now() };
                 if (!flickerPlaying) togglePlay();
                 setStatus("録画中…停止すると元動画から高品質で書き出します");
                 updateTransport();
                 updateControls();
                 return;
             }
-            const duration = Math.max(.25, (performance.now() - recordingStartedAt) / 1000);
             const plan = recordingPlan;
-            recordingStartedAt = 0;
+            const duration = Math.max(.25, (performance.now() - plan.startedAt) / 1000);
             recordingPlan = null;
             stopFlicker();
-            exporting = true;
             setBusy(true);
             el.progress.hidden = false;
             updateTransport();
@@ -1604,7 +1588,6 @@
                     setStatus(`書き出しに失敗しました: ${error.message}`, true);
                 } else setStatus("書き出しをキャンセルしました");
             } finally {
-                exporting = false;
                 el.progress.hidden = true;
                 setBusy(false);
                 updateTransport();
@@ -1622,9 +1605,7 @@
             const left = 30, right = rect.width - 6, top = 6, bottom = rect.height - 17;
             const elapsed = Math.max(0, (now - shapeCycleStartedAt) / 1000);
             const windowPhase = settings.smoothness ? elapsed % maxPeriod / maxPeriod : 0;
-            const wave = (seconds) => settings.smoothness
-                ? (1 - Math.cos(seconds / settings.period * Math.PI * 2)) / 2 * settings.reach
-                : 1;
+            const wave = (seconds) => shapeAllowanceForSeconds(seconds, settings);
             canvas.width = Math.round(rect.width * dpr);
             canvas.height = Math.round(rect.height * dpr);
             const chart = canvas.getContext("2d");
@@ -1686,7 +1667,7 @@
             const pad = { x: 7, y: 8, bottom: 15 };
             const x = (time) => pad.x + time / duration * (rect.width - pad.x * 2);
             const y = (value) => pad.y + (1 - clamp(value, 0, 1)) * (rect.height - pad.y - pad.bottom);
-            const range = sourceUrl ? currentRange() : { start: 0, end: 0 };
+            const range = selectedClip() ? currentRange() : { start: 0, end: 0 };
             chart.fillStyle = "rgba(255,105,72,.1)";
             chart.fillRect(x(range.start), pad.y, Math.max(0, x(range.end) - x(range.start)), rect.height - pad.y - pad.bottom);
             chart.strokeStyle = "#ece8df";
@@ -1708,7 +1689,7 @@
         }
 
         function removeClip(id) {
-            if (busy || recordingStartedAt) return;
+            if (busy || recordingPlan) return;
             const clip = clips.find((item) => item.id === id);
             if (!clip) return;
             clips = clips.filter((item) => item.id !== id);
@@ -1716,16 +1697,9 @@
             refreshFrames();
             clip.frames.forEach((frame) => frame.close?.());
             URL.revokeObjectURL(clip.url);
-            if (!flickerFrames.length) {
-                stopFlicker();
-                recordingStartedAt = 0;
-                recordingPlan = null;
-                updateTransport();
-            }
+            if (!flickerFrames.length) stopFlicker();
             if (selectedId !== id) return renderClipList();
             selectedId = null;
-            sourceUrl = "";
-            sourceName = "";
             samples = [];
             analysisSeries = [];
             boundaries = null;
@@ -1735,10 +1709,8 @@
             el.captureVideo.removeAttribute("src");
             el.movieMeta.textContent = "動画未選択";
             el.rawTimeOutput.textContent = "0.00s";
-            rawContext.fillStyle = "#090909";
-            rawContext.fillRect(0, 0, el.rawCanvas.width, el.rawCanvas.height);
-            ctx.fillStyle = "#090909";
-            ctx.fillRect(0, 0, el.outputCanvas.width, el.outputCanvas.height);
+            clearCanvas(rawContext);
+            clearCanvas(ctx);
             renderClipList();
             updateControls();
         }
@@ -1790,9 +1762,7 @@
             el.flickerFps.addEventListener("input", () => {
                 el.fpsOutput.textContent = `${el.flickerFps.value} fps`;
             });
-            el.shapeVariation.addEventListener("input", updateShapeControl);
-            el.shapeMaxPeriod.addEventListener("input", updateShapeControl);
-            el.shapeReachFloor.addEventListener("input", updateShapeControl);
+            [el.shapeVariation, el.shapeMaxPeriod, el.shapeReachFloor].forEach((input) => input.addEventListener("input", updateShapeControl));
             el.outputResolution.addEventListener("input", () => {
                 const width = num(el.outputResolution.value, 720);
                 el.resolutionOutput.textContent = `${width} × ${width * 16 / 9}`;
@@ -1813,10 +1783,8 @@
         async function initialize() {
             bindEvents();
             renderClipList();
-            ctx.fillStyle = "#090909";
-            ctx.fillRect(0, 0, el.outputCanvas.width, el.outputCanvas.height);
-            rawContext.fillStyle = "#090909";
-            rawContext.fillRect(0, 0, el.rawCanvas.width, el.rawCanvas.height);
+            clearCanvas(ctx);
+            clearCanvas(rawContext);
             try {
                 await models;
                 modelsReady = true;
@@ -1833,6 +1801,7 @@
         console.assert(Math.abs(crossing([{ time: 0, value: 0 }, { time: 1, value: 1 }], .5, "up", 1, 1) - .5) < 1e-9, "boundary interpolation");
         console.assert(emotionFromFileName("03_angry_take01.mp4") === "angry", "filename emotion detection");
         console.assert(outputFrameRate(30) === 30 && outputFrameRate(31) === 60, "output frame rate selection");
+        console.assert(chooseFrame([{}], -1, [], () => null, 0) === 0, "single frame selection");
         initialize();
     </script>
 </body>
