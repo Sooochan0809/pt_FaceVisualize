@@ -687,9 +687,13 @@
                     <input id="shapeVariation" type="range" min="0" max="100" value="0" step="1">
                     <output id="shapeOutput">ランダム</output>
                 </label>
-                <label class="playbackSetting">最大周期
-                    <input id="shapeMaxPeriod" type="number" min="0.1" max="60" value="4" step="0.1">
-                    <output>秒</output>
+                <label class="playbackSetting">周期上限
+                    <input id="shapeMaxPeriod" type="range" min="15" max="30" value="30" step="5">
+                    <output id="shapeMaxPeriodOutput">30s</output>
+                </label>
+                <label class="playbackSetting">形状差下限
+                    <input id="shapeReachFloor" type="range" min="5" max="50" value="20" step="1">
+                    <output id="shapeReachFloorOutput">20%</output>
                 </label>
             </section>
         </aside>
@@ -716,7 +720,7 @@
         const EXPRESSION_INDICES = [33, 46, 52, 53, 55, 61, 63, 65, 66, 70, 78, 80, 81, 82, 84, 87, 88, 91, 95, 101, 105, 107, 133, 144, 146, 153, 158, 160, 178, 181, 191, 205, 263, 276, 282, 283, 285, 291, 293, 295, 296, 300, 308, 310, 311, 312, 314, 317, 318, 321, 324, 330, 334, 336, 362, 373, 375, 380, 385, 387, 402, 405, 415, 425];
         const COLORS = { neutral: "#7f8993", emotion: "#ff6948", mesh: "#4877ff", mix: "#151515", onset: "#53a86d", peak: "#8a62d1", settle: "#8a62d1" };
         const $ = (id) => document.getElementById(id);
-        const ids = ["sourceVideo", "captureVideo", "rawCanvas", "rawTimeOutput", "outputCanvas", "outputResolution", "resolutionOutput", "shapeVariation", "shapeOutput", "shapeMaxPeriod", "shapePeriodOutput", "shapeReachOutput", "shapeWave", "movieMeta", "playButton", "fileInput", "clipList", "clipEditor", "sourceBadge", "analysisBadge", "emotionSelect", "sampleInterval", "analyzeButton", "analyzeAllButton", "prepareAllButton", "progress", "analysisChart", "onsetInput", "peakInput", "settleInput", "rangeStart", "rangeEnd", "startInput", "endInput", "flickerFps", "fpsOutput", "prepareButton", "status"];
+        const ids = ["sourceVideo", "captureVideo", "rawCanvas", "rawTimeOutput", "outputCanvas", "outputResolution", "resolutionOutput", "shapeVariation", "shapeOutput", "shapeMaxPeriod", "shapeMaxPeriodOutput", "shapeReachFloor", "shapeReachFloorOutput", "shapePeriodOutput", "shapeReachOutput", "shapeWave", "movieMeta", "playButton", "fileInput", "clipList", "clipEditor", "sourceBadge", "analysisBadge", "emotionSelect", "sampleInterval", "analyzeButton", "analyzeAllButton", "prepareAllButton", "progress", "analysisChart", "onsetInput", "peakInput", "settleInput", "rangeStart", "rangeEnd", "startInput", "endInput", "flickerFps", "fpsOutput", "prepareButton", "status"];
         const el = Object.fromEntries(ids.map((id) => [id, $(id)]));
         const ctx = el.outputCanvas.getContext("2d", { alpha: false });
         const rawContext = el.rawCanvas.getContext("2d", { alpha: false });
@@ -1297,9 +1301,9 @@
 
         const randomFrom = (items) => items[Math.floor(Math.random() * items.length)];
         const allowedCandidateCount = (total, allowance) => Math.min(total, Math.max(2, Math.ceil(total * allowance)));
-        const shapeSettings = (value = num(el.shapeVariation.value), maxPeriod = num(el.shapeMaxPeriod.value, 4)) => {
+        const shapeSettings = (value = num(el.shapeVariation.value), maxPeriod = num(el.shapeMaxPeriod.value, 30), reachFloor = num(el.shapeReachFloor.value, 20)) => {
             const smoothness = clamp(value / 100, 0, 1);
-            return { smoothness, period: smoothness * clamp(maxPeriod, .1, 60), reach: 1 - smoothness * .9 };
+            return { smoothness, period: smoothness * clamp(maxPeriod, 15, 30), reach: 1 - smoothness * (1 - clamp(reachFloor, 5, 50) / 100) };
         };
         const shapeAllowanceAt = (now, settings = shapeSettings()) => {
             if (!settings.smoothness) return 1;
@@ -1308,7 +1312,8 @@
         };
         console.assert(allowedCandidateCount(20, .25) === 5, "形状差の候補数が不正です");
         console.assert(shapeSettings(0).period === 0 && shapeSettings(0).reach === 1, "ランダム設定が不正です");
-        console.assert(shapeSettings(100, 4).period === 4 && Math.abs(shapeSettings(100, 4).reach - .1) < 1e-9, "最大滑らかさ設定が不正です");
+        console.assert(shapeSettings(100, 30, 10).period === 30 && Math.abs(shapeSettings(100, 30, 10).reach - .1) < 1e-9, "最大滑らかさ設定が不正です");
+        console.assert(Math.abs(shapeSettings(50, 30, 30).reach - .65) < 1e-9, "形状差下限の計算が不正です");
 
         function chooseNextFrame(now) {
             const candidates = flickerFrames.map((_, index) => index).filter((index) => index !== currentFrame);
@@ -1375,10 +1380,12 @@
             const dpr = window.devicePixelRatio || 1;
             const style = getComputedStyle(document.documentElement);
             const settings = shapeSettings();
-            const left = 6, right = rect.width - 6, top = 6, bottom = rect.height - 6;
-            const phase = settings.period ? ((now - shapeCycleStartedAt) / 1000 % settings.period) / settings.period : 0;
-            const wave = (progress) => settings.smoothness
-                ? (1 - Math.cos(progress * Math.PI * 2)) / 2 * settings.reach
+            const maxPeriod = clamp(num(el.shapeMaxPeriod.value, 30), 15, 30);
+            const left = 30, right = rect.width - 6, top = 6, bottom = rect.height - 17;
+            const elapsed = Math.max(0, (now - shapeCycleStartedAt) / 1000);
+            const windowPhase = settings.smoothness ? elapsed % maxPeriod / maxPeriod : 0;
+            const wave = (seconds) => settings.smoothness
+                ? (1 - Math.cos(seconds / settings.period * Math.PI * 2)) / 2 * settings.reach
                 : 1;
             canvas.width = Math.round(rect.width * dpr);
             canvas.height = Math.round(rect.height * dpr);
@@ -1395,22 +1402,30 @@
             chart.beginPath();
             for (let x = left; x <= right; x += 2) {
                 const progress = (x - left) / (right - left);
-                const y = bottom - wave(progress) * (bottom - top);
+                const y = bottom - wave(progress * maxPeriod) * (bottom - top);
                 x === left ? chart.moveTo(x, y) : chart.lineTo(x, y);
             }
             chart.stroke();
-            const markerX = left + phase * (right - left);
-            const markerY = bottom - wave(phase) * (bottom - top);
+            const markerX = left + windowPhase * (right - left);
+            const markerY = bottom - wave(windowPhase * maxPeriod) * (bottom - top);
             chart.fillStyle = style.getPropertyValue("--accent");
             chart.beginPath();
             chart.arc(markerX, markerY, 4, 0, Math.PI * 2);
             chart.fill();
+            chart.fillStyle = style.getPropertyValue("--muted");
+            chart.font = "10px system-ui";
+            chart.textAlign = "right";
+            chart.fillText("100%", left - 4, top + 4);
+            chart.fillText("0%", left - 4, bottom + 3);
+            chart.fillText(`${maxPeriod}s`, right, bottom + 13);
         }
 
         function updateShapeControl() {
             const value = num(el.shapeVariation.value);
             const settings = shapeSettings(value);
             el.shapeOutput.textContent = value ? `${value}%` : "ランダム";
+            el.shapeMaxPeriodOutput.textContent = `${el.shapeMaxPeriod.value}s`;
+            el.shapeReachFloorOutput.textContent = `${el.shapeReachFloor.value}%`;
             el.shapePeriodOutput.textContent = `${settings.period.toFixed(2)}s`;
             el.shapeReachOutput.textContent = `${Math.round(settings.reach * 100)}%`;
             shapeCycleStartedAt = performance.now();
@@ -1533,10 +1548,7 @@
             });
             el.shapeVariation.addEventListener("input", updateShapeControl);
             el.shapeMaxPeriod.addEventListener("input", updateShapeControl);
-            el.shapeMaxPeriod.addEventListener("change", () => {
-                el.shapeMaxPeriod.value = clamp(num(el.shapeMaxPeriod.value, 4), .1, 60);
-                updateShapeControl();
-            });
+            el.shapeReachFloor.addEventListener("input", updateShapeControl);
             el.outputResolution.addEventListener("input", () => {
                 const width = num(el.outputResolution.value, 720);
                 el.resolutionOutput.textContent = `${width} × ${width * 16 / 9}`;
