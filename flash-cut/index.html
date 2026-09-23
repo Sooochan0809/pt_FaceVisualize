@@ -438,7 +438,7 @@
             margin: 0;
             position: static;
         }
-   
+
 
         .clipEditorDisclosure {
             margin-top: 10px;
@@ -502,12 +502,38 @@
             white-space: nowrap;
         }
 
-        .resolutionSetting {
-            margin-bottom: 12px;
+        .playbackSetting+.playbackSetting {
+            margin-top: 12px;
         }
 
-        #analyzeAllButton {
+        .changeReadout {
+            display: flex;
+            justify-content: space-between;
+            color: var(--muted);
+            font-size: .65rem;
+        }
+
+        .changeReadout {
+            margin-top: 14px;
+        }
+
+        .changeReadout output {
+            margin-left: 5px;
+            color: var(--ink);
+        }
+
+        #shapeWave {
+            display: block;
             width: 100%;
+            height: 82px;
+            margin-top: 8px;
+            margin-bottom: 8px;
+        }
+
+        .batchActions {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 8px;
             margin-bottom: 10px;
         }
 
@@ -577,7 +603,10 @@
                     <h2>素材</h2><span class="badge" id="sourceBadge">0 clips</span>
                 </div>
                 <input id="fileInput" type="file" accept="video/*" multiple hidden>
-                <button id="analyzeAllButton" class="primary" type="button" disabled>すべて解析</button>
+                <div class="batchActions">
+                    <button id="analyzeAllButton" class="primary" type="button" disabled>すべて解析</button>
+                    <button id="prepareAllButton" class="primary" type="button" disabled>すべて切り出し</button>
+                </div>
                 <div class="clipList" id="clipList"></div>
                 <details class="clipEditorDisclosure" id="clipEditor" open hidden>
                     <summary>個別解析・コマ抽出<span class="badge" id="analysisBadge">モデル読込中</span></summary>
@@ -645,6 +674,24 @@
                     <output id="fpsOutput">20 fps</output>
                 </label>
             </section>
+            <section class="panel">
+                <div class="panelHead">
+                    <h2>変化周期</h2>
+                </div>
+                <div class="changeReadout">
+                    <span>周期<output id="shapePeriodOutput">0.00s</output></span>
+                    <span>最大形状差<output id="shapeReachOutput">100%</output></span>
+                </div>
+                <canvas id="shapeWave" aria-label="形状差の変化を示す正弦波"></canvas>
+                <label class="playbackSetting">滑らかさ
+                    <input id="shapeVariation" type="range" min="0" max="100" value="0" step="1">
+                    <output id="shapeOutput">ランダム</output>
+                </label>
+                <label class="playbackSetting">最大周期
+                    <input id="shapeMaxPeriod" type="number" min="0.1" max="60" value="4" step="0.1">
+                    <output>秒</output>
+                </label>
+            </section>
         </aside>
 
         <section class="preview">
@@ -669,7 +716,7 @@
         const EXPRESSION_INDICES = [33, 46, 52, 53, 55, 61, 63, 65, 66, 70, 78, 80, 81, 82, 84, 87, 88, 91, 95, 101, 105, 107, 133, 144, 146, 153, 158, 160, 178, 181, 191, 205, 263, 276, 282, 283, 285, 291, 293, 295, 296, 300, 308, 310, 311, 312, 314, 317, 318, 321, 324, 330, 334, 336, 362, 373, 375, 380, 385, 387, 402, 405, 415, 425];
         const COLORS = { neutral: "#7f8993", emotion: "#ff6948", mesh: "#4877ff", mix: "#151515", onset: "#53a86d", peak: "#8a62d1", settle: "#8a62d1" };
         const $ = (id) => document.getElementById(id);
-        const ids = ["sourceVideo", "captureVideo", "rawCanvas", "rawTimeOutput", "outputCanvas", "outputResolution", "resolutionOutput", "movieMeta", "playButton", "fileInput", "clipList", "clipEditor", "sourceBadge", "analysisBadge", "emotionSelect", "sampleInterval", "analyzeButton", "analyzeAllButton", "progress", "analysisChart", "onsetInput", "peakInput", "settleInput", "rangeStart", "rangeEnd", "startInput", "endInput", "flickerFps", "fpsOutput", "prepareButton", "status"];
+        const ids = ["sourceVideo", "captureVideo", "rawCanvas", "rawTimeOutput", "outputCanvas", "outputResolution", "resolutionOutput", "shapeVariation", "shapeOutput", "shapeMaxPeriod", "shapePeriodOutput", "shapeReachOutput", "shapeWave", "movieMeta", "playButton", "fileInput", "clipList", "clipEditor", "sourceBadge", "analysisBadge", "emotionSelect", "sampleInterval", "analyzeButton", "analyzeAllButton", "prepareAllButton", "progress", "analysisChart", "onsetInput", "peakInput", "settleInput", "rangeStart", "rangeEnd", "startInput", "endInput", "flickerFps", "fpsOutput", "prepareButton", "status"];
         const el = Object.fromEntries(ids.map((id) => [id, $(id)]));
         const ctx = el.outputCanvas.getContext("2d", { alpha: false });
         const rawContext = el.rawCanvas.getContext("2d", { alpha: false });
@@ -691,6 +738,9 @@
         let analysisSeries = [];
         let boundaries = null;
         let flickerFrames = [];
+        const frameShapes = new WeakMap();
+        let frameHistory = [];
+        let shapeCycleStartedAt = performance.now();
         let frameBuildId = 0;
         let animationId = 0;
         let nextCutAt = 0;
@@ -727,6 +777,8 @@
         function refreshFrames() {
             flickerFrames = clips.flatMap((clip) => clip.frames);
             currentFrame = -1;
+            frameHistory = [];
+            shapeCycleStartedAt = performance.now();
             nextCutAt = 0;
         }
 
@@ -769,6 +821,7 @@
             el.outputResolution.disabled = busy;
             el.analyzeButton.disabled = busy || !loaded || !modelsReady;
             el.analyzeAllButton.disabled = busy || !clips.length || !modelsReady;
+            el.prepareAllButton.disabled = busy || !clips.length;
             [el.onsetInput, el.peakInput, el.settleInput].forEach((input) => input.disabled = busy || !loaded);
             [el.rangeStart, el.rangeEnd, el.startInput, el.endInput].forEach((input) => input.disabled = busy || !loaded);
             el.prepareButton.disabled = busy || !loaded;
@@ -913,6 +966,14 @@
             if (!poses.length) return null;
             const averageSide = (side) => poses.reduce((sum, pose) => ({ x: sum.x + pose[side].x / poses.length, y: sum.y + pose[side].y / poses.length }), { x: 0, y: 0 });
             return { left: averageSide("left"), right: averageSide("right") };
+        }
+
+        function landmarkShapeAt(time) {
+            let nearest = null;
+            samples.forEach((sample) => {
+                if (sample.landmarks && (!nearest || Math.abs(sample.time - time) < Math.abs(nearest.time - time))) nearest = sample;
+            });
+            return nearest?.landmarks || null;
         }
 
         const averageVector = (vectors) => vectors.length ? vectors[0].map((_, i) => vectors.reduce((sum, vector) => sum + vector[i], 0) / vectors.length) : null;
@@ -1133,7 +1194,9 @@
                     el.progress.value = (i + 1) / count;
                     await seek(el.captureVideo, Math.min(time, el.captureVideo.duration - .01));
                     drawAlignedFrame(captureCtx, el.captureVideo, eyePoseAt(time));
-                    frames.push(await createImageBitmap(captureCanvas));
+                    const frame = await createImageBitmap(captureCanvas);
+                    frameShapes.set(frame, landmarkShapeAt(time));
+                    frames.push(frame);
                 }
                 if (buildId !== frameBuildId) return frames.forEach((frame) => frame.close?.());
                 const oldFrames = clip.frames;
@@ -1189,11 +1252,10 @@
             if (frame) drawCover(frame, frame.width, frame.height);
         }
 
-        async function updateOutputResolution() {
+        async function prepareAllFrames() {
             const width = num(el.outputResolution.value, 720);
             const height = width * 16 / 9;
-            el.resolutionOutput.textContent = `${width} × ${height}`;
-            if (busy || !clips.length) return void setStatus(`切り出すコマの解像度を ${width}×${height} に設定しました`);
+            if (busy || !clips.length) return;
             const originalId = selectedId;
             let completed = 0;
             for (const clip of [...clips]) {
@@ -1202,7 +1264,15 @@
                 if (clip.frames[0]?.width === width) completed += 1;
             }
             if (originalId !== selectedId) await selectClip(originalId);
-            setStatus(`${completed}/${clips.length}本を ${width}×${height} で再切り出ししました`, completed !== clips.length);
+            setStatus(`${completed}/${clips.length}本を ${width}×${height} で切り出しました`, completed !== clips.length);
+        }
+
+        async function updateOutputResolution() {
+            const width = num(el.outputResolution.value, 720);
+            const height = width * 16 / 9;
+            el.resolutionOutput.textContent = `${width} × ${height}`;
+            if (clips.length) await prepareAllFrames();
+            else setStatus(`切り出すコマの解像度を ${width}×${height} に設定しました`);
         }
 
         function drawRawSource() {
@@ -1225,18 +1295,55 @@
             rawPreviewTimer = setTimeout(() => previewRawAt(time).catch(() => { }), 35);
         }
 
+        const randomFrom = (items) => items[Math.floor(Math.random() * items.length)];
+        const allowedCandidateCount = (total, allowance) => Math.min(total, Math.max(2, Math.ceil(total * allowance)));
+        const shapeSettings = (value = num(el.shapeVariation.value), maxPeriod = num(el.shapeMaxPeriod.value, 4)) => {
+            const smoothness = clamp(value / 100, 0, 1);
+            return { smoothness, period: smoothness * clamp(maxPeriod, .1, 60), reach: 1 - smoothness * .9 };
+        };
+        const shapeAllowanceAt = (now, settings = shapeSettings()) => {
+            if (!settings.smoothness) return 1;
+            const phase = ((now - shapeCycleStartedAt) / 1000 % settings.period) / settings.period;
+            return (1 - Math.cos(phase * Math.PI * 2)) / 2 * settings.reach;
+        };
+        console.assert(allowedCandidateCount(20, .25) === 5, "形状差の候補数が不正です");
+        console.assert(shapeSettings(0).period === 0 && shapeSettings(0).reach === 1, "ランダム設定が不正です");
+        console.assert(shapeSettings(100, 4).period === 4 && Math.abs(shapeSettings(100, 4).reach - .1) < 1e-9, "最大滑らかさ設定が不正です");
+
+        function chooseNextFrame(now) {
+            const candidates = flickerFrames.map((_, index) => index).filter((index) => index !== currentFrame);
+            if (!candidates.length) return currentFrame < 0 ? 0 : currentFrame;
+            const settings = shapeSettings();
+            if (!settings.smoothness || currentFrame < 0) return randomFrom(candidates);
+            let available = candidates;
+            for (let depth = Math.min(8, frameHistory.length); depth > 0; depth -= 1) {
+                const recent = new Set(frameHistory.slice(-depth));
+                const filtered = candidates.filter((index) => !recent.has(index));
+                if (filtered.length) { available = filtered; break; }
+            }
+            const currentShape = frameShapes.get(flickerFrames[currentFrame]);
+            if (!currentShape) return randomFrom(available);
+            const ranked = available.map((index) => ({
+                index,
+                distance: vectorDistance(currentShape, frameShapes.get(flickerFrames[index]))
+            })).filter((candidate) => Number.isFinite(candidate.distance)).sort((a, b) => a.distance - b.distance);
+            if (!ranked.length) return randomFrom(available);
+            return randomFrom(ranked.slice(0, allowedCandidateCount(ranked.length, shapeAllowanceAt(now, settings)))).index;
+        }
+
         function drawFlicker(now) {
             if (!flickerFrames.length) return;
             if (currentFrame >= 0 && now < nextCutAt) return;
-            let next = Math.floor(Math.random() * flickerFrames.length);
-            if (flickerFrames.length > 1 && next === currentFrame) next = (next + 1) % flickerFrames.length;
-            currentFrame = next;
+            currentFrame = chooseNextFrame(now);
+            frameHistory.push(currentFrame);
+            if (frameHistory.length > 9) frameHistory.shift();
             nextCutAt = now + 1000 / num(el.flickerFps.value, 18);
             drawCurrentFrame();
         }
 
         function tick(now) {
             drawFlicker(now);
+            drawShapeWave(now);
             if (flickerPlaying) animationId = requestAnimationFrame(tick);
         }
 
@@ -1251,6 +1358,7 @@
             if (flickerPlaying) return stopFlicker();
             if (busy) return;
             flickerPlaying = true;
+            shapeCycleStartedAt = performance.now();
             nextCutAt = 0;
             updateTransport();
             animationId = requestAnimationFrame(tick);
@@ -1258,6 +1366,57 @@
 
         function updateTransport() {
             el.playButton.textContent = flickerPlaying ? "停止" : "再生";
+        }
+
+        function drawShapeWave(now = performance.now()) {
+            const canvas = el.shapeWave;
+            const rect = canvas.getBoundingClientRect();
+            if (!rect.width) return;
+            const dpr = window.devicePixelRatio || 1;
+            const style = getComputedStyle(document.documentElement);
+            const settings = shapeSettings();
+            const left = 6, right = rect.width - 6, top = 6, bottom = rect.height - 6;
+            const phase = settings.period ? ((now - shapeCycleStartedAt) / 1000 % settings.period) / settings.period : 0;
+            const wave = (progress) => settings.smoothness
+                ? (1 - Math.cos(progress * Math.PI * 2)) / 2 * settings.reach
+                : 1;
+            canvas.width = Math.round(rect.width * dpr);
+            canvas.height = Math.round(rect.height * dpr);
+            const chart = canvas.getContext("2d");
+            chart.setTransform(dpr, 0, 0, dpr, 0, 0);
+            chart.clearRect(0, 0, rect.width, rect.height);
+            chart.strokeStyle = style.getPropertyValue("--line");
+            chart.beginPath();
+            chart.moveTo(left, bottom);
+            chart.lineTo(right, bottom);
+            chart.stroke();
+            chart.strokeStyle = style.getPropertyValue("--accent");
+            chart.lineWidth = 2;
+            chart.beginPath();
+            for (let x = left; x <= right; x += 2) {
+                const progress = (x - left) / (right - left);
+                const y = bottom - wave(progress) * (bottom - top);
+                x === left ? chart.moveTo(x, y) : chart.lineTo(x, y);
+            }
+            chart.stroke();
+            const markerX = left + phase * (right - left);
+            const markerY = bottom - wave(phase) * (bottom - top);
+            chart.fillStyle = style.getPropertyValue("--accent");
+            chart.beginPath();
+            chart.arc(markerX, markerY, 4, 0, Math.PI * 2);
+            chart.fill();
+        }
+
+        function updateShapeControl() {
+            const value = num(el.shapeVariation.value);
+            const settings = shapeSettings(value);
+            el.shapeOutput.textContent = value ? `${value}%` : "ランダム";
+            el.shapePeriodOutput.textContent = `${settings.period.toFixed(2)}s`;
+            el.shapeReachOutput.textContent = `${Math.round(settings.reach * 100)}%`;
+            shapeCycleStartedAt = performance.now();
+            frameHistory = [];
+            nextCutAt = 0;
+            drawShapeWave(shapeCycleStartedAt);
         }
 
         function drawChart() {
@@ -1339,6 +1498,7 @@
             });
             el.analyzeButton.addEventListener("click", analyze);
             el.analyzeAllButton.addEventListener("click", analyzeAll);
+            el.prepareAllButton.addEventListener("click", prepareAllFrames);
             el.playButton.addEventListener("click", togglePlay);
             [el.rangeStart, el.rangeEnd].forEach((input) => input.addEventListener("input", () => {
                 const start = Math.min(num(el.rangeStart.value), num(el.rangeEnd.value) - .02);
@@ -1371,6 +1531,12 @@
             el.flickerFps.addEventListener("input", () => {
                 el.fpsOutput.textContent = `${el.flickerFps.value} fps`;
             });
+            el.shapeVariation.addEventListener("input", updateShapeControl);
+            el.shapeMaxPeriod.addEventListener("input", updateShapeControl);
+            el.shapeMaxPeriod.addEventListener("change", () => {
+                el.shapeMaxPeriod.value = clamp(num(el.shapeMaxPeriod.value, 4), .1, 60);
+                updateShapeControl();
+            });
             el.outputResolution.addEventListener("input", () => {
                 const width = num(el.outputResolution.value, 720);
                 el.resolutionOutput.textContent = `${width} × ${width * 16 / 9}`;
@@ -1378,6 +1544,8 @@
             el.outputResolution.addEventListener("change", updateOutputResolution);
             el.prepareButton.addEventListener("click", prepareFrames);
             new ResizeObserver(drawChart).observe(el.analysisChart);
+            new ResizeObserver(() => drawShapeWave()).observe(el.shapeWave);
+            updateShapeControl();
             window.addEventListener("beforeunload", () => clips.forEach((clip) => {
                 URL.revokeObjectURL(clip.url);
                 clip.frames.forEach((frame) => frame.close?.());
