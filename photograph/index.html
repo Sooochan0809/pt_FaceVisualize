@@ -159,7 +159,6 @@
 
         #emotionValue {
             justify-self: end;
-            text-align: right;
         }
 
         .recordButton {
@@ -247,9 +246,9 @@
         const shutterAudio = new Audio("shutter.mp3");
         const emotionCanvas = document.createElement("canvas");
         const emotionContext = emotionCanvas.getContext("2d");
+        const MODEL_URL = "../modules/faceAPI/models";
         const wait = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
         const stopStream = (stream) => stream?.getTracks().forEach((track) => track.stop());
-        let detectOptions;
         let statusFrameCallback = 0;
 
         function downloadRecording(blob) {
@@ -317,7 +316,7 @@
             let frameCallback;
 
             const drawFrame = () => {
-                context.drawImage(video, 0, 0, video.videoWidth, video.videoHeight);
+                context.drawImage(video, 0, 0);
                 canvasTrack.requestFrame();
                 frameCallback = video.requestVideoFrameCallback(drawFrame);
             };
@@ -357,9 +356,9 @@
             }
         }
 
-        async function detectEmotion() {
+        async function detectEmotion(detectOptions) {
             try {
-                emotionContext.drawImage(video, 0, 0, video.videoWidth, video.videoHeight);
+                emotionContext.drawImage(video, 0, 0);
                 const result = await faceapi.detectSingleFace(emotionCanvas, detectOptions).withFaceExpressions();
                 const value = result?.expressions[emotionSelect.value] || 0;
                 emotionMeter.value = value;
@@ -367,17 +366,16 @@
             } catch {
                 emotionValue.textContent = "エラー";
             }
-            setTimeout(detectEmotion, 200);
+            setTimeout(() => detectEmotion(detectOptions), 200);
         }
 
         async function startEmotionDetection() {
             try {
                 await Promise.all([
-                    faceapi.nets.tinyFaceDetector.loadFromUri("../modules/faceAPI/models"),
-                    faceapi.nets.faceExpressionNet.loadFromUri("../modules/faceAPI/models")
+                    faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
+                    faceapi.nets.faceExpressionNet.loadFromUri(MODEL_URL)
                 ]);
-                detectOptions = new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.45 });
-                detectEmotion();
+                detectEmotion(new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.45 }));
             } catch {
                 emotionValue.textContent = "読込失敗";
             }
@@ -418,7 +416,6 @@
                 countdown.hidden = true;
                 await wait(2000);
                 blink.hidden = false;
-                shutterAudio.currentTime = 0;
                 shutterAudio.play().catch(() => { });
                 await wait(3000);
                 if (recorder.state === "recording") recorder.stop();
