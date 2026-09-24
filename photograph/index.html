@@ -269,6 +269,8 @@
         const countdown = $("countdown");
         const blink = $("blink");
         const shutterAudio = new Audio("shutter.mp3");
+        const piAudio = new Audio("pi.mp3");
+        piAudio.loop = true;
         const emotionCanvas = document.createElement("canvas");
         const emotionContext = emotionCanvas.getContext("2d");
         const MODEL_URL = "../modules/faceAPI/models";
@@ -485,8 +487,15 @@
                 const value = result?.expressions[emotionSelect.value] || 0;
                 emotionMeter.value = value;
                 emotionValue.textContent = result ? value.toFixed(3) : "--";
+                if (value >= 0.8 && piAudio.paused) piAudio.play().catch(() => { });
+                if (value < 0.8 && !piAudio.paused) {
+                    piAudio.pause();
+                    piAudio.currentTime = 0;
+                }
             } catch {
                 emotionValue.textContent = "エラー";
+                piAudio.pause();
+                piAudio.currentTime = 0;
             }
             setTimeout(() => detectEmotion(detectOptions), 200);
         }
