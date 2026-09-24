@@ -5,6 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Photograph</title>
+    <script defer src="../modules/faceAPI/face-api.min.js"></script>
     <style>
         body {
             margin: 0;
@@ -114,6 +115,53 @@
             cursor: pointer;
         }
 
+        .emotionPanel {
+            position: absolute;
+            left: 50%;
+            bottom: 75%;
+            transform: translateX(-50%);
+            z-index: 2;
+            box-sizing: border-box;
+            width: min(50%, 640px);
+            display: grid;
+            grid-template-columns: minmax(0, 0.3fr) minmax(0, 1.2fr);
+            gap: 12px;
+            padding: 16px;
+            border-radius: 12px;
+            background: #ffffff70;
+        }
+
+        .emotionPanel select {
+            min-width: 0;
+            padding: 12px;
+            border: 0;
+            border-radius: 8px;
+            font: inherit;
+            font-size: 20px;
+        }
+
+        .emotionResult {
+            min-width: 0;
+            display: grid;
+            grid-template-columns: 1fr 32px;
+            align-items: center;
+            gap: 12px;
+            color: #000000;
+            font-size: 16px;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .emotionResult meter {
+            width: 90%;
+            height: 28px;
+            justify-self: center;
+        }
+
+        #emotionValue {
+            justify-self: end;
+            text-align: right;
+        }
+
         .recordButton {
             position: absolute;
             left: 50%;
@@ -167,6 +215,20 @@
             <button type="button" data-src="../training/samplevideo/05_驚き_100.mov">驚き</button>
             <button type="button" data-src="../training/samplevideo/06_嫌悪_99.mov">嫌悪</button>
         </nav>
+        <section class="emotionPanel" aria-label="感情推定">
+            <select id="emotionSelect" aria-label="測定する感情">
+                <option value="happy">喜び</option>
+                <option value="sad">悲しみ</option>
+                <option value="angry">怒り</option>
+                <option value="fearful">恐れ</option>
+                <option value="surprised">驚き</option>
+                <option value="disgusted">嫌悪</option>
+            </select>
+            <div class="emotionResult">
+                <meter id="emotionMeter" min="0" max="1" value="0"></meter>
+                <span id="emotionValue">読込中</span>
+            </div>
+        </section>
         <button id="recordButton" class="recordButton" type="button">録画</button>
         <output id="status">カメラ起動中...</output>
     </main>
@@ -176,12 +238,18 @@
         const video = $("video");
         const sampleVideo = $("sampleVideo");
         const status = $("status");
+        const emotionSelect = $("emotionSelect");
+        const emotionMeter = $("emotionMeter");
+        const emotionValue = $("emotionValue");
         const recordButton = $("recordButton");
         const countdown = $("countdown");
         const blink = $("blink");
         const shutterAudio = new Audio("shutter.mp3");
+        const emotionCanvas = document.createElement("canvas");
+        const emotionContext = emotionCanvas.getContext("2d");
         const wait = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
         const stopStream = (stream) => stream?.getTracks().forEach((track) => track.stop());
+        let detectOptions;
         let statusFrameCallback = 0;
 
         function downloadRecording(blob) {
@@ -277,11 +345,41 @@
                     audio: false
                 });
                 await video.play();
+                const scale = 224 / video.videoHeight;
+                emotionCanvas.width = 224;
+                emotionCanvas.height = Math.round(video.videoWidth * scale);
+                emotionContext.setTransform(0, scale, scale, 0, 0, 0);
                 const capabilities = video.srcObject.getVideoTracks()[0].getCapabilities?.() || {};
                 const max = (name) => Math.round(capabilities[name]?.max) || "-";
                 measureStatus(`最大: ${max("width")}x${max("height")} / ${max("frameRate")}fps`);
             } catch (error) {
                 status.textContent = `カメラを開始できません: ${error.message}`;
+            }
+        }
+
+        async function detectEmotion() {
+            try {
+                emotionContext.drawImage(video, 0, 0, video.videoWidth, video.videoHeight);
+                const result = await faceapi.detectSingleFace(emotionCanvas, detectOptions).withFaceExpressions();
+                const value = result?.expressions[emotionSelect.value] || 0;
+                emotionMeter.value = value;
+                emotionValue.textContent = result ? value.toFixed(3) : "--";
+            } catch {
+                emotionValue.textContent = "エラー";
+            }
+            setTimeout(detectEmotion, 200);
+        }
+
+        async function startEmotionDetection() {
+            try {
+                await Promise.all([
+                    faceapi.nets.tinyFaceDetector.loadFromUri("../modules/faceAPI/models"),
+                    faceapi.nets.faceExpressionNet.loadFromUri("../modules/faceAPI/models")
+                ]);
+                detectOptions = new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.45 });
+                detectEmotion();
+            } catch {
+                emotionValue.textContent = "読込失敗";
             }
         }
 
@@ -352,6 +450,7 @@
             if (statusFrameCallback) video.cancelVideoFrameCallback(statusFrameCallback);
             stopStream(video.srcObject);
         });
+        window.addEventListener("load", startEmotionDetection);
         startCamera();
     </script>
 </body>
