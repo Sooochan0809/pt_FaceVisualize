@@ -286,10 +286,11 @@
             const extension = blob.type.includes("mp4") ? "mp4" : "webm";
             const now = new Date();
             const pad = (number) => String(number).padStart(2, "0");
+            const emotion = emotionSelect.value;
             const url = URL.createObjectURL(blob);
             const link = document.createElement("a");
             link.href = url;
-            link.download = `rec_${now.getFullYear()}-${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}.${extension}`;
+            link.download = `${emotion}_${pad(now.getMonth() + 1)}${pad(now.getDate())}.${extension}`;
             document.body.appendChild(link);
             link.click();
             link.remove();
