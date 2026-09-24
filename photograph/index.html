@@ -386,6 +386,39 @@
         }
 
         function createRecordingStream() {
+            if (typeof MediaStreamTrackProcessor === "function" && typeof MediaStreamTrackGenerator === "function") {
+                const sourceTrack = video.srcObject.getVideoTracks()[0].clone();
+                const processor = new MediaStreamTrackProcessor({ track: sourceTrack });
+                const generator = new MediaStreamTrackGenerator({ kind: "video" });
+                const { width, height } = getRecordingSize();
+                const canvas = document.createElement("canvas");
+                canvas.width = width;
+                canvas.height = height;
+                const context = canvas.getContext("2d", { alpha: false });
+                context.setTransform(0, 1, 1, 0, 0, 0);
+
+                processor.readable.pipeThrough(new TransformStream({
+                    transform(frame, controller) {
+                        try {
+                            context.drawImage(frame, 0, 0);
+                            const options = { timestamp: frame.timestamp };
+                            if (frame.duration !== null) options.duration = frame.duration;
+                            controller.enqueue(new VideoFrame(canvas, options));
+                        } finally {
+                            frame.close();
+                        }
+                    }
+                })).pipeTo(generator.writable).catch(() => { });
+
+                return {
+                    stream: new MediaStream([generator]),
+                    stop: () => {
+                        sourceTrack.stop();
+                        generator.stop();
+                    }
+                };
+            }
+
             if (typeof video.requestVideoFrameCallback !== "function") {
                 throw new Error("このブラウザは実フレーム同期録画に対応していません");
             }
@@ -393,7 +426,7 @@
             const canvas = document.createElement("canvas");
             canvas.width = width;
             canvas.height = height;
-            const context = canvas.getContext("2d");
+            const context = canvas.getContext("2d", { alpha: false });
             context.setTransform(0, 1, 1, 0, 0, 0);
             const stream = canvas.captureStream(0);
             const canvasTrack = stream.getVideoTracks()[0];
