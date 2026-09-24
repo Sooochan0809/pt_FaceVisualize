@@ -288,11 +288,10 @@
             const extension = blob.type.includes("mp4") ? "mp4" : "webm";
             const now = new Date();
             const pad = (number) => String(number).padStart(2, "0");
-            const emotion = emotionSelect.value;
             const url = URL.createObjectURL(blob);
             const link = document.createElement("a");
             link.href = url;
-            link.download = `${emotion}_${pad(now.getMonth() + 1)}${pad(now.getDate())}.${extension}`;
+            link.download = `${emotionSelect.value}_${pad(now.getMonth() + 1)}${pad(now.getDate())}.${extension}`;
             document.body.appendChild(link);
             link.click();
             link.remove();
@@ -337,6 +336,14 @@
             emotionContext.setTransform(0, scale, scale, 0, 0, 0);
         }
 
+        function updatePiAudio(active) {
+            if (active && piAudio.paused) piAudio.play().catch(() => { });
+            else if (!active) {
+                piAudio.pause();
+                piAudio.currentTime = 0;
+            }
+        }
+
         function modeConstraints(mode, nativeOnly) {
             const [width, height, frameRate] = mode;
             return {
@@ -347,11 +354,23 @@
             };
         }
 
+        function currentMode(track) {
+            const { width, height, frameRate } = track.getSettings();
+            return [width, height, Math.round(frameRate)];
+        }
+
+        function createRecordingCanvas() {
+            const canvas = document.createElement("canvas");
+            Object.assign(canvas, getRecordingSize());
+            const context = canvas.getContext("2d", { alpha: false });
+            context.setTransform(0, 1, 1, 0, 0, 0);
+            return { canvas, context };
+        }
+
         async function detectCameraModes(track) {
             const capabilities = track.getCapabilities?.() || {};
             const nativeOnly = capabilities.resizeMode?.includes("none");
-            const initial = track.getSettings();
-            const initialMode = [initial.width, initial.height, Math.round(initial.frameRate)];
+            const initialMode = currentMode(track);
             const supported = new Map();
             cameraMode.disabled = true;
             cameraMode.innerHTML = "<option>画質検出中...</option>";
@@ -374,31 +393,20 @@
                 await track.applyConstraints(modeConstraints(initialMode, nativeOnly));
             } catch { }
 
-            const current = track.getSettings();
-            const currentMode = [current.width, current.height, Math.round(current.frameRate)];
-            supported.set(currentMode.join(), currentMode);
+            const selectedMode = currentMode(track);
+            supported.set(selectedMode.join(), selectedMode);
             const modes = [...supported.values()].sort((a, b) => b[0] * b[1] - a[0] * a[1] || b[2] - a[2]);
-            cameraMode.replaceChildren(...modes.map((mode) => {
-                const option = document.createElement("option");
-                option.value = mode.join();
-                option.textContent = `${mode[0]}x${mode[1]} / ${mode[2]}fps`;
-                return option;
-            }));
-            cameraMode.value = currentMode.join();
+            cameraMode.replaceChildren(...modes.map((mode) => new Option(`${mode[0]}x${mode[1]} / ${mode[2]}fps`, mode.join())));
+            cameraMode.value = selectedMode.join();
             cameraMode.disabled = false;
         }
 
         function createRecordingStream() {
+            const { canvas, context } = createRecordingCanvas();
             if (typeof MediaStreamTrackProcessor === "function" && typeof MediaStreamTrackGenerator === "function") {
                 const sourceTrack = video.srcObject.getVideoTracks()[0].clone();
                 const processor = new MediaStreamTrackProcessor({ track: sourceTrack });
                 const generator = new MediaStreamTrackGenerator({ kind: "video" });
-                const { width, height } = getRecordingSize();
-                const canvas = document.createElement("canvas");
-                canvas.width = width;
-                canvas.height = height;
-                const context = canvas.getContext("2d", { alpha: false });
-                context.setTransform(0, 1, 1, 0, 0, 0);
 
                 processor.readable.pipeThrough(new TransformStream({
                     transform(frame, controller) {
@@ -425,23 +433,11 @@
             if (typeof video.requestVideoFrameCallback !== "function") {
                 throw new Error("このブラウザは実フレーム同期録画に対応していません");
             }
-            const { width, height } = getRecordingSize();
-            const canvas = document.createElement("canvas");
-            canvas.width = width;
-            canvas.height = height;
-            const context = canvas.getContext("2d", { alpha: false });
-            context.setTransform(0, 1, 1, 0, 0, 0);
-            const stream = canvas.captureStream(0);
-            const canvasTrack = stream.getVideoTracks()[0];
-            if (typeof canvasTrack.requestFrame !== "function") {
-                stopStream(stream);
-                throw new Error("このブラウザは実フレーム同期録画に対応していません");
-            }
+            const stream = canvas.captureStream();
             let frameCallback;
 
             const drawFrame = () => {
                 context.drawImage(video, 0, 0);
-                canvasTrack.requestFrame();
                 frameCallback = video.requestVideoFrameCallback(drawFrame);
             };
 
@@ -487,15 +483,10 @@
                 const value = result?.expressions[emotionSelect.value] || 0;
                 emotionMeter.value = value;
                 emotionValue.textContent = result ? value.toFixed(3) : "--";
-                if (value >= 0.8 && piAudio.paused) piAudio.play().catch(() => { });
-                if (value < 0.8 && !piAudio.paused) {
-                    piAudio.pause();
-                    piAudio.currentTime = 0;
-                }
+                updatePiAudio(value >= 0.8);
             } catch {
                 emotionValue.textContent = "エラー";
-                piAudio.pause();
-                piAudio.currentTime = 0;
+                updatePiAudio(false);
             }
             setTimeout(() => detectEmotion(detectOptions), 200);
         }
@@ -528,14 +519,7 @@
                 recorder.addEventListener("dataavailable", (event) => {
                     if (event.data.size) chunks.push(event.data);
                 });
-                const stopped = new Promise((resolve) => {
-                    recorder.addEventListener("stop", () => {
-                        recording.stop();
-                        downloadRecording(new Blob(chunks, { type: recorder.mimeType }));
-                        recordButton.textContent = "録画";
-                        resolve();
-                    }, { once: true });
-                });
+                const stopped = new Promise((resolve) => recorder.addEventListener("stop", resolve, { once: true }));
                 recorder.start();
                 recordButton.textContent = "録画中";
 
@@ -551,6 +535,9 @@
                 await wait(3000);
                 if (recorder.state === "recording") recorder.stop();
                 await stopped;
+                recording.stop();
+                downloadRecording(new Blob(chunks, { type: recorder.mimeType }));
+                recordButton.textContent = "録画";
             } catch (error) {
                 statusText.textContent = `録画を開始できません: ${error.message}`;
             } finally {
@@ -573,8 +560,7 @@
                 if (statusFrameCallback) video.cancelVideoFrameCallback(statusFrameCallback);
                 measureStatus();
             } catch (error) {
-                const current = track.getSettings();
-                cameraMode.value = [current.width, current.height, Math.round(current.frameRate)].join();
+                cameraMode.value = currentMode(track).join();
                 statusText.textContent = `画質を変更できません: ${error.message}`;
             } finally {
                 cameraMode.disabled = false;
