@@ -102,6 +102,16 @@
             cursor: pointer;
         }
 
+        #cameraMode {
+            padding: 8px 10px;
+            border: 0;
+            border-radius: 8px;
+            background: #343a40;
+            color: inherit;
+            font: inherit;
+            cursor: pointer;
+        }
+
         .sampleControls {
             position: absolute;
             top: 32px;
@@ -193,7 +203,14 @@
 
         output {
             bottom: 32px;
-            white-space: pre-line;
+            display: grid;
+            gap: 8px;
+        }
+
+        output label {
+            display: flex;
+            align-items: center;
+            gap: 8px;
         }
     </style>
 </head>
@@ -229,14 +246,22 @@
             </div>
         </section>
         <button id="recordButton" class="recordButton" type="button">録画</button>
-        <output id="status">カメラ起動中...</output>
+        <output id="status" aria-live="polite">
+            <label>設定:
+                <select id="cameraMode" aria-label="Webcam画質" disabled>
+                    <option>画質検出中...</option>
+                </select>
+            </label>
+            <span id="statusText">カメラ起動中...</span>
+        </output>
     </main>
 
     <script>
         const $ = (id) => document.getElementById(id);
         const video = $("video");
         const sampleVideo = $("sampleVideo");
-        const status = $("status");
+        const statusText = $("statusText");
+        const cameraMode = $("cameraMode");
         const emotionSelect = $("emotionSelect");
         const emotionMeter = $("emotionMeter");
         const emotionValue = $("emotionValue");
@@ -249,6 +274,12 @@
         const MODEL_URL = "../modules/faceAPI/models";
         const wait = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
         const stopStream = (stream) => stream?.getTracks().forEach((track) => track.stop());
+        const cameraModes = [
+            [3840, 2160, 60], [3840, 2160, 30],
+            [2560, 1440, 60], [2560, 1440, 30],
+            [1920, 1080, 60], [1920, 1080, 30],
+            [1280, 720, 90], [1280, 720, 60], [1280, 720, 30]
+        ];
         let statusFrameCallback = 0;
 
         function downloadRecording(blob) {
@@ -272,29 +303,86 @@
             };
         }
 
-        function measureStatus(maximum) {
+        function measureStatus() {
             const size = getRecordingSize();
-            status.textContent = `${maximum}\n実測: ${size.width}x${size.height} / 計測中`;
+            statusText.textContent = `実測: ${size.width}x${size.height} / 計測中`;
             let startedAt;
             let frames = 0;
 
             const measure = (now) => {
+                if (!statusText.textContent.startsWith("実測:")) return;
                 if (startedAt !== undefined) frames += 1;
                 else startedAt = now;
 
                 const elapsed = now - startedAt;
-                if (elapsed < 1000) {
-                    statusFrameCallback = video.requestVideoFrameCallback(measure);
-                    return;
+                if (elapsed >= 1000) {
+                    const current = getRecordingSize();
+                    statusText.textContent = `実測: ${current.width}x${current.height} / ${Math.round(frames * 1000 / elapsed)}fps`;
+                    startedAt = now;
+                    frames = 0;
                 }
-                const current = getRecordingSize();
-                if (status.textContent.startsWith("最大:")) {
-                    status.textContent = `${maximum}\n実測: ${current.width}x${current.height} / ${Math.round(frames * 1000 / elapsed)}fps`;
-                }
-                statusFrameCallback = 0;
+                statusFrameCallback = video.requestVideoFrameCallback(measure);
             };
 
             statusFrameCallback = video.requestVideoFrameCallback(measure);
+        }
+
+        function updateEmotionCanvas() {
+            const scale = 224 / video.videoHeight;
+            emotionCanvas.width = 224;
+            emotionCanvas.height = Math.round(video.videoWidth * scale);
+            emotionContext.setTransform(0, scale, scale, 0, 0, 0);
+        }
+
+        function modeConstraints(mode, nativeOnly) {
+            const [width, height, frameRate] = mode;
+            return {
+                width: { exact: width },
+                height: { exact: height },
+                frameRate: { exact: frameRate },
+                ...(nativeOnly && { resizeMode: { exact: "none" } })
+            };
+        }
+
+        async function detectCameraModes(track) {
+            const capabilities = track.getCapabilities?.() || {};
+            const nativeOnly = capabilities.resizeMode?.includes("none");
+            const initial = track.getSettings();
+            const initialMode = [initial.width, initial.height, Math.round(initial.frameRate)];
+            const supported = new Map();
+            cameraMode.disabled = true;
+            cameraMode.innerHTML = "<option>画質検出中...</option>";
+
+            for (const mode of cameraModes) {
+                const [width, height, frameRate] = mode;
+                if (capabilities.width && (width < capabilities.width.min || width > capabilities.width.max)) continue;
+                if (capabilities.height && (height < capabilities.height.min || height > capabilities.height.max)) continue;
+                if (capabilities.frameRate && (frameRate < capabilities.frameRate.min || frameRate > capabilities.frameRate.max)) continue;
+                try {
+                    await track.applyConstraints(modeConstraints(mode, nativeOnly));
+                    const actual = track.getSettings();
+                    if (actual.width === width && actual.height === height && Math.abs(actual.frameRate - frameRate) < 1) {
+                        supported.set(mode.join(), mode);
+                    }
+                } catch { }
+            }
+
+            try {
+                await track.applyConstraints(modeConstraints(initialMode, nativeOnly));
+            } catch { }
+
+            const current = track.getSettings();
+            const currentMode = [current.width, current.height, Math.round(current.frameRate)];
+            supported.set(currentMode.join(), currentMode);
+            const modes = [...supported.values()].sort((a, b) => b[0] * b[1] - a[0] * a[1] || b[2] - a[2]);
+            cameraMode.replaceChildren(...modes.map((mode) => {
+                const option = document.createElement("option");
+                option.value = mode.join();
+                option.textContent = `${mode[0]}x${mode[1]} / ${mode[2]}fps`;
+                return option;
+            }));
+            cameraMode.value = currentMode.join();
+            cameraMode.disabled = false;
         }
 
         function createRecordingStream() {
@@ -344,15 +432,15 @@
                     audio: false
                 });
                 await video.play();
-                const scale = 224 / video.videoHeight;
-                emotionCanvas.width = 224;
-                emotionCanvas.height = Math.round(video.videoWidth * scale);
-                emotionContext.setTransform(0, scale, scale, 0, 0, 0);
-                const capabilities = video.srcObject.getVideoTracks()[0].getCapabilities?.() || {};
-                const max = (name) => Math.round(capabilities[name]?.max) || "-";
-                measureStatus(`最大: ${max("width")}x${max("height")} / ${max("frameRate")}fps`);
+                updateEmotionCanvas();
+                const track = video.srcObject.getVideoTracks()[0];
+                await detectCameraModes(track);
+                updateEmotionCanvas();
+                measureStatus();
             } catch (error) {
-                status.textContent = `カメラを開始できません: ${error.message}`;
+                cameraMode.innerHTML = "<option>画質を検出できません</option>";
+                cameraMode.disabled = true;
+                statusText.textContent = `カメラを開始できません: ${error.message}`;
             }
         }
 
@@ -383,11 +471,11 @@
 
         async function recordVideo() {
             if (!(video.srcObject instanceof MediaStream)) {
-                status.textContent = "先にWebcamを起動してください";
+                statusText.textContent = "先にWebcamを起動してください";
                 return;
             }
 
-            recordButton.disabled = true;
+            recordButton.disabled = cameraMode.disabled = true;
             try {
                 const chunks = [];
                 const recording = createRecordingStream();
@@ -421,15 +509,34 @@
                 if (recorder.state === "recording") recorder.stop();
                 await stopped;
             } catch (error) {
-                status.textContent = `録画を開始できません: ${error.message}`;
+                statusText.textContent = `録画を開始できません: ${error.message}`;
             } finally {
                 countdown.hidden = true;
                 blink.hidden = true;
                 recordButton.disabled = false;
+                cameraMode.disabled = !cameraMode.value.includes(",");
             }
         }
 
         $("cameraButton").addEventListener("click", startCamera);
+        cameraMode.addEventListener("change", async () => {
+            const track = video.srcObject?.getVideoTracks()[0];
+            if (!track) return;
+            cameraMode.disabled = true;
+            try {
+                const nativeOnly = track.getCapabilities?.().resizeMode?.includes("none");
+                await track.applyConstraints(modeConstraints(cameraMode.value.split(",").map(Number), nativeOnly));
+                updateEmotionCanvas();
+                if (statusFrameCallback) video.cancelVideoFrameCallback(statusFrameCallback);
+                measureStatus();
+            } catch (error) {
+                const current = track.getSettings();
+                cameraMode.value = [current.width, current.height, Math.round(current.frameRate)].join();
+                statusText.textContent = `画質を変更できません: ${error.message}`;
+            } finally {
+                cameraMode.disabled = false;
+            }
+        });
         recordButton.addEventListener("click", recordVideo);
         $("sampleControls").addEventListener("click", (event) => {
             const source = event.target.closest("button")?.dataset.src;
