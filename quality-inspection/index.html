@@ -15,9 +15,6 @@
             --muted: #69717b;
             --line: #d9dde2;
             --accent: #42d392;
-            --orange: #ef7f45;
-            --blue: #3478d4;
-            --purple: #8b6fc0;
             --danger: #c64b4b;
         }
 
@@ -34,13 +31,11 @@
         }
 
         button,
-        input,
         select {
             font: inherit;
         }
 
-        button,
-        .fileButton {
+        button {
             min-height: 38px;
             padding: 0 13px;
             border: 1px solid var(--line);
@@ -59,12 +54,12 @@
 
         .fileButton {
             position: relative;
-            display: inline-flex;
-            align-items: center;
+            display: block;
+            width: 80px;
+            height: 80px;
             overflow: hidden;
-            border-color: var(--ink);
-            background: var(--ink);
-            color: #fff;
+            border-radius: 50%;
+            cursor: pointer;
         }
 
         .fileButton input {
@@ -74,16 +69,7 @@
             cursor: pointer;
         }
 
-        .fileButton.iconButton {
-            width: 80px;
-            height: 80px;
-            padding: 0;
-            border: 0;
-            border-radius: 50%;
-            background: transparent;
-        }
-
-        .iconButton img {
+        .fileButton img {
             display: block;
             width: 100%;
             height: 100%;
@@ -101,16 +87,8 @@
             padding: 18px;
         }
 
-        header {
-            display: flex;
-            align-items: end;
-            justify-content: space-between;
-            gap: 18px;
-            margin-bottom: 14px;
-        }
-
         h1 {
-            margin: 0;
+            margin: 0 0 14px;
             font-size: 1.25rem;
         }
 
@@ -144,8 +122,7 @@
             font-size: .72rem;
         }
 
-        select,
-        input[type="number"] {
+        select {
             height: 38px;
             min-width: 0;
             padding: 0 9px;
@@ -342,11 +319,7 @@
 
 <body>
     <main class="app">
-        <header>
-            <div>
-                <h1>品質比較</h1>
-            </div>
-        </header>
+        <h1>品質比較</h1>
 
         <section class="panel">
             <div class="tableWrap">
@@ -369,7 +342,7 @@
                     <tbody id="resultsBody"></tbody>
                 </table>
                 <div class="empty" id="emptyState">
-                    <label class="fileButton iconButton" aria-label="WebMを追加" title="WebMを追加">
+                    <label class="fileButton" aria-label="WebMを追加" title="WebMを追加">
                         <img src="icon-plus.png" alt="">
                         <input id="fileInput" type="file" accept="video/webm,.webm" multiple>
                     </label>
@@ -426,6 +399,8 @@
             const EMOTIONS = ["neutral", "happy", "sad", "angry", "fearful", "disgusted", "surprised"];
             const LABELS = { neutral: "無表情", happy: "喜び", sad: "悲しみ", angry: "怒り", fearful: "恐れ", disgusted: "嫌悪", surprised: "驚き" };
             const PERIOD_RATIO = { neutral: 6, onset: 1, hold: 4, settle: 3 };
+            const PERIOD_KEYS = Object.keys(PERIOD_RATIO);
+            const PERIOD_TOTAL = Object.values(PERIOD_RATIO).reduce((sum, value) => sum + value, 0);
             const LANDMARK_INDICES = [33, 46, 52, 53, 55, 61, 63, 65, 66, 70, 78, 80, 81, 82, 84, 87, 88, 91, 95, 101, 105, 107, 133, 144, 146, 153, 158, 160, 178, 181, 191, 205, 263, 276, 282, 283, 285, 291, 293, 295, 296, 300, 308, 310, 311, 312, 314, 317, 318, 321, 324, 330, 334, 336, 362, 373, 375, 380, 385, 387, 402, 405, 415, 425];
             const $ = (id) => document.getElementById(id);
             const el = { file: $("fileInput"), analyze: $("analyzeButton"), clear: $("clearButton"), emotion: $("targetEmotion"), smooth: $("smoothWindow"), status: $("status"), progress: $("progress"), body: $("resultsBody"), empty: $("emptyState"), detail: $("detail"), detailName: $("detailName"), preview: $("preview"), chart: $("chart"), phaseLog: $("phaseLog") };
@@ -436,19 +411,16 @@
             let faceLandmarkerPromise;
 
             const clamp = (value, min = 0, max = 1) => Math.max(min, Math.min(max, value));
-            const finite = (value, fallback = 0) => Number.isFinite(Number(value)) ? Number(value) : fallback;
             const mean = (values) => values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
             const scoreClass = (score) => score >= 80 ? "good" : score >= 60 ? "warn" : "bad";
-            const seconds = (value) => Number.isFinite(value) ? `${value.toFixed(2)}秒` : "未検出";
             const score = (value) => Number.isFinite(value) ? `<span class="score ${scoreClass(value)}">${Math.round(value)}</span>` : "—";
-            const scoredSeconds = (value, points) => Number.isFinite(value) ? `${seconds(value)} <small>(${Math.round(points)}点)</small>` : "未検出 <small>(0点)</small>";
+            const scoredSeconds = (value, points) => Number.isFinite(value) ? `${value.toFixed(2)}秒 <small>(${Math.round(points)}点)</small>` : "未検出 <small>(0点)</small>";
 
             function calculatePeriodScores(durations) {
-                const ratioTotal = Object.values(PERIOD_RATIO).reduce((sum, value) => sum + value, 0);
                 const durationTotal = Object.values(durations).reduce((sum, value) => sum + (Number.isFinite(value) ? value : 0), 0);
-                if (!durationTotal) return { scores: Object.fromEntries(Object.keys(PERIOD_RATIO).map((key) => [key, 0])), stability: 0 };
-                const differences = Object.keys(PERIOD_RATIO).map((key) => {
-                    const target = PERIOD_RATIO[key] / ratioTotal;
+                if (!durationTotal) return { scores: Object.fromEntries(PERIOD_KEYS.map((key) => [key, 0])), stability: 0 };
+                const differences = PERIOD_KEYS.map((key) => {
+                    const target = PERIOD_RATIO[key] / PERIOD_TOTAL;
                     const actual = (Number.isFinite(durations[key]) ? durations[key] : 0) / durationTotal;
                     return { key, difference: Math.abs(actual - target), target };
                 });
@@ -467,11 +439,9 @@
             }
 
             function updateControls() {
-                el.file.disabled = busy;
+                [el.file, el.emotion, el.smooth].forEach((control) => { control.disabled = busy; });
                 el.analyze.disabled = busy || !modelsReady || !items.length;
                 el.clear.disabled = busy || !items.length;
-                el.emotion.disabled = busy;
-                el.smooth.disabled = busy;
             }
 
             function getFaceLandmarker() {
@@ -491,15 +461,12 @@
             ]);
 
             function averagePoint(points, indices) {
-                const valid = indices.map((index) => points[index]).filter(Boolean);
-                if (!valid.length) return null;
-                return valid.reduce((sum, point) => ({ x: sum.x + point.x / valid.length, y: sum.y + point.y / valid.length, z: sum.z + (point.z || 0) / valid.length }), { x: 0, y: 0, z: 0 });
+                return indices.reduce((sum, index) => ({ x: sum.x + points[index].x / indices.length, y: sum.y + points[index].y / indices.length, z: sum.z + (points[index].z || 0) / indices.length }), { x: 0, y: 0, z: 0 });
             }
 
             function normalizeLandmarks(points) {
                 if (!points || points.length < 426) return null;
                 const left = averagePoint(points, [33, 133]), right = averagePoint(points, [362, 263]);
-                if (!left || !right) return null;
                 const center = { x: (left.x + right.x) / 2, y: (left.y + right.y) / 2, z: (left.z + right.z) / 2 };
                 const dx = right.x - left.x, dy = right.y - left.y, scale = Math.hypot(dx, dy);
                 if (scale < 1e-5) return null;
@@ -511,11 +478,11 @@
             }
 
             function averageVector(vectors) {
-                return vectors.length ? vectors[0].map((_, index) => mean(vectors.map((vector) => vector[index]))) : null;
+                return vectors[0].map((_, index) => mean(vectors.map((vector) => vector[index])));
             }
 
             function vectorDistance(a, b) {
-                return a && b ? Math.sqrt(mean(a.map((value, index) => (value - b[index]) ** 2))) : null;
+                return Math.sqrt(mean(a.map((value, index) => (value - b[index]) ** 2)));
             }
 
             function smoothed(samples, windowSize) {
@@ -536,6 +503,41 @@
                 return { baseline, amplitude, usable: amplitude >= minimumAmplitude };
             }
 
+            function prepareLandmarkDistances(samples) {
+                const shapes = samples.flatMap((sample) => sample.landmarks ? [sample.landmarks] : []);
+                if (shapes.length < 3) return;
+                const baseline = averageVector(shapes.slice(0, Math.max(3, Math.min(shapes.length, Math.round(shapes.length * .15)))));
+                samples.forEach((sample, index) => {
+                    const nearby = samples.slice(Math.max(0, index - 2), index + 3).flatMap((item) => item.landmarks ? [item.landmarks] : []);
+                    sample.landmarkDistance = nearby.length ? vectorDistance(averageVector(nearby), baseline) : null;
+                });
+            }
+
+            function buildProgression(samples, target, windowSize) {
+                const data = smoothed(samples, windowSize).flatMap((sample) => {
+                    if (!sample.smooth && !Number.isFinite(sample.landmarkMotion)) return [];
+                    return [{
+                        time: sample.time,
+                        emotion: sample.smooth ? sample.smooth[target] / Math.max(.0001, sample.smooth.neutral + sample.smooth[target]) : null,
+                        landmark: sample.landmarkMotion,
+                    }];
+                });
+                if (data.length < 3) throw new Error("顔を検出できた点が少なすぎます");
+
+                const emotion = profile(data.map((point) => point.emotion), .03);
+                const landmark = profile(data.map((point) => point.landmark), .003);
+                if (!emotion.usable && !landmark.usable) throw new Error("表情の変化を検出できませんでした");
+
+                data.forEach((point) => {
+                    const values = [
+                        landmark.usable && Number.isFinite(point.landmark) ? clamp((point.landmark - landmark.baseline) / landmark.amplitude) : null,
+                        emotion.usable && Number.isFinite(point.emotion) ? clamp((point.emotion - emotion.baseline) / emotion.amplitude) : null,
+                    ].filter(Number.isFinite);
+                    point.value = mean(values);
+                });
+                return { data, emotion, landmark };
+            }
+
             function crossing(data, level, direction, start = 1, end = data.length - 1) {
                 for (let index = Math.max(1, start); index <= end; index += 1) {
                     const a = data[index - 1], b = data[index];
@@ -554,32 +556,9 @@
             }
 
             function calculateMetrics(samples, duration) {
-                const target = el.emotion.value, windowSize = Math.max(1, Math.round(finite(el.smooth.value, 5)));
-                const shapes = samples.filter((sample) => sample.landmarks).map((sample) => sample.landmarks);
-                if (shapes.length >= 3) {
-                    const baseline = averageVector(shapes.slice(0, Math.max(3, Math.min(shapes.length, Math.round(shapes.length * .15)))));
-                    samples.forEach((sample, index) => {
-                        const local = samples.slice(Math.max(0, index - 2), index + 3).map((item) => item.landmarks).filter(Boolean);
-                        sample.landmarkDistance = local.length ? vectorDistance(averageVector(local), baseline) : null;
-                    });
-                }
-                const data = smoothed(samples, windowSize).filter((sample) => sample.smooth || Number.isFinite(sample.landmarkMotion)).map((sample) => ({
-                    time: sample.time,
-                    emotion: sample.smooth ? sample.smooth[target] / Math.max(.0001, sample.smooth.neutral + sample.smooth[target]) : null,
-                    landmark: sample.landmarkMotion,
-                }));
-                if (data.length < 3) throw new Error("顔を検出できた点が少なすぎます");
-                const emotionProfile = profile(data.map((point) => point.emotion), .03);
-                const landmarkProfile = profile(data.map((point) => point.landmark), .003);
-                if (!emotionProfile.usable && !landmarkProfile.usable) throw new Error("表情の変化を検出できませんでした");
-                data.forEach((point) => {
-                    const landmark = landmarkProfile.usable && Number.isFinite(point.landmark) ? clamp((point.landmark - landmarkProfile.baseline) / landmarkProfile.amplitude) : null;
-                    const emotion = emotionProfile.usable && Number.isFinite(point.emotion) ? clamp((point.emotion - emotionProfile.baseline) / emotionProfile.amplitude) : null;
-                    const weight = (landmark !== null ? .5 : 0) + (emotion !== null ? .5 : 0);
-                    point.value = ((landmark ?? 0) * .5 + (emotion ?? 0) * .5) / weight;
-                });
-                let maxIndex = 0;
-                data.forEach((point, index) => { if (point.value > data[maxIndex].value) maxIndex = index; });
+                prepareLandmarkDistances(samples);
+                const { data, emotion, landmark } = buildProgression(samples, el.emotion.value, Number(el.smooth.value));
+                const maxIndex = data.reduce((best, point, index) => point.value > data[best].value ? index : best, 0);
                 const onset = crossing(data, .08, "rising", 1, maxIndex) ?? data[Math.max(0, maxIndex - 1)].time;
                 const peak = crossing(data, .92, "rising", 1, maxIndex) ?? data[maxIndex].time;
                 const holdEnd = crossing(data, .8, "falling", maxIndex + 1);
@@ -594,10 +573,10 @@
                 const falling = settle === null ? [] : data.filter((point) => point.time >= holdLimit && point.time <= settle);
                 const directionalScores = [monotonicity(rising), monotonicity(falling)].filter(Number.isFinite);
                 const transitionStability = directionalScores.length ? mean(directionalScores) : null;
-                const strengthParts = [];
-                if (landmarkProfile.usable) strengthParts.push({ value: clamp(landmarkProfile.amplitude / .035) * 100, weight: .5 });
-                if (emotionProfile.usable) strengthParts.push({ value: clamp(emotionProfile.amplitude / .7) * 100, weight: .5 });
-                const intensity = strengthParts.reduce((sum, part) => sum + part.value * part.weight, 0) / strengthParts.reduce((sum, part) => sum + part.weight, 0);
+                const intensity = mean([
+                    landmark.usable ? clamp(landmark.amplitude / .035) * 100 : null,
+                    emotion.usable ? clamp(emotion.amplitude / .7) * 100 : null,
+                ].filter(Number.isFinite));
                 const durations = {
                     neutral: onset,
                     onset: Math.max(0, peak - onset),
@@ -637,9 +616,8 @@
                         frameCanvas.height = wrapped.canvas.height;
                     }
                     frameContext.drawImage(wrapped.canvas, 0, 0);
-                    const frame = frameCanvas;
-                    const faceDetection = faceapi.detectSingleFace(frame, detectorOptions).withFaceExpressions();
-                    const landmarks = normalizeLandmarks(landmarker.detect(frame).faceLandmarks?.[0]);
+                    const faceDetection = faceapi.detectSingleFace(frameCanvas, detectorOptions).withFaceExpressions();
+                    const landmarks = normalizeLandmarks(landmarker.detect(frameCanvas).faceLandmarks?.[0]);
                     const detection = await faceDetection;
                     samples.push({ time, detected: Boolean(detection), landmarks, expressions: Object.fromEntries(EMOTIONS.map((emotion) => [emotion, detection?.expressions[emotion] || 0])) });
                     if (samples.length % 8 === 0) await new Promise(requestAnimationFrame);
@@ -674,36 +652,34 @@
                 }
             }
 
-            function render() {
-                el.empty.hidden = items.length > 0;
-                el.body.replaceChildren(...items.map((item) => {
-                    const row = document.createElement("tr");
-                    row.dataset.id = item.id;
-                    row.classList.toggle("selected", item.id === selectedId);
-                    if (item.metrics) {
-                        const m = item.metrics;
-                        row.innerHTML = `<td class="name" title="${escapeHtml(item.name)}">${escapeHtml(item.name)}</td><td>${m.frameCount}</td><td>${Math.round(m.detectionRate)}%</td><td>${scoredSeconds(m.neutralDuration, m.periodScores.neutral)}</td><td>${scoredSeconds(m.onsetDuration, m.periodScores.onset)}</td><td>${scoredSeconds(m.holdDuration, m.periodScores.hold)}</td><td>${scoredSeconds(m.settleDuration, m.periodScores.settle)}</td><td>${score(m.periodStability)}</td><td>${score(m.intensity)}</td><td>${score(m.holdStability)}</td><td>${score(m.transitionStability)}</td>`;
-                    } else {
-                        row.innerHTML = `<td class="name" title="${escapeHtml(item.name)}">${escapeHtml(item.name)}</td><td colspan="10" class="${item.error ? "error" : ""}">${escapeHtml(item.error || (busy ? "解析待ち" : "未解析"))}</td>`;
-                    }
-                    row.addEventListener("click", () => selectItem(item.id));
-                    return row;
-                }));
-                if (selectedId && !items.some((item) => item.id === selectedId)) selectedId = null;
-                renderDetail();
-            }
-
             function escapeHtml(value) {
                 return String(value).replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" })[character]);
             }
 
-            function selectItem(id) {
-                selectedId = id;
-                render();
+            function createRow(item) {
+                const row = document.createElement("tr");
+                const name = escapeHtml(item.name);
+                row.classList.toggle("selected", item.id === selectedId);
+                if (!item.metrics) {
+                    row.innerHTML = `<td class="name" title="${name}">${name}</td><td colspan="10" class="${item.error ? "error" : ""}">${escapeHtml(item.error || (busy ? "解析待ち" : "未解析"))}</td>`;
+                } else {
+                    const m = item.metrics;
+                    const cells = [m.frameCount, `${Math.round(m.detectionRate)}%`, scoredSeconds(m.neutralDuration, m.periodScores.neutral), scoredSeconds(m.onsetDuration, m.periodScores.onset), scoredSeconds(m.holdDuration, m.periodScores.hold), scoredSeconds(m.settleDuration, m.periodScores.settle), score(m.periodStability), score(m.intensity), score(m.holdStability), score(m.transitionStability)];
+                    row.innerHTML = `<td class="name" title="${name}">${name}</td>${cells.map((value) => `<td>${value}</td>`).join("")}`;
+                }
+                row.addEventListener("click", () => { selectedId = item.id; render(); });
+                return row;
+            }
+
+            function render() {
+                el.empty.hidden = Boolean(items.length);
+                el.body.replaceChildren(...items.map(createRow));
+                if (selectedId && !items.some((item) => item.id === selectedId)) selectedId = null;
+                renderDetail();
             }
 
             function renderDetail() {
-                const item = items.find((candidate) => candidate.id === selectedId);
+                const item = selectedItem();
                 el.detail.hidden = !item;
                 if (!item) return;
                 el.detailName.textContent = item.name;
@@ -738,10 +714,10 @@
             }
 
             function addFiles(files) {
-                const existing = new Set(items.map((item) => `${item.name}:${item.size}:${item.modified}`));
+                const existing = new Set(items.map((item) => item.key));
                 [...files].filter((file) => file.type === "video/webm" || file.name.toLowerCase().endsWith(".webm")).forEach((file) => {
                     const key = `${file.name}:${file.size}:${file.lastModified}`;
-                    if (!existing.has(key)) items.push({ id: crypto.randomUUID(), name: file.name, size: file.size, modified: file.lastModified, file, url: URL.createObjectURL(file), metrics: null, error: "" });
+                    if (!existing.has(key)) items.push({ id: crypto.randomUUID(), key, name: file.name, file, url: URL.createObjectURL(file), metrics: null, error: "" });
                 });
                 if (!selectedId && items.length) selectedId = items[0].id;
                 setStatus(items.length ? `${items.length}本を選択しました` : "WebMを選択してください");
@@ -751,19 +727,37 @@
             function clearAll() {
                 runToken += 1;
                 items.forEach((item) => URL.revokeObjectURL(item.url));
-                items = []; selectedId = null; el.preview.removeAttribute("src"); el.preview.load();
-                setStatus("WebMを選択してください"); updateControls(); render();
+                items = [];
+                selectedId = null;
+                el.preview.removeAttribute("src");
+                el.preview.load();
+                setStatus("WebMを選択してください");
+                updateControls();
+                render();
+            }
+
+            function invalidateAnalysis() {
+                items.forEach((item) => { item.metrics = null; item.error = ""; });
+                setStatus("設定が変わりました。再解析してください");
+                render();
+            }
+
+            function selectedItem() {
+                return items.find((item) => item.id === selectedId);
             }
 
             function initialize() {
                 el.emotion.replaceChildren(...EMOTIONS.filter((emotion) => emotion !== "neutral").map((emotion) => { const option = document.createElement("option"); option.value = emotion; option.textContent = LABELS[emotion]; return option; }));
                 el.emotion.value = "happy";
-                el.file.addEventListener("change", () => { addFiles(el.file.files); el.file.value = ""; });
+                el.file.addEventListener("change", () => {
+                    addFiles(el.file.files);
+                    el.file.value = "";
+                });
                 el.analyze.addEventListener("click", analyzeAll);
                 el.clear.addEventListener("click", clearAll);
-                [el.emotion, el.smooth].forEach((input) => input.addEventListener("change", () => { items.forEach((item) => { item.metrics = null; item.error = ""; }); setStatus("設定が変わりました。再解析してください"); render(); }));
-                el.preview.addEventListener("timeupdate", () => { const item = items.find((candidate) => candidate.id === selectedId); if (item?.metrics) drawChart(item); });
-                new ResizeObserver(() => { const item = items.find((candidate) => candidate.id === selectedId); drawChart(item); }).observe(el.chart);
+                [el.emotion, el.smooth].forEach((input) => input.addEventListener("change", invalidateAnalysis));
+                el.preview.addEventListener("timeupdate", () => { const item = selectedItem(); if (item?.metrics) drawChart(item); });
+                new ResizeObserver(() => drawChart(selectedItem())).observe(el.chart);
                 window.addEventListener("beforeunload", () => items.forEach((item) => URL.revokeObjectURL(item.url)));
                 console.assert(Math.round(monotonicity([{ value: 0 }, { value: .5 }, { value: 1 }])) === 100, "monotonicity self-check");
                 console.assert(calculatePeriodScores({ neutral: 12, onset: 2, hold: 8, settle: 6 }).stability === 100, "period ratio self-check");
