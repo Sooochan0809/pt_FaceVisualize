@@ -250,6 +250,10 @@
             gap: 10px;
         }
 
+        .analysisControls {
+            grid-template-columns: 2fr 1fr;
+        }
+
         .field {
             display: grid;
             gap: 5px;
@@ -495,6 +499,15 @@
             font-size: .58rem;
         }
 
+        .alignmentControls {
+            margin: 0;
+        }
+
+        .alignmentControls button {
+            width: 100%;
+            margin-top: 12px;
+        }
+
         .playbackSetting {
             display: grid;
             grid-template-columns: 56px minmax(0, 1fr) 64px;
@@ -617,7 +630,7 @@
                 <details class="clipEditorDisclosure" id="clipEditor" open hidden>
                     <summary>個別解析・コマ抽出<span class="badge" id="analysisBadge">モデル読込中</span></summary>
                     <div class="clipEditorBody">
-                        <div class="grid">
+                        <div class="grid analysisControls">
                             <label class="field">対象の表情
                                 <select id="emotionSelect">
                                     <option value="happy">喜び</option>
@@ -627,9 +640,6 @@
                                     <option value="disgusted">嫌悪</option>
                                     <option value="surprised">驚き</option>
                                 </select>
-                            </label>
-                            <label class="field">解析サンプル間隔（秒）
-                                <input id="sampleInterval" type="number" min="0.04" max="1" step="0.01" value="0.08">
                             </label>
                             <button id="analyzeButton" class="primary" type="button" disabled>解析</button>
                         </div>
@@ -682,6 +692,26 @@
             </section>
             <section class="panel">
                 <div class="panelHead">
+                    <h2>位置合わせ</h2>
+                </div>
+                <div class="alignmentControls">
+                    <label class="playbackSetting">横 位置
+                        <input id="alignX" type="range" min="-25" max="25" value="0" step="1">
+                        <output id="alignXOutput"></output>
+                    </label>
+                    <label class="playbackSetting">縦 位置
+                        <input id="alignY" type="range" min="-25" max="25" value="5" step="1">
+                        <output id="alignYOutput"></output>
+                    </label>
+                    <label class="playbackSetting">顔サイズ
+                        <input id="alignScale" type="range" min="50" max="150" value="140" step="1">
+                        <output id="alignScaleOutput"></output>
+                    </label>
+                    <button id="alignApplyButton" class="primary" type="button" disabled>反映</button>
+                </div>
+            </section>
+            <section class="panel">
+                <div class="panelHead">
                     <h2>変化周期</h2>
                 </div>
                 <div class="changeReadout">
@@ -729,11 +759,12 @@
         const EXPRESSION_INDICES = [33, 46, 52, 53, 55, 61, 63, 65, 66, 70, 78, 80, 81, 82, 84, 87, 88, 91, 95, 101, 105, 107, 133, 144, 146, 153, 158, 160, 178, 181, 191, 205, 263, 276, 282, 283, 285, 291, 293, 295, 296, 300, 308, 310, 311, 312, 314, 317, 318, 321, 324, 330, 334, 336, 362, 373, 375, 380, 385, 387, 402, 405, 415, 425];
         const COLORS = { neutral: "#7f8993", emotion: "#ff6948", mesh: "#4877ff", mix: "#151515", onset: "#53a86d", peak: "#8a62d1", settle: "#8a62d1" };
         const $ = (id) => document.getElementById(id);
-        const ids = ["sourceVideo", "captureVideo", "rawCanvas", "rawTimeOutput", "outputCanvas", "outputResolution", "resolutionOutput", "shapeVariation", "shapeOutput", "shapeMaxPeriod", "shapeMaxPeriodOutput", "shapeReachFloor", "shapeReachFloorOutput", "shapePeriodOutput", "shapeReachOutput", "shapeWave", "movieMeta", "playButton", "recordButton", "fileInput", "clipList", "clipEditor", "sourceBadge", "analysisBadge", "emotionSelect", "sampleInterval", "analyzeButton", "analyzeAllButton", "progress", "analysisChart", "onsetInput", "peakInput", "settleInput", "rangeStart", "rangeEnd", "startInput", "endInput", "flickerFps", "fpsOutput", "prepareButton", "status"];
+        const ids = ["sourceVideo", "captureVideo", "rawCanvas", "rawTimeOutput", "outputCanvas", "outputResolution", "resolutionOutput", "shapeVariation", "shapeOutput", "shapeMaxPeriod", "shapeMaxPeriodOutput", "shapeReachFloor", "shapeReachFloorOutput", "shapePeriodOutput", "shapeReachOutput", "shapeWave", "movieMeta", "playButton", "recordButton", "fileInput", "clipList", "clipEditor", "sourceBadge", "analysisBadge", "emotionSelect", "analyzeButton", "analyzeAllButton", "progress", "analysisChart", "onsetInput", "peakInput", "settleInput", "rangeStart", "rangeEnd", "startInput", "endInput", "alignX", "alignXOutput", "alignY", "alignYOutput", "alignScale", "alignScaleOutput", "alignApplyButton", "flickerFps", "fpsOutput", "prepareButton", "status"];
         const el = Object.fromEntries(ids.map((id) => [id, $(id)]));
         const ctx = el.outputCanvas.getContext("2d", { alpha: false });
         const rawContext = el.rawCanvas.getContext("2d", { alpha: false });
         const analysisCanvas = document.createElement("canvas");
+        const analysisContext = analysisCanvas.getContext("2d", { alpha: false });
         const captureCanvas = document.createElement("canvas");
         const compositionCanvas = document.createElement("canvas");
         const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
@@ -763,7 +794,9 @@
         let recordingPlan = null;
         let rawPreviewRequest = 0;
         let rawPreviewTimer = 0;
+        const alignment = { x: 0, y: 0, scale: 100 };
 
+        const mediabunny = import(MEDIABUNNY_URL);
         const models = Promise.all([
             faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
             faceapi.nets.faceExpressionNet.loadFromUri(MODEL_URL),
@@ -773,7 +806,8 @@
                     baseOptions: { modelAssetPath: FACE_MODEL_URL }, runningMode: "IMAGE", numFaces: 1,
                     minFaceDetectionConfidence: .35, minFacePresenceConfidence: .35
                 });
-            })
+            }),
+            mediabunny
         ]);
 
         const selectedClip = () => clips.find((clip) => clip.id === selectedId) || null;
@@ -840,6 +874,8 @@
             el.analyzeAllButton.disabled = sourceLocked || !clips.length || !modelsReady;
             [el.onsetInput, el.peakInput, el.settleInput].forEach((input) => input.disabled = sourceLocked || !loaded);
             [el.rangeStart, el.rangeEnd, el.startInput, el.endInput].forEach((input) => input.disabled = sourceLocked || !loaded);
+            [el.alignX, el.alignY, el.alignScale].forEach((input) => input.disabled = sourceLocked);
+            el.alignApplyButton.disabled = sourceLocked || !clips.some((clip) => clip.frames.length);
             el.prepareButton.disabled = sourceLocked || !loaded;
             el.playButton.disabled = busy || !flickerFrames.length;
             el.recordButton.disabled = recordingPlan ? false : busy || !flickerFrames.length;
@@ -848,7 +884,7 @@
         function waitFor(video, event) {
             return new Promise((resolve, reject) => {
                 const done = () => { cleanup(); resolve(); };
-                const fail = () => { cleanup(); reject(new Error("動画を読み込めませんでした")); };
+                const fail = () => { cleanup(); reject(new Error(video.error?.message || "動画を読み込めませんでした")); };
                 const cleanup = () => { video.removeEventListener(event, done); video.removeEventListener("error", fail); };
                 video.addEventListener(event, done, { once: true });
                 video.addEventListener("error", fail, { once: true });
@@ -865,8 +901,9 @@
         async function readMetadata(clip) {
             const video = document.createElement("video");
             video.preload = "metadata";
+            const loaded = waitFor(video, "loadedmetadata");
             video.src = clip.url;
-            await waitFor(video, "loadedmetadata");
+            await loaded;
             clip.duration = video.duration;
             clip.width = video.videoWidth;
             clip.height = video.videoHeight;
@@ -891,7 +928,7 @@
             const files = [...fileList].filter((file) => file.type.startsWith("video/"));
             if (!files.length || busy) return;
             const additions = files.map((file) => ({
-                id: nextId++, name: file.name, url: URL.createObjectURL(file), duration: 0, width: 0, height: 0,
+                id: nextId++, name: file.name, file, url: URL.createObjectURL(file), duration: 0, width: 0, height: 0,
                 emotion: emotionFromFileName(file.name), samples: [], analysisSeries: [], boundaries: null, frames: [], rangeStart: 0, rangeEnd: 0
             }));
             setBusy(true);
@@ -925,11 +962,12 @@
             el.emotionSelect.value = clip.emotion;
             el.analysisBadge.textContent = clip.samples.length ? (clip.boundaries ? "解析済み" : "境界未検出") : (modelsReady ? "未解析" : "モデル読込中");
             el.analysisBadge.classList.toggle("ready", !!clip.boundaries);
-            el.sourceVideo.src = clip.url;
-            el.captureVideo.src = clip.url;
             setBusy(true);
             try {
-                await Promise.all([waitFor(el.sourceVideo, "loadedmetadata"), waitFor(el.captureVideo, "loadedmetadata")]);
+                const loaded = [waitFor(el.sourceVideo, "loadedmetadata"), waitFor(el.captureVideo, "loadedmetadata")];
+                el.sourceVideo.src = clip.url;
+                el.captureVideo.src = clip.url;
+                await Promise.all(loaded);
                 const duration = clip.duration;
                 [el.rangeStart, el.rangeEnd].forEach((input) => input.max = duration);
                 [el.onsetInput, el.peakInput, el.settleInput, el.startInput, el.endInput].forEach((input) => input.max = duration);
@@ -1007,6 +1045,7 @@
 
         const averageVector = (vectors) => vectors.length ? vectors[0].map((_, i) => vectors.reduce((sum, vector) => sum + vector[i], 0) / vectors.length) : null;
         const vectorDistance = (a, b) => !a || !b || a.length !== b.length ? null : Math.sqrt(a.reduce((sum, value, i) => sum + (value - b[i]) ** 2, 0) / a.length);
+        const equalBlend = (a, b) => a === null ? b ?? 0 : b === null ? a : (a + b) / 2;
 
         function prepareLandmarkDistances() {
             const shapes = samples.filter((sample) => sample.landmarks).map((sample) => sample.landmarks);
@@ -1021,7 +1060,7 @@
         function smoothedSamples() {
             return samples.map((sample, index) => {
                 const window = samples.slice(Math.max(0, index - 2), index + 3);
-                const expressions = window.filter((item) => item.expressions);
+                const expressions = window.filter((item) => item.detected);
                 const landmarks = window.filter((item) => Number.isFinite(item.landmarkDistance));
                 const smooth = expressions.length ? Object.fromEntries(EMOTIONS.map((emotion) => [emotion, expressions.reduce((sum, item) => sum + item.expressions[emotion], 0) / expressions.length])) : null;
                 const landmarkMotion = landmarks.length ? landmarks.reduce((sum, item) => sum + item.landmarkDistance, 0) / landmarks.length : null;
@@ -1064,10 +1103,9 @@
             data.forEach((item) => {
                 const ep = emotionProfile.usable && Number.isFinite(item.emotionValue) ? clamp((item.emotionValue - emotionProfile.baseline) / emotionProfile.amplitude, 0, 1) : null;
                 const lp = landmarkProfile.usable && Number.isFinite(item.landmarkValue) ? clamp((item.landmarkValue - landmarkProfile.baseline) / landmarkProfile.amplitude, 0, 1) : null;
-                const weight = (lp === null ? 0 : .75) + (ep === null ? 0 : .25);
                 item.emotionProgress = ep;
                 item.landmarkProgress = lp;
-                item.value = weight ? ((lp || 0) * .75 + (ep || 0) * .25) / weight : 0;
+                item.value = equalBlend(lp, ep);
             });
             analysisSeries = data.map((item) => ({ time: item.time, landmark: item.landmarkProgress, progression: item.value }));
             let peakIndex = 0;
@@ -1077,14 +1115,6 @@
             const peak = crossing(data, .92, "up", 1, peakIndex) ?? data[peakIndex].time;
             const settle = crossing(data, .2, "down", peakIndex + 1, data.length - 1) ?? duration;
             return { onset: clamp(onset, 0, duration), peak: clamp(Math.max(onset + .01, peak), 0, duration), settle: clamp(Math.max(peak, settle), 0, duration) };
-        }
-
-        function analysisFrame() {
-            const scale = Math.min(1, 320 / Math.max(el.sourceVideo.videoWidth, el.sourceVideo.videoHeight));
-            analysisCanvas.width = Math.max(1, Math.round(el.sourceVideo.videoWidth * scale));
-            analysisCanvas.height = Math.max(1, Math.round(el.sourceVideo.videoHeight * scale));
-            analysisCanvas.getContext("2d", { alpha: false }).drawImage(el.sourceVideo, 0, 0, analysisCanvas.width, analysisCanvas.height);
-            return analysisCanvas;
         }
 
         async function analyze() {
@@ -1100,32 +1130,43 @@
             clip.boundaries = null;
             el.progress.hidden = false;
             try {
-                const [, , faceLandmarker] = await models;
-                const interval = clamp(num(el.sampleInterval.value, .08), .04, 1);
-                el.sampleInterval.value = interval;
-                const count = Math.max(2, Math.ceil(el.sourceVideo.duration / interval));
-                for (let i = 0; i < count; i += 1) {
-                    const time = Math.min(i * interval, Math.max(0, el.sourceVideo.duration - .01));
-                    el.progress.value = (i + 1) / count;
-                    setStatus(`${clip.name} を解析中 ${i + 1} / ${count}`);
-                    await seek(el.sourceVideo, time);
-                    const frame = analysisFrame();
-                    const mesh = faceLandmarker.detect(frame).faceLandmarks?.[0];
-                    const detection = await faceapi.detectSingleFace(frame, detectorOptions).withFaceExpressions();
+                const [, , faceLandmarker, { Input, ALL_FORMATS, BlobSource, CanvasSink }] = await models;
+                const input = new Input({ formats: ALL_FORMATS, source: new BlobSource(clip.file) });
+                const track = await input.getPrimaryVideoTrack();
+                if (!track || !(await track.canDecode())) throw new Error("この動画をデコードできません");
+                const firstTimestamp = await track.getFirstTimestamp();
+                const duration = await track.computeDuration();
+                const sink = new CanvasSink(track, { width: 320, alpha: false, poolSize: 2 });
+                for await (const wrapped of sink.canvases()) {
+                    const time = wrapped.timestamp - firstTimestamp;
+                    el.progress.value = clamp(time / Math.max(duration, .001), 0, 1);
+                    setStatus(`${clip.name} の全フレームを解析中（${samples.length + 1}フレーム）`);
+                    if (analysisCanvas.width !== wrapped.canvas.width || analysisCanvas.height !== wrapped.canvas.height) {
+                        analysisCanvas.width = wrapped.canvas.width;
+                        analysisCanvas.height = wrapped.canvas.height;
+                    }
+                    analysisContext.drawImage(wrapped.canvas, 0, 0);
+                    const faceDetection = faceapi.detectSingleFace(analysisCanvas, detectorOptions).withFaceExpressions();
+                    const mesh = faceLandmarker.detect(analysisCanvas).faceLandmarks?.[0];
+                    const detection = await faceDetection;
                     samples.push({
                         time,
+                        detected: Boolean(detection),
                         landmarks: normalizeLandmarks(mesh),
                         eyePose: eyePose(mesh),
-                        expressions: detection ? Object.fromEntries(EMOTIONS.map((emotion) => [emotion, detection.expressions[emotion] || 0])) : null
+                        expressions: Object.fromEntries(EMOTIONS.map((emotion) => [emotion, detection?.expressions[emotion] || 0]))
                     });
+                    if (samples.length % 8 === 0) await new Promise(requestAnimationFrame);
                 }
+                if (!samples.length) throw new Error("映像フレームがありません");
+                el.progress.value = 1;
                 boundaries = detectBoundaries();
                 clip.analysisSeries = analysisSeries;
                 clip.boundaries = boundaries;
-                if (!boundaries) throw new Error("十分な表情変化を検出できませんでした。対象表情または解析間隔を調整してください");
+                if (!boundaries) throw new Error("十分な表情変化を検出できませんでした。対象表情を調整してください");
                 renderBoundaries();
                 setRange(boundaries.onset, boundaries.settle, false);
-                el.analysisBadge.textContent = `検出 ${Math.round(samples.filter((sample) => sample.landmarks).length / samples.length * 100)}%`;
+                el.analysisBadge.textContent = `${samples.length}f · 検出 ${Math.round(samples.filter((sample) => sample.landmarks).length / samples.length * 100)}%`;
                 el.analysisBadge.classList.add("ready");
                 setStatus(`発生 ${formatTime(boundaries.onset)} / ピーク ${formatTime(boundaries.peak)} / 収束 ${formatTime(boundaries.settle)}`);
                 await prepareFrames();
@@ -1269,6 +1310,32 @@
             context.fillRect(0, 0, context.canvas.width, context.canvas.height);
         }
 
+        function faceTarget(canvas) {
+            return {
+                x: canvas.width * (.5 + alignment.x / 100),
+                y: canvas.height * (.36 + alignment.y / 100),
+                eyeDistance: canvas.width * .34 * alignment.scale / 100
+            };
+        }
+
+        function drawFaceGuide(context) {
+            const { x, y, eyeDistance: size } = faceTarget(context.canvas);
+            context.save();
+            context.strokeStyle = "rgba(255,255,255,.62)";
+            context.lineWidth = Math.max(1, context.canvas.width * .0015);
+            context.setLineDash([context.lineWidth * 4, context.lineWidth * 3]);
+            context.beginPath();
+            context.ellipse(x, y + size * .72, size * 1.08, size * 1.42, 0, 0, Math.PI * 2);
+            context.moveTo(x - size * .68, y);
+            context.ellipse(x - size * .5, y, size * .18, size * .09, 0, 0, Math.PI * 2);
+            context.moveTo(x + size * .68, y);
+            context.ellipse(x + size * .5, y, size * .18, size * .09, 0, 0, Math.PI * 2);
+            context.moveTo(x - size * .38, y + size * .82);
+            context.quadraticCurveTo(x, y + size * 1.02, x + size * .38, y + size * .82);
+            context.stroke();
+            context.restore();
+        }
+
         function drawAlignedFrame(context, video, pose) {
             const canvas = context.canvas;
             clearCanvas(context);
@@ -1279,9 +1346,10 @@
             const dy = right.y - left.y;
             const eyeDistance = Math.hypot(dx, dy);
             if (eyeDistance < 1) return drawCoverOn(context, canvas, video, video.videoWidth, video.videoHeight);
-            const scale = clamp(canvas.width * .34 / eyeDistance, .25, 4);
+            const target = faceTarget(canvas);
+            const scale = clamp(target.eyeDistance / eyeDistance, .25, 4);
             context.save();
-            context.translate(canvas.width * .5, canvas.height * .36);
+            context.translate(target.x, target.y);
             context.rotate(-Math.atan2(dy, dx));
             context.scale(scale, scale);
             context.drawImage(video, -(left.x + right.x) / 2, -(left.y + right.y) / 2);
@@ -1296,6 +1364,7 @@
                 ctx.imageSmoothingQuality = "high";
                 ctx.drawImage(frame, 0, 0, el.outputCanvas.width, el.outputCanvas.height);
             }
+            drawFaceGuide(ctx);
         }
 
         async function prepareAllFrames() {
@@ -1486,15 +1555,16 @@
                 const video = document.createElement("video");
                 video.preload = "auto";
                 video.muted = true;
+                const loaded = waitFor(video, "loadedmetadata");
                 video.src = clip.url;
-                await waitFor(video, "loadedmetadata");
+                await loaded;
                 return [clip.id, video];
             }));
             return new Map(entries);
         }
 
         async function exportRecording(duration, plan, fileHandle) {
-            const { Output, Mp4OutputFormat, BufferTarget, StreamTarget, CanvasSource, Quality, getFirstEncodableVideoCodec } = await import(MEDIABUNNY_URL);
+            const { Output, Mp4OutputFormat, BufferTarget, StreamTarget, CanvasSource, Quality, getFirstEncodableVideoCodec } = await mediabunny;
             const width = num(el.outputResolution.value, 720);
             const height = width * 16 / 9;
             const canvas = document.createElement("canvas");
@@ -1653,6 +1723,25 @@
             drawShapeWave(shapeCycleStartedAt);
         }
 
+        function updateAlignmentOutputs() {
+            const signed = (value) => `${num(value) > 0 ? "+" : ""}${value}%`;
+            el.alignXOutput.textContent = signed(el.alignX.value);
+            el.alignYOutput.textContent = signed(el.alignY.value);
+            el.alignScaleOutput.textContent = `${el.alignScale.value}%`;
+        }
+
+        function updateAlignment() {
+            alignment.x = num(el.alignX.value);
+            alignment.y = num(el.alignY.value);
+            alignment.scale = num(el.alignScale.value, 100);
+            updateAlignmentOutputs();
+            if (!flickerPlaying && el.sourceVideo.readyState >= 2 && samples.some((sample) => sample.eyePose)) {
+                drawAlignedFrame(ctx, el.sourceVideo, eyePoseFrom(samples, el.sourceVideo.currentTime));
+                drawFaceGuide(ctx);
+            } else drawCurrentFrame();
+            setStatus("共通の顔ガイドを変更しました。「反映」で全クリップに適用します");
+        }
+
         function drawChart() {
             const canvas = el.analysisChart;
             const rect = canvas.getBoundingClientRect();
@@ -1763,6 +1852,8 @@
                 el.fpsOutput.textContent = `${el.flickerFps.value} fps`;
             });
             [el.shapeVariation, el.shapeMaxPeriod, el.shapeReachFloor].forEach((input) => input.addEventListener("input", updateShapeControl));
+            [el.alignX, el.alignY, el.alignScale].forEach((input) => input.addEventListener("input", updateAlignment));
+            el.alignApplyButton.addEventListener("click", prepareAllFrames);
             el.outputResolution.addEventListener("input", () => {
                 const width = num(el.outputResolution.value, 720);
                 el.resolutionOutput.textContent = `${width} × ${width * 16 / 9}`;
@@ -1783,7 +1874,7 @@
         async function initialize() {
             bindEvents();
             renderClipList();
-            clearCanvas(ctx);
+            drawCurrentFrame();
             clearCanvas(rawContext);
             try {
                 await models;
@@ -1800,6 +1891,7 @@
 
         console.assert(Math.abs(crossing([{ time: 0, value: 0 }, { time: 1, value: 1 }], .5, "up", 1, 1) - .5) < 1e-9, "boundary interpolation");
         console.assert(emotionFromFileName("03_angry_take01.mp4") === "angry", "filename emotion detection");
+        console.assert(equalBlend(.2, .8) === .5 && equalBlend(null, .8) === .8, "50:50 analysis blend");
         console.assert(outputFrameRate(30) === 30 && outputFrameRate(31) === 60, "output frame rate selection");
         console.assert(chooseFrame([{}], -1, [], () => null, 0) === 0, "single frame selection");
         initialize();
