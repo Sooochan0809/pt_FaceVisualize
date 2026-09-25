@@ -74,6 +74,21 @@
             cursor: pointer;
         }
 
+        .fileButton.iconButton {
+            width: 80px;
+            height: 80px;
+            padding: 0;
+            border: 0;
+            border-radius: 50%;
+            background: transparent;
+        }
+
+        .iconButton img {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
         .primary {
             border-color: var(--accent);
             background: var(--accent);
@@ -102,6 +117,7 @@
         .panel {
             min-width: 0;
             padding: 14px;
+            margin-bottom: 1rem;
             border: 1px solid var(--line);
             border-radius: 11px;
             background: var(--panel);
@@ -109,7 +125,7 @@
 
         .controls {
             display: grid;
-            grid-template-columns: minmax(260px, 1fr) repeat(2, minmax(130px, auto));
+            grid-template-columns: repeat(2, minmax(130px, 180px)) 1fr;
             gap: 12px;
             align-items: end;
         }
@@ -117,6 +133,7 @@
         .actions {
             display: flex;
             flex-wrap: wrap;
+            justify-self: end;
             gap: 8px;
         }
 
@@ -174,13 +191,14 @@
             border-collapse: collapse;
             font-size: .76rem;
             font-variant-numeric: tabular-nums;
+            margin-bottom: 1rem;
         }
 
         th,
         td {
             padding: 10px 9px;
             border-bottom: 1px solid var(--line);
-            text-align: right;
+            text-align: center;
             white-space: nowrap;
         }
 
@@ -240,16 +258,16 @@
         }
 
         .empty {
-            padding: 36px 12px;
-            color: var(--muted);
-            text-align: center;
+            min-height: 180px;
+            display: grid;
+            place-items: center;
+            padding: 12px;
         }
 
         .detail {
             display: grid;
             grid-template-columns: minmax(280px, .75fr) minmax(0, 1.6fr);
             gap: 14px;
-            margin-top: 14px;
         }
 
         .videoShell {
@@ -331,29 +349,6 @@
         </header>
 
         <section class="panel">
-            <div class="controls">
-                <div class="actions">
-                    <label class="fileButton">WebMを追加<input id="fileInput" type="file" accept="video/webm,.webm"
-                            multiple></label>
-                    <button id="analyzeButton" class="primary" type="button" disabled>すべて解析</button>
-                    <button id="clearButton" type="button" disabled>クリア</button>
-                </div>
-                <label class="field">変化後の感情<select id="targetEmotion"></select></label>
-                <label class="field">平滑化<select id="smoothWindow">
-                        <option value="1">なし</option>
-                        <option value="3">3フレーム</option>
-                        <option value="5" selected>5フレーム</option>
-                        <option value="7">7フレーム</option>
-                        <option value="11">11フレーム</option>
-                    </select></label>
-            </div>
-            <div class="statusLine">
-                <span id="status">MediaPipe / Face APIモデルを読み込んでいます</span>
-                <progress id="progress" value="0" max="1" hidden></progress>
-            </div>
-        </section>
-
-        <section class="panel">
             <div class="tableWrap">
                 <table>
                     <thead>
@@ -365,7 +360,7 @@
                             <th>発生時間</th>
                             <th>継続時間</th>
                             <th>収束時間</th>
-                            <th>周期安定性（6:1:4:3）</th>
+                            <th>周期安定性<br>（6:1:4:3）</th>
                             <th>表情強度</th>
                             <th>継続安定性</th>
                             <th>発生／収束</th>
@@ -373,7 +368,30 @@
                     </thead>
                     <tbody id="resultsBody"></tbody>
                 </table>
-                <div class="empty" id="emptyState">比較する動画を追加してください</div>
+                <div class="empty" id="emptyState">
+                    <label class="fileButton iconButton" aria-label="WebMを追加" title="WebMを追加">
+                        <img src="icon-plus.png" alt="">
+                        <input id="fileInput" type="file" accept="video/webm,.webm" multiple>
+                    </label>
+                </div>
+                <div class="controls">
+                    <label class="field">変化後の感情<select id="targetEmotion"></select></label>
+                    <label class="field">平滑化<select id="smoothWindow">
+                            <option value="1">なし</option>
+                            <option value="3">3フレーム</option>
+                            <option value="5" selected>5フレーム</option>
+                            <option value="7">7フレーム</option>
+                            <option value="11">11フレーム</option>
+                        </select></label>
+                    <div class="actions">
+                        <button id="clearButton" type="button" disabled>クリア</button>
+                        <button id="analyzeButton" class="primary" type="button" disabled>すべて解析</button>
+                    </div>
+                </div>
+                <div class="statusLine">
+                    <span id="status">MediaPipe / Face APIモデルを読み込んでいます</span>
+                    <progress id="progress" value="0" max="1" hidden></progress>
+                </div>
             </div>
         </section>
 
