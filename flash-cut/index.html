@@ -686,8 +686,8 @@
                     <output id="resolutionOutput">720 × 1280</output>
                 </label>
                 <label class="playbackSetting">切替速度
-                    <input id="flickerFps" type="range" min="2" max="60" value="20" step="1">
-                    <output id="fpsOutput">20 fps</output>
+                    <input id="flickerFps" type="range" min="2" max="60" value="10" step="1">
+                    <output id="fpsOutput">10 fps</output>
                 </label>
             </section>
             <section class="panel">
@@ -697,15 +697,15 @@
                 <div class="alignmentControls">
                     <label class="playbackSetting">横 位置
                         <input id="alignX" type="range" min="-25" max="25" value="0" step="1">
-                        <output id="alignXOutput"></output>
+                        <output id="alignXOutput">0%</output>
                     </label>
                     <label class="playbackSetting">縦 位置
                         <input id="alignY" type="range" min="-25" max="25" value="5" step="1">
-                        <output id="alignYOutput"></output>
+                        <output id="alignYOutput">5%</output>
                     </label>
                     <label class="playbackSetting">顔サイズ
                         <input id="alignScale" type="range" min="50" max="150" value="140" step="1">
-                        <output id="alignScaleOutput"></output>
+                        <output id="alignScaleOutput">140%</output>
                     </label>
                     <button id="alignApplyButton" class="primary" type="button" disabled>反映</button>
                 </div>
@@ -794,7 +794,7 @@
         let recordingPlan = null;
         let rawPreviewRequest = 0;
         let rawPreviewTimer = 0;
-        const alignment = { x: 0, y: 0, scale: 100 };
+        const alignment = { x: num(el.alignX.value), y: num(el.alignY.value), scale: num(el.alignScale.value, 100) };
 
         const mediabunny = import(MEDIABUNNY_URL);
         const models = Promise.all([
@@ -911,7 +911,7 @@
             clip.rangeEnd = video.duration * .75;
         }
 
-        function updateResolutionLimit() {
+        function updateResolutionLimit(useSourceResolution = false) {
             const sourceLimit = clips.length
                 ? Math.min(...clips.map((clip) => Math.min(clip.width, clip.height * 9 / 16)))
                 : 2160;
@@ -919,7 +919,7 @@
             const max = clamp(rounded, 90, 2160);
             el.outputResolution.min = Math.min(360, max);
             el.outputResolution.max = max;
-            if (num(el.outputResolution.value) > max) el.outputResolution.value = max;
+            if (useSourceResolution || num(el.outputResolution.value) > max) el.outputResolution.value = max;
             const width = num(el.outputResolution.value, max);
             el.resolutionOutput.textContent = `${width} × ${width * 16 / 9}`;
         }
@@ -927,6 +927,7 @@
         async function addFiles(fileList) {
             const files = [...fileList].filter((file) => file.type.startsWith("video/"));
             if (!files.length || busy) return;
+            const firstImport = !clips.length;
             const additions = files.map((file) => ({
                 id: nextId++, name: file.name, file, url: URL.createObjectURL(file), duration: 0, width: 0, height: 0,
                 emotion: emotionFromFileName(file.name), samples: [], analysisSeries: [], boundaries: null, frames: [], rangeStart: 0, rangeEnd: 0
@@ -935,7 +936,7 @@
             try {
                 for (const clip of additions) await readMetadata(clip);
                 clips.push(...additions);
-                updateResolutionLimit();
+                updateResolutionLimit(firstImport);
                 renderClipList();
             } catch (error) {
                 additions.forEach((clip) => URL.revokeObjectURL(clip.url));
@@ -1326,12 +1327,10 @@
             context.setLineDash([context.lineWidth * 4, context.lineWidth * 3]);
             context.beginPath();
             context.ellipse(x, y + size * .72, size * 1.08, size * 1.42, 0, 0, Math.PI * 2);
-            context.moveTo(x - size * .68, y);
+            context.moveTo(x - size * .32, y);
             context.ellipse(x - size * .5, y, size * .18, size * .09, 0, 0, Math.PI * 2);
             context.moveTo(x + size * .68, y);
             context.ellipse(x + size * .5, y, size * .18, size * .09, 0, 0, Math.PI * 2);
-            context.moveTo(x - size * .38, y + size * .82);
-            context.quadraticCurveTo(x, y + size * 1.02, x + size * .38, y + size * .82);
             context.stroke();
             context.restore();
         }
