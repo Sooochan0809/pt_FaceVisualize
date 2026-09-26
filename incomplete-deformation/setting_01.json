@@ -1,5 +1,5 @@
 {
-  "version": 5,
+  "version": 6,
   "mode": "incomplete-deformation-peak-skip",
   "algorithm": "fixed-tempo_rise_peak-skip_natural-decay",
   "settings": {
@@ -7,8 +7,7 @@
     "skipDuration": 0.2,
     "decayDuration": 0.6,
     "holdDuration": 0.1,
-    "morphDuration": 0.2,
-    "sampleInterval": 0.08
+    "morphDuration": 0.2
   },
   "clips": [
     {

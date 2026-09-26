@@ -95,7 +95,6 @@
       "decayDuration",
       "holdDuration",
       "morphDuration",
-      "sampleInterval",
       "loopToggle",
       "clipEditor",
       "analyzeClipButton",
@@ -1208,7 +1207,7 @@
   }
 
   function updateAlignmentPose(clip) {
-    const radius = Math.max(0.2, setting("sampleInterval", 0.08) * 3);
+    const radius = 0.2;
     let poses = clip.samples
       .filter(
         (sample) =>
@@ -1447,17 +1446,12 @@
       alpha: false,
       poolSize: 2,
     });
-    const interval = setting("sampleInterval", 0.08);
-    const count = Math.max(2, Math.ceil(clip.duration / interval));
     clip.samples = [];
     clip.analysisSeries = [];
-    let nextSample = 0;
     for await (const wrapped of sink.canvases()) {
       const time = wrapped.timestamp - firstTimestamp;
-      if (time + 0.001 < nextSample) continue;
-      nextSample = time + interval;
       setStatus(
-        `${clip.name} を連続解析中 ${clip.samples.length + 1}/${count}`,
+        `${clip.name} の全フレームを解析中（${clip.samples.length + 1}フレーム）`,
         progressOffset + time / Math.max(clip.duration, 0.001),
         progressTotal,
       );
@@ -1470,6 +1464,9 @@
         analysisCanvas.height = frame.height;
       }
       analysisContext.drawImage(frame, 0, 0);
+      const faceDetection = faceapi
+        .detectSingleFace(analysisCanvas, detectorOptions)
+        .withFaceExpressions();
       const landmarkResult = faceLandmarker.detect(analysisCanvas);
       const detectedMesh = landmarkResult.faceLandmarks?.[0];
       const faceMesh =
@@ -1479,9 +1476,7 @@
         })) || null;
       const landmarks = normalizeMediaPipeLandmarks(detectedMesh);
       const eyePose = mediaPipeEyePose(detectedMesh);
-      const detection = await faceapi
-        .detectSingleFace(analysisCanvas, detectorOptions)
-        .withFaceExpressions();
+      const detection = await faceDetection;
       clip.samples.push({
         time,
         landmarks,
@@ -1911,8 +1906,6 @@
                 : NaN),
       ),
     );
-    applySetting(el.sampleInterval, settings.sampleInterval);
-
     const configClips = [...config.clips].sort(
       (a, b) => number(a.order, 0) - number(b.order, 0),
     );
@@ -1990,7 +1983,7 @@
 
   function exportJson() {
     const data = {
-      version: 5,
+      version: 6,
       mode: "incomplete-deformation-peak-skip",
       algorithm: "fixed-tempo_rise_peak-skip_natural-decay",
       settings: {
@@ -2001,7 +1994,6 @@
           ]),
         ),
         introDuration: number(el.morphDuration.value, 0.2),
-        sampleInterval: number(el.sampleInterval.value, 0.08),
       },
       clips: clips.map((clip, index) => {
         const plan = clipPlan(clip, index);
