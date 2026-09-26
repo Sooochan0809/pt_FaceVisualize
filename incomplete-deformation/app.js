@@ -68,12 +68,15 @@
     ]),
   ];
   const TRIANGLE_OVERDRAW = 0.75;
+  const PREVIEW_MAX_EDGE = 720;
   const EXPORT_FPS = 30;
   const MEDIABUNNY_URL = "https://cdn.jsdelivr.net/npm/mediabunny@1.49.0/+esm";
   const el = Object.fromEntries(
     [
       "sourceVideo",
       "transitionVideo",
+      "clipPreviewVideo",
+      "clipPreviewMeta",
       "outputCanvas",
       "stageTitle",
       "stagePhase",
@@ -88,9 +91,8 @@
       "clipCount",
       "clipList",
       "risePlaybackDuration",
-      "rewindDuration",
-      "returnDuration",
-      "preOnsetReturn",
+      "skipDurationSetting",
+      "decayDuration",
       "holdDuration",
       "morphDuration",
       "sampleInterval",
@@ -98,16 +100,15 @@
       "clipEditor",
       "analyzeClipButton",
       "emotionSelect",
-      "clipCutRatio",
+      "skipOutRange",
+      "skipInRange",
       "detectionBadge",
       "analysisChart",
       "emotionLegend",
-      "onsetInput",
-      "peakInput",
-      "settleInput",
-      "onsetDuration",
-      "riseDuration",
-      "settleDuration",
+      "skipOutInput",
+      "skipInInput",
+      "skipOutDuration",
+      "skipDuration",
       "exportButton",
       "exportJsonButton",
       "status",
@@ -116,9 +117,8 @@
   );
   const PLAYBACK_SETTINGS = [
     ["risePlaybackDuration", "riseDuration", 0.45],
-    ["rewindDuration", "rewindDuration", 0.45],
-    ["returnDuration", "returnDuration", 0.3],
-    ["preOnsetReturn", "preOnsetReturn", 0.3],
+    ["skipDurationSetting", "skipDuration", 0.2],
+    ["decayDuration", "decayDuration", 0.6],
     ["holdDuration", "holdDuration", 0.1],
     ["morphDuration", "morphDuration", 0.2],
   ];
@@ -127,8 +127,9 @@
     inputSize: 320,
     scoreThreshold: 0.35,
   });
-  const analysisCanvas = document.createElement("canvas");
   const outputContext = el.outputCanvas.getContext("2d", { alpha: false });
+  const analysisCanvas = document.createElement("canvas");
+  const analysisContext = analysisCanvas.getContext("2d", { alpha: false });
   const alignedCanvasA = document.createElement("canvas");
   const alignedCanvasB = document.createElement("canvas");
   const warpedCanvasA = document.createElement("canvas");
@@ -146,12 +147,17 @@
   let loadedClipId = null;
   let transitionLoadedClipId = null;
   let lastRenderedTime = -1;
+  let previewPhaseKey = "";
+  let previewRendering = false;
+  let previewVideo = el.sourceVideo;
+  let previewMorphVideos = [el.sourceVideo, el.transitionVideo];
   let nextId = 1;
   let importedConfig = null;
   let faceLandmarkerPromise = null;
   const delaunatorPromise = import(DELAUNATOR_URL).then(
     (module) => module.default,
   );
+  const mediabunnyPromise = import(MEDIABUNNY_URL);
 
   function getFaceLandmarker() {
     if (!faceLandmarkerPromise) {
@@ -180,17 +186,10 @@
     faceapi.nets.faceExpressionNet.loadFromUri(MODEL_URL),
     getFaceLandmarker(),
     delaunatorPromise,
+    mediabunnyPromise,
   ]);
 
   const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
-  const easeIntoFold = (progress) => {
-    const value = clamp(progress, 0, 1);
-    return value + value ** 2 - value ** 3;
-  };
-  const easeOutOfFold = (progress) => {
-    const value = clamp(progress, 0, 1);
-    return 2 * value ** 2 - value ** 3;
-  };
   const number = (value, fallback = 0) =>
     Number.isFinite(Number(value)) ? Number(value) : fallback;
   const setting = (id, fallback) =>
@@ -236,6 +235,9 @@
     el.analyzeClipButton.disabled = busy || !selectedClip() || !modelsReady;
     el.playButton.disabled = busy || !hasClips;
     el.playhead.disabled = busy || !hasClips;
+    [el.skipOutRange, el.skipInRange].forEach((input) => {
+      input.disabled = busy || !selectedClip();
+    });
     el.exportJsonButton.disabled = busy || !hasClips;
     el.exportButton.disabled = busy || !hasClips || !("VideoEncoder" in window);
   }
@@ -258,6 +260,9 @@
           Math.max(clip.onset + 0.05, video.duration - 0.1),
         );
         clip.settle = video.duration;
+        clip.skipOut = clip.onset + (clip.peak - clip.onset) * 0.7;
+        clip.plateauEnd = clip.peak;
+        clip.skipIn = clip.settle;
         resolve();
       };
       video.onerror = () =>
@@ -279,15 +284,16 @@
         width: 0,
         height: 0,
         emotion: emotionFromFileName(file.name),
-        cutRatio: 85,
         onset: 0,
         peak: 0,
+        skipOut: 0,
+        plateauEnd: 0,
+        skipIn: 0,
         settle: 0,
+        skipInManual: false,
         samples: [],
         analysisSeries: [],
         alignmentPose: null,
-        homeMatch: null,
-        importedHomeMatch: null,
         landmarkDetectionRate: null,
         analyzed: false,
       }));
@@ -317,8 +323,11 @@
   }
 
   function cutTime(clip) {
-    const ratio = clamp(number(clip.cutRatio, 85) / 100, 0.1, 0.99);
-    return clip.onset + Math.max(0.01, clip.peak - clip.onset) * ratio;
+    return clamp(
+      number(clip.skipOut, clip.onset),
+      clip.onset,
+      Math.max(clip.onset, clip.peak),
+    );
   }
 
   function setBoundaries(clip, boundaries) {
@@ -328,60 +337,55 @@
       clip.onset,
       clip.duration,
     );
-    clip.settle = clamp(
-      number(boundaries.settle, clip.settle),
+    clip.skipOut = clamp(
+      number(
+        boundaries.skipOut,
+        clip.skipOut || clip.onset + (clip.peak - clip.onset) * 0.7,
+      ),
+      clip.onset,
+      clip.peak,
+    );
+    clip.plateauEnd = clamp(
+      number(boundaries.plateauEnd, clip.plateauEnd || clip.peak),
       clip.peak,
       clip.duration,
     );
-  }
-
-  function preOnsetTarget(clip) {
-    return Math.max(0, clip.onset - setting("preOnsetReturn", 0.3));
+    clip.settle = clamp(
+      number(boundaries.settle, clip.settle),
+      clip.plateauEnd,
+      clip.duration,
+    );
+    clip.skipIn = clamp(
+      number(boundaries.skipIn, clip.skipIn || clip.plateauEnd),
+      Math.min(clip.settle, clip.skipOut + 0.02),
+      clip.settle,
+    );
   }
 
   function clipPlan(clip, index = clips.indexOf(clip)) {
-    const isHome = index === 0;
-    const homeClip = clips[0] || clip;
-    const homeTime = preOnsetTarget(homeClip);
+    const previousClip = clips[index - 1] || null;
     const cut = cutTime(clip);
-    const returnTime = isHome
-      ? clamp(homeTime, 0, cut)
-      : clamp(clip.homeMatch?.returnTime ?? preOnsetTarget(clip), 0, cut);
-    const transitionDuration = setting("morphDuration", 0.2);
-    const morphIn = isHome ? 0 : transitionDuration;
-    const morphInStart = isHome
-      ? 0
-      : clamp(clip.onset - morphIn, 0, clip.onset);
-    const morphInEnd = isHome ? 0 : clip.onset;
-    const intro = isHome ? transitionDuration : 0;
-    const sourceStart = clip.onset;
+    const skipIn = clamp(clip.skipIn || clip.settle, cut, clip.settle);
+    const morphIn = previousClip ? setting("morphDuration", 0.2) : 0;
+    const intro = previousClip ? 0 : setting("morphDuration", 0.2);
     const forward = setting("risePlaybackDuration", 0.45);
-    const reverse = setting("rewindDuration", 0.45);
-    const homeReturn = setting("returnDuration", 0.3);
-    const reverseMorphStart = clip.onset;
-    const morphOut = isHome ? 0 : homeReturn;
-    const returnReverse = isHome ? homeReturn : 0;
+    const skip = setting("skipDurationSetting", 0.2);
+    const decay = setting("decayDuration", 0.6);
     const hold = setting("holdDuration", 0.1);
     return {
       clip,
       index,
-      homeClip,
-      homeTime,
-      sourceStart,
-      returnTime,
+      previousClip,
+      sourceStart: clip.onset,
       cut,
+      skipIn,
       intro,
-      morphInStart,
-      morphInEnd,
       morphIn,
       forward,
-      reverse,
-      reverseMorphStart,
-      morphOut,
-      returnReverse,
+      skip,
+      decay,
       hold,
-      duration:
-        intro + morphIn + forward + reverse + morphOut + returnReverse + hold,
+      duration: intro + morphIn + forward + skip + decay + hold,
     };
   }
 
@@ -411,12 +415,16 @@
         if (cursor <= plan.morphIn && plan.morphIn > 0) {
           const transitionProgress = clamp(cursor / plan.morphIn, 0, 1);
           return mapped(plan, index, {
-            clip: plan.homeClip,
+            clip: plan.previousClip,
             nextClip: plan.clip,
-            sourceTime: plan.homeTime,
-            nextSourceTime:
-              plan.morphInStart +
-              (plan.morphInEnd - plan.morphInStart) * transitionProgress,
+            sourceTime: Math.min(
+              plan.previousClip.duration,
+              plan.previousClip.settle + cursor,
+            ),
+            nextSourceTime: Math.max(
+              0,
+              plan.clip.onset - plan.morphIn + cursor,
+            ),
             transitionProgress,
             phase: "MORPH_IN",
           });
@@ -425,48 +433,32 @@
         if (cursor <= plan.forward)
           return mapped(plan, index, {
             sourceTime:
-              plan.sourceStart +
-              (plan.cut - plan.sourceStart) *
-                easeIntoFold(cursor / plan.forward),
+              plan.sourceStart + (plan.cut - plan.sourceStart) * (cursor / plan.forward),
             phase: "FORWARD",
           });
         cursor -= plan.forward;
-        if (cursor <= plan.reverse) {
+        if (cursor <= plan.skip) {
+          const transitionProgress = clamp(cursor / plan.skip, 0, 1);
           return mapped(plan, index, {
-            sourceTime:
-              plan.cut -
-              (plan.cut - plan.reverseMorphStart) *
-                easeOutOfFold(cursor / plan.reverse),
-            phase: "REWIND",
-          });
-        }
-        cursor -= plan.reverse;
-        if (cursor <= plan.morphOut && plan.morphOut > 0) {
-          const transitionProgress = clamp(cursor / plan.morphOut, 0, 1);
-          return mapped(plan, index, {
-            nextClip: plan.homeClip,
-            sourceTime:
-              plan.reverseMorphStart -
-              (plan.reverseMorphStart - plan.returnTime) * transitionProgress,
-            nextSourceTime: plan.homeTime,
+            nextClip: plan.clip,
+            sourceTime: plan.cut,
+            nextSourceTime: plan.skipIn,
             transitionProgress,
-            phase: "MORPH_OUT",
+            phase: "MORPH_SKIP",
           });
         }
-        cursor -= plan.morphOut;
-        if (cursor <= plan.returnReverse && plan.returnReverse > 0) {
+        cursor -= plan.skip;
+        if (cursor <= plan.decay) {
           return mapped(plan, index, {
             sourceTime:
-              plan.reverseMorphStart -
-              (plan.reverseMorphStart - plan.returnTime) *
-                clamp(cursor / plan.returnReverse, 0, 1),
-            phase: "REWIND_HOME",
+              plan.skipIn +
+              (plan.clip.settle - plan.skipIn) * (cursor / plan.decay),
+            phase: "DECAY",
           });
         }
-        cursor -= plan.returnReverse;
+        cursor -= plan.decay;
         return mapped(plan, index, {
-          clip: plan.homeClip,
-          sourceTime: plan.homeTime,
+          sourceTime: plan.clip.settle,
           phase: "HOME",
         });
       }
@@ -511,8 +503,11 @@
 
   function sizeCanvas() {
     const reference = clips[0];
-    const width = Math.max(1, reference?.width || 1280);
-    const height = Math.max(1, reference?.height || 720);
+    const sourceWidth = Math.max(1, reference?.width || 1280);
+    const sourceHeight = Math.max(1, reference?.height || 720);
+    const scale = Math.min(1, PREVIEW_MAX_EDGE / Math.max(sourceWidth, sourceHeight));
+    const width = Math.round(sourceWidth * scale);
+    const height = Math.round(sourceHeight * scale);
     if (el.outputCanvas.width !== width || el.outputCanvas.height !== height) {
       el.outputCanvas.width = width;
       el.outputCanvas.height = height;
@@ -758,34 +753,44 @@
     }
   }
 
-  async function renderMorphFrame(ctx, mapped, width, height) {
+  async function renderMorphFrame(
+    ctx,
+    mapped,
+    width,
+    height,
+    seek = true,
+    mediaA = el.sourceVideo,
+    mediaB = el.transitionVideo,
+  ) {
     const nextClip = mapped.nextClip;
     if (!nextClip) {
       drawAlignedFrame(ctx, mapped.clip, width, height);
       return;
     }
-    await Promise.all([
-      loadVideoSlot(el.sourceVideo, mapped.clip),
-      loadVideoSlot(el.transitionVideo, nextClip),
-    ]);
-    await Promise.all([
-      seekVideoSlot(el.sourceVideo, mapped.sourceTime),
-      seekVideoSlot(el.transitionVideo, mapped.nextSourceTime),
-    ]);
+    if (seek) {
+      await Promise.all([
+        loadVideoSlot(mediaA, mapped.clip),
+        loadVideoSlot(mediaB, nextClip),
+      ]);
+      await Promise.all([
+        seekVideoSlot(mediaA, mapped.sourceTime),
+        seekVideoSlot(mediaB, mapped.nextSourceTime),
+      ]);
+    }
     resizeWorkCanvases(width, height);
     drawAlignedFrame(
       alignedCanvasA.getContext("2d", { alpha: false }),
       mapped.clip,
       width,
       height,
-      el.sourceVideo,
+      mediaA,
     );
     drawAlignedFrame(
       alignedCanvasB.getContext("2d", { alpha: false }),
       nextClip,
       width,
       height,
-      el.transitionVideo,
+      mediaB,
     );
     const progress =
       mapped.transitionProgress *
@@ -797,8 +802,14 @@
     ctx.drawImage(alignedCanvasB, 0, 0);
     ctx.globalAlpha = 1;
 
-    const sampleA = nearestMeshSample(mapped.clip, mapped.sourceTime);
-    const sampleB = nearestMeshSample(nextClip, mapped.nextSourceTime);
+    const sampleA = nearestMeshSample(
+      mapped.clip,
+      seek ? mapped.sourceTime : mediaA.currentTime,
+    );
+    const sampleB = nearestMeshSample(
+      nextClip,
+      seek ? mapped.nextSourceTime : mediaB.currentTime,
+    );
     const pointsA = alignedMeshPoints(
       mapped.clip,
       sampleA?.faceMesh,
@@ -870,6 +881,118 @@
     ctx.drawImage(morphCanvas, 0, 0);
   }
 
+  function updateStage(mapped) {
+    el.stageTitle.textContent =
+      mapped.phase === "MORPH_IN"
+        ? `${mapped.index}. ${mapped.clip.name} → ${mapped.index + 1}. ${mapped.nextClip.name}`
+        : `${mapped.index + 1}. ${mapped.clip.name}`;
+    el.stagePhase.textContent = mapped.phase.startsWith("MORPH")
+      ? `${mapped.phase === "MORPH_IN" ? "NEUTRAL → ONSET" : "PEAK SKIP"}  ${Math.round(mapped.transitionProgress * 100)}%`
+      : mapped.phase === "HOME"
+        ? `NEUTRAL  ${mapped.sourceTime.toFixed(2)}s`
+        : `${mapped.phase}  ${mapped.sourceTime.toFixed(2)}s / CUT ${mapped.cut.toFixed(2)}s`;
+  }
+
+  function playbackRate(mapped) {
+    if (mapped.phase === "INTRO") return mapped.clip.onset / mapped.intro;
+    if (mapped.phase === "FORWARD")
+      return (mapped.cut - mapped.sourceStart) / mapped.forward;
+    if (mapped.phase === "DECAY")
+      return (mapped.clip.settle - mapped.skipIn) / mapped.decay;
+    return mapped.phase === "MORPH_IN" ? 1 : 0;
+  }
+
+  const loadedId = (video) =>
+    video === el.transitionVideo ? transitionLoadedClipId : loadedClipId;
+
+  function closestLoadedVideo(clip, time) {
+    return [el.sourceVideo, el.transitionVideo]
+      .filter((video) => loadedId(video) === clip.id)
+      .sort(
+        (a, b) =>
+          Math.abs(a.currentTime - time) - Math.abs(b.currentTime - time),
+      )[0];
+  }
+
+  async function seekIfNeeded(video, time) {
+    if (Math.abs(video.currentTime - time) > 0.18) {
+      video.pause();
+      await seekVideoSlot(video, time);
+    }
+  }
+
+  async function preparePreview(mapped, key) {
+    if (mapped.phase.startsWith("MORPH")) {
+      const mediaA =
+        closestLoadedVideo(mapped.clip, mapped.sourceTime) || previewVideo;
+      const mediaB =
+        mediaA === el.sourceVideo ? el.transitionVideo : el.sourceVideo;
+      await Promise.all([
+        loadVideoSlot(mediaA, mapped.clip),
+        loadVideoSlot(mediaB, mapped.nextClip),
+      ]);
+      await Promise.all([
+        seekIfNeeded(mediaA, mapped.sourceTime),
+        seekIfNeeded(mediaB, mapped.nextSourceTime),
+      ]);
+      previewMorphVideos = [mediaA, mediaB];
+      previewVideo = mediaB;
+    } else {
+      previewVideo =
+        closestLoadedVideo(mapped.clip, mapped.sourceTime) || previewVideo;
+      await loadVideoSlot(previewVideo, mapped.clip);
+      await seekIfNeeded(previewVideo, mapped.sourceTime);
+      (previewVideo === el.sourceVideo
+        ? el.transitionVideo
+        : el.sourceVideo
+      ).pause();
+    }
+    if (!playing || previewPhaseKey !== key) return;
+    const rate = clamp(playbackRate(mapped), 0, 16);
+    if (rate > 0) {
+      previewVideo.playbackRate = Math.max(0.0625, rate);
+      await previewVideo.play();
+      if (mapped.phase === "MORPH_IN") {
+        previewMorphVideos[0].playbackRate = 1;
+        await previewMorphVideos[0].play();
+      }
+    } else {
+      previewMorphVideos[0].pause();
+      previewMorphVideos[1].pause();
+    }
+  }
+
+  async function renderPreview(position) {
+    const mapped = mapSequenceTime(position);
+    if (!mapped) return;
+    const key = `${mapped.index}:${mapped.phase}`;
+    if (key !== previewPhaseKey) {
+      previewPhaseKey = key;
+      await preparePreview(mapped, key);
+    }
+    if (!playing || previewPhaseKey !== key) return;
+    sizeCanvas();
+    if (mapped.phase.startsWith("MORPH")) {
+      await renderMorphFrame(
+        outputContext,
+        mapped,
+        el.outputCanvas.width,
+        el.outputCanvas.height,
+        false,
+        ...previewMorphVideos,
+      );
+    } else {
+      drawAlignedFrame(
+        outputContext,
+        mapped.clip,
+        el.outputCanvas.width,
+        el.outputCanvas.height,
+        previewVideo,
+      );
+    }
+    updateStage(mapped);
+  }
+
   async function renderAt(position, force = false) {
     const mapped = mapSequenceTime(position);
     if (!mapped) {
@@ -904,14 +1027,7 @@
         lastRenderedTime = mapped.sourceTime;
       }
     }
-    el.stageTitle.textContent = mapped.phase.startsWith("MORPH")
-      ? `${mapped.index + 1}. ${mapped.clip.name} → ${mapped.nextClip.name}`
-      : `${mapped.index + 1}. ${mapped.clip.name}`;
-    el.stagePhase.textContent = mapped.phase.startsWith("MORPH")
-      ? `${mapped.phase === "MORPH_IN" ? "HOME → ONSET" : "REWIND + MORPH → HOME"}  ${Math.round(mapped.transitionProgress * 100)}%`
-      : mapped.phase === "HOME"
-        ? `HOME  ${mapped.sourceTime.toFixed(2)}s`
-        : `${mapped.phase}  ${mapped.sourceTime.toFixed(2)}s / CUT ${mapped.cut.toFixed(2)}s`;
+    updateStage(mapped);
     updateTransport(mapped.index);
   }
 
@@ -932,7 +1048,7 @@
     );
   }
 
-  async function tick(now) {
+  function tick(now) {
     if (!playing) return;
     const total = sequenceDuration();
     playPosition = (now - playStartedAt) / 1000;
@@ -945,12 +1061,19 @@
         pause();
       }
     }
-    try {
-      await renderAt(playPosition);
-    } catch (error) {
-      pause();
-      setStatus(error.message, 0, 0, true);
-      return;
+    const mapped = mapSequenceTime(playPosition);
+    updateTransport(mapped?.index ?? -1);
+    if (mapped) updateStage(mapped);
+    if (!previewRendering) {
+      previewRendering = true;
+      renderPreview(playPosition)
+        .catch((error) => {
+          pause();
+          setStatus(error.message, 0, 0, true);
+        })
+        .finally(() => {
+          previewRendering = false;
+        });
     }
     if (playing) animationId = requestAnimationFrame(tick);
   }
@@ -960,6 +1083,7 @@
     if (!total || busy) return;
     if (playPosition >= total - 0.001) playPosition = 0;
     playing = true;
+    previewPhaseKey = "";
     playStartedAt = performance.now() - playPosition * 1000;
     updateTransport();
     animationId = requestAnimationFrame(tick);
@@ -968,6 +1092,9 @@
   function pause() {
     playing = false;
     cancelAnimationFrame(animationId);
+    el.sourceVideo.pause();
+    el.transitionVideo.pause();
+    previewPhaseKey = "";
     updateTransport();
   }
 
@@ -1065,7 +1192,8 @@
       3,
       Math.min(shapes.length, Math.round(shapes.length * 0.15)),
     );
-    const baselineShape = averageVector(shapes.slice(0, baselineCount));
+    const startShape = averageVector(shapes.slice(0, baselineCount));
+    const endShape = averageVector(shapes.slice(-baselineCount));
     clip.samples.forEach((sample, index) => {
       const nearbyShapes = clip.samples
         .slice(Math.max(0, index - 2), index + 3)
@@ -1073,11 +1201,9 @@
         .filter(Boolean);
       const shape = averageVector(nearbyShapes);
       sample.landmarkDistance = shape
-        ? vectorDistance(shape, baselineShape)
+        ? Math.min(vectorDistance(shape, startShape), vectorDistance(shape, endShape))
         : null;
-      sample.landmarkDelta = shape
-        ? shape.map((value, shapeIndex) => value - baselineShape[shapeIndex])
-        : null;
+      sample.landmarkDelta = shape;
     });
   }
 
@@ -1097,77 +1223,37 @@
     clip.alignmentPose = averageEyePoses(poses);
   }
 
-  function findHomeMatch(homeClip, targetClip) {
-    if (!homeClip.analyzed || !targetClip.analyzed) return null;
-    const interval = setting("sampleInterval", 0.08);
-    const preOnset = setting("preOnsetReturn", 0.3);
-    const homeTime = preOnsetTarget(homeClip);
-    const homeCandidates = homeClip.samples.filter(
-      (sample) => sample.landmarkDelta,
-    );
-    const homeSample = homeCandidates.reduce(
+  function updateSkipMatch(clip) {
+    if (clip.skipInManual || !clip.samples.length) return;
+    const target = clip.samples.reduce(
       (best, sample) =>
-        !best ||
-        Math.abs(sample.time - homeTime) < Math.abs(best.time - homeTime)
+        sample.landmarkDelta &&
+        (!best || Math.abs(sample.time - cutTime(clip)) < Math.abs(best.time - cutTime(clip)))
           ? sample
           : best,
       null,
     );
-    if (!homeSample) return null;
-    const targetEarliest = Math.max(
-      0,
-      targetClip.onset - Math.max(interval, preOnset * 2),
-    );
-    const targetLatest = Math.max(
-      0,
-      targetClip.onset - Math.min(interval * 0.5, Math.max(0.01, preOnset)),
-    );
-    const targetCandidates = targetClip.samples.filter(
-      (sample) =>
-        sample.landmarkDelta &&
-        sample.time >= targetEarliest &&
-        sample.time <= targetLatest,
-    );
-    let best = null;
-    targetCandidates.forEach((sample) => {
-      const distance = vectorDistance(
-        homeSample.landmarkDelta,
-        sample.landmarkDelta,
-      );
-      if (distance === null || (best && distance >= best.distance)) return;
-      best = {
-        homeTime,
-        entryTime: targetClip.onset,
-        returnTime: sample.time,
-        distance,
-      };
-    });
-    return best;
+    const match = clip.samples
+      .filter(
+        (sample) =>
+          sample.landmarkDelta &&
+          sample.time >= clip.plateauEnd &&
+          sample.time <= clip.settle,
+      )
+      .reduce((best, sample) => {
+        const distance = vectorDistance(target?.landmarkDelta, sample.landmarkDelta);
+        return distance !== null && (!best || distance < best.distance)
+          ? { time: sample.time, distance }
+          : best;
+      }, null);
+    if (match) {
+      clip.skipIn = match.time;
+      clip.skipMatchDistance = match.distance;
+    }
   }
 
   function rebuildTransitions() {
-    clips.forEach((clip) => {
-      clip.homeMatch = null;
-    });
-    const homeClip = clips[0];
-    for (let index = 1; index < clips.length; index += 1) {
-      const clip = clips[index];
-      const importedMatch = clip.importedHomeMatch;
-      clip.homeMatch =
-        findHomeMatch(homeClip, clip) ||
-        (importedMatch && Number.isFinite(Number(importedMatch.returnTime))
-          ? {
-              ...importedMatch,
-              homeTime: preOnsetTarget(homeClip),
-              entryTime: clip.onset,
-              returnTime: clamp(
-                Number(importedMatch.returnTime),
-                0,
-                clip.onset,
-              ),
-            }
-          : null);
-    }
+    clips.forEach(updateSkipMatch);
   }
 
   function smoothed(clip) {
@@ -1205,14 +1291,16 @@
       1,
       Math.min(valid.length, Math.round(valid.length * 0.15)),
     );
-    const baseline =
-      valid.slice(0, baselineCount).reduce((sum, value) => sum + value, 0) /
-      baselineCount;
+    const edges = [
+      ...valid.slice(0, baselineCount),
+      ...valid.slice(-baselineCount),
+    ];
+    const baseline = edges.reduce((sum, value) => sum + value, 0) / edges.length;
     const amplitude = Math.max(...valid) - baseline;
     return { baseline, amplitude, usable: amplitude >= minimumAmplitude };
   }
 
-  function crossing(items, level, direction, start, end) {
+  function crossing(items, level, direction, start, end, sustain = 1) {
     for (let i = Math.max(1, start); i <= end; i += 1) {
       const a = items[i - 1],
         b = items[i];
@@ -1220,7 +1308,12 @@
         direction === "up"
           ? a.value <= level && b.value >= level
           : a.value >= level && b.value <= level;
-      if (!hit) continue;
+      const held = items
+        .slice(i, Math.min(items.length, i + sustain))
+        .every((item) =>
+          direction === "up" ? item.value >= level : item.value <= level,
+        );
+      if (!hit || !held) continue;
       const ratio =
         Math.abs(b.value - a.value) < 1e-6
           ? 0
@@ -1307,69 +1400,77 @@
       if (item.value > data[peakIndex].value) peakIndex = index;
     });
     const onset =
-      crossing(data, 0.08, "up", 1, peakIndex) ??
+      crossing(data, 0.15, "up", 1, peakIndex, 3) ??
       data[Math.max(0, peakIndex - 1)].time;
     const peak =
-      crossing(data, 0.92, "up", 1, peakIndex) ?? data[peakIndex].time;
+      crossing(data, 0.9, "up", 1, peakIndex, 2) ?? data[peakIndex].time;
+    let plateauEndIndex = peakIndex;
+    data.forEach((item, index) => {
+      if (index >= peakIndex && item.value >= 0.9) plateauEndIndex = index;
+    });
+    const plateauEnd =
+      crossing(data, 0.9, "down", plateauEndIndex + 1, data.length - 1) ??
+      data[plateauEndIndex].time;
     const settle =
-      crossing(data, 0.2, "down", peakIndex + 1, data.length - 1) ??
+      crossing(data, 0.15, "down", plateauEndIndex + 1, data.length - 1, 3) ??
       clip.duration;
     const boundedOnset = clamp(onset, 0, clip.duration);
     setBoundaries(clip, {
       onset: boundedOnset,
       peak: Math.max(boundedOnset + 0.01, peak),
+      skipOut: boundedOnset + (Math.max(boundedOnset + 0.01, peak) - boundedOnset) * 0.7,
+      plateauEnd: Math.max(peak, plateauEnd),
       settle: Math.max(peak, settle),
     });
+    clip.skipInManual = false;
+    updateSkipMatch(clip);
     updateAlignmentPose(clip);
     return true;
-  }
-
-  function analysisFrame() {
-    const scale = Math.min(
-      1,
-      320 / Math.max(el.sourceVideo.videoWidth, el.sourceVideo.videoHeight),
-    );
-    analysisCanvas.width = Math.max(
-      1,
-      Math.round(el.sourceVideo.videoWidth * scale),
-    );
-    analysisCanvas.height = Math.max(
-      1,
-      Math.round(el.sourceVideo.videoHeight * scale),
-    );
-    analysisCanvas
-      .getContext("2d", { alpha: false })
-      .drawImage(
-        el.sourceVideo,
-        0,
-        0,
-        analysisCanvas.width,
-        analysisCanvas.height,
-      );
-    return analysisCanvas;
   }
 
   async function analyzeClip(clip, progressOffset = 0, progressTotal = 1) {
     await models;
     const faceLandmarker = await getFaceLandmarker();
-    await loadVideoSlot(el.sourceVideo, clip);
+    const { Input, ALL_FORMATS, BlobSource, CanvasSink } =
+      await mediabunnyPromise;
+    const input = new Input({
+      formats: ALL_FORMATS,
+      source: new BlobSource(clip.file),
+    });
+    const track = await input.getPrimaryVideoTrack();
+    if (!track || !(await track.canDecode()))
+      throw new Error(`${clip.name} をデコードできません`);
+    const firstTimestamp = await track.getFirstTimestamp();
+    clip.duration = await track.computeDuration();
+    const sink = new CanvasSink(track, {
+      width: 320,
+      alpha: false,
+      poolSize: 2,
+    });
     const interval = setting("sampleInterval", 0.08);
     const count = Math.max(2, Math.ceil(clip.duration / interval));
     clip.samples = [];
     clip.analysisSeries = [];
-    for (let index = 0; index < count; index += 1) {
-      const time = Math.min(
-        index * interval,
-        Math.max(0, clip.duration - 0.01),
-      );
+    let nextSample = 0;
+    for await (const wrapped of sink.canvases()) {
+      const time = wrapped.timestamp - firstTimestamp;
+      if (time + 0.001 < nextSample) continue;
+      nextSample = time + interval;
       setStatus(
-        `${clip.name} を解析中 ${index + 1}/${count}`,
-        progressOffset + (index + 1) / count,
+        `${clip.name} を連続解析中 ${clip.samples.length + 1}/${count}`,
+        progressOffset + time / Math.max(clip.duration, 0.001),
         progressTotal,
       );
-      await seekVideoSlot(el.sourceVideo, time);
-      const frame = analysisFrame();
-      const landmarkResult = faceLandmarker.detect(frame);
+      const frame = wrapped.canvas;
+      if (
+        analysisCanvas.width !== frame.width ||
+        analysisCanvas.height !== frame.height
+      ) {
+        analysisCanvas.width = frame.width;
+        analysisCanvas.height = frame.height;
+      }
+      analysisContext.drawImage(frame, 0, 0);
+      const landmarkResult = faceLandmarker.detect(analysisCanvas);
       const detectedMesh = landmarkResult.faceLandmarks?.[0];
       const faceMesh =
         detectedMesh?.map((point) => ({
@@ -1379,7 +1480,7 @@
       const landmarks = normalizeMediaPipeLandmarks(detectedMesh);
       const eyePose = mediaPipeEyePose(detectedMesh);
       const detection = await faceapi
-        .detectSingleFace(frame, detectorOptions)
+        .detectSingleFace(analysisCanvas, detectorOptions)
         .withFaceExpressions();
       clip.samples.push({
         time,
@@ -1395,12 +1496,14 @@
             )
           : null,
       });
+      if (clip.samples.length % 8 === 0)
+        await new Promise(requestAnimationFrame);
     }
+    if (!clip.samples.length) throw new Error(`${clip.name} に映像フレームがありません`);
     clip.landmarkDetectionRate =
       clip.samples.filter((sample) => sample.landmarks).length /
       clip.samples.length;
     clip.analyzed = detectBoundaries(clip);
-    clip.importedHomeMatch = null;
     rebuildTransitions();
   }
 
@@ -1491,11 +1594,11 @@
       card.innerHTML = `
         <div class="clipTop">
           <span class="clipIndex">${String(index + 1).padStart(2, "0")}</span>
-          <div><div class="clipName" title="${escapeHtml(clip.name)}">${escapeHtml(clip.name)}</div><div class="clipMeta">${LABELS[clip.emotion]} · IN ${seconds(plan.sourceStart)} · CUT ${seconds(plan.cut)} · OUT ${seconds(plan.returnTime)}</div></div>
+          <div><div class="clipName" title="${escapeHtml(clip.name)}">${escapeHtml(clip.name)}</div><div class="clipMeta">${LABELS[clip.emotion]} · IN ${seconds(plan.sourceStart)} · SKIP ${seconds(plan.cut)}→${seconds(plan.skipIn)} · OUT ${seconds(clip.settle)}</div></div>
           <div class="clipActions"><button class="iconButton" data-action="up" title="上へ">↑</button><button class="iconButton" data-action="down" title="下へ">↓</button><button class="iconButton" data-action="remove" title="削除">×</button></div>
         </div>
         <div class="phaseBar"><i class="before" style="width:${phasePercent(clip.onset, clip.duration)}"></i><i class="rise" style="width:${phasePercent(clip.peak - clip.onset, clip.duration)}"></i><i class="settle" style="width:${phasePercent(clip.settle - clip.peak, clip.duration)}"></i></div>
-        <div class="phaseLabels"><span>発生 ${seconds(clip.onset)}</span><span>ピーク ${seconds(clip.peak)}</span><span>${clip.samples.length ? `MP ${Math.round(clip.landmarkDetectionRate * 100)}%${clip.analyzed ? "" : " / 境界未検出"}` : "未解析"}</span></div>`;
+        <div class="phaseLabels"><span>発生 ${seconds(clip.onset)}</span><span>再開 ${seconds(clip.skipIn)}</span><span>${clip.samples.length ? `MP ${Math.round(clip.landmarkDetectionRate * 100)}%${clip.analyzed ? "" : " / 境界未検出"}` : "未解析"}</span></div>`;
       return card;
     });
     el.clipList.replaceChildren(...cards, addButton);
@@ -1544,19 +1647,17 @@
 
         const meaning = document.createElement("div");
         meaning.className = "timelineMeaning";
-        const entryDuration = plan.intro + plan.morphIn;
-        const returnDuration = plan.morphOut + plan.returnReverse;
         const phases = [
           [
             "intro",
-            entryDuration,
+            plan.intro + plan.morphIn,
             "導入",
-            index === 0 ? "冒頭→発生" : "HOME→発生",
+            index === 0 ? "冒頭→発生" : "前素材の無表情→発生",
           ],
-          ["expression", plan.forward, "表情化→", "発生→折返し"],
-          ["rewind", plan.reverse, "←戻す", "折返し→発生"],
-          ["returnHome", returnDuration, "HOMEへ", "発生→ホーム"],
-          ["hold", plan.hold, "保持", "ホーム保持"],
+          ["expression", plan.forward, "表情化", "発生→上昇終了"],
+          ["skip", plan.skip, "スキップ", "ピーク維持区間をモーフで省略"],
+          ["decay", plan.decay, "収束", "下降側→無表情"],
+          ["hold", plan.hold, "保持", "無表情保持"],
         ];
         meaning.replaceChildren(
           ...phases
@@ -1566,58 +1667,31 @@
 
         const composition = document.createElement("div");
         composition.className = "timelineComposition";
-        const sources =
-          index === 0
-            ? [
-                [
-                  "single",
-                  plan.duration,
-                  `${clipNumber}のみ`,
-                  `${plan.clip.name}のみ`,
-                ],
-              ]
-            : [
-                [
-                  "morph",
-                  plan.morphIn,
-                  `HOME→${clipNumber}`,
-                  `HOMEと${plan.clip.name}のモーフ`,
-                ],
-                [
-                  "single",
-                  plan.forward + plan.reverse,
-                  `${clipNumber}のみ`,
-                  `${plan.clip.name}のみ`,
-                ],
-                [
-                  "morph",
-                  plan.morphOut,
-                  `${clipNumber}→HOME`,
-                  `${plan.clip.name}とHOMEのモーフ`,
-                ],
-                ["home", plan.hold, "HOME", "HOMEのみ"],
-              ];
+        const sources = [
+          [
+            index === 0 ? "single" : "morph",
+            plan.intro + plan.morphIn,
+            "導入",
+            index === 0 ? `${plan.clip.name}のみ` : "前素材と次素材のモーフ",
+          ],
+          ["single", plan.forward, `${clipNumber}のみ`, `${plan.clip.name}のみ`],
+          ["morph", plan.skip, "スキップ", "同一素材内のピークスキップ・モーフ"],
+          ["single", plan.decay, `${clipNumber}のみ`, `${plan.clip.name}のみ`],
+          ["home", plan.hold, "無表情", "無表情のみ"],
+        ];
         composition.replaceChildren(
           ...sources
             .filter(([, duration]) => duration > 0)
             .map((part) => timelinePart("timelineSource", part, plan.duration)),
         );
 
-        const forwardOnsetOffset = plan.intro + plan.morphIn;
-        const foldOffset = forwardOnsetOffset + plan.forward;
-        const reverseOnsetOffset = foldOffset + plan.reverse;
+        const onsetOffset = plan.intro + plan.morphIn;
+        const skipOutOffset = onsetOffset + plan.forward;
+        const skipInOffset = skipOutOffset + plan.skip;
         const events = [
-          [
-            "onset",
-            forwardOnsetOffset,
-            `表情発生↑ ${seconds(plan.clip.onset)}`,
-          ],
-          ["fold", foldOffset, `折返し ${seconds(plan.cut)}`],
-          [
-            "onset",
-            reverseOnsetOffset,
-            `表情発生↓ ${seconds(plan.clip.onset)}`,
-          ],
+          ["onset", onsetOffset, `表情発生 ${seconds(plan.clip.onset)}`],
+          ["skipPoint", skipOutOffset, `スキップ開始 ${seconds(plan.cut)}`],
+          ["skipPoint", skipInOffset, `下降側を再開 ${seconds(plan.skipIn)}`],
         ].map(([variant, offset, title]) =>
           timelineMarker(variant, offset, plan.duration, title),
         );
@@ -1632,21 +1706,40 @@
   function renderEditor() {
     const clip = selectedClip();
     el.clipEditor.hidden = !clip;
-    if (!clip) return;
+    if (!clip) {
+      el.clipPreviewVideo.removeAttribute("src");
+      el.clipPreviewMeta.textContent = "素材を選択してください";
+      return;
+    }
+    if (el.clipPreviewVideo.dataset.clipId !== String(clip.id)) {
+      el.clipPreviewVideo.pause();
+      el.clipPreviewVideo.src = clip.url;
+      el.clipPreviewVideo.dataset.clipId = clip.id;
+      el.clipPreviewVideo.addEventListener(
+        "loadedmetadata",
+        () => {
+          el.clipPreviewVideo.currentTime = cutTime(clip);
+        },
+        { once: true },
+      );
+    }
+    el.clipPreviewMeta.textContent = `${clip.name} · ${clip.width}×${clip.height} · ${seconds(clip.duration)}`;
     el.emotionSelect.value = clip.emotion;
-    el.clipCutRatio.value = String(clip.cutRatio);
     el.emotionLegend.textContent = LABELS[clip.emotion];
-    el.onsetInput.value = clip.onset.toFixed(2);
-    el.peakInput.value = clip.peak.toFixed(2);
-    el.settleInput.value = clip.settle.toFixed(2);
-    el.onsetInput.max = clip.duration;
-    el.peakInput.max = clip.duration;
-    el.settleInput.max = clip.duration;
-    el.onsetDuration.textContent = `区間 ${seconds(clip.onset)}`;
-    el.riseDuration.textContent = `区間 ${seconds(clip.peak - clip.onset)}`;
-    el.settleDuration.textContent = `区間 ${seconds(clip.settle - clip.peak)}`;
+    el.skipOutInput.value = cutTime(clip).toFixed(2);
+    el.skipInInput.value = clip.skipIn.toFixed(2);
+    el.skipOutInput.max = clip.duration;
+    el.skipInInput.max = clip.duration;
+    [el.skipOutRange, el.skipInRange].forEach((input) => {
+      input.max = clip.duration;
+      input.disabled = false;
+    });
+    el.skipOutRange.value = cutTime(clip);
+    el.skipInRange.value = clip.skipIn;
+    el.skipOutDuration.textContent = `上昇側 ${seconds(cutTime(clip))}`;
+    el.skipDuration.textContent = `下降側 ${seconds(clip.skipIn)}`;
     el.detectionBadge.textContent = clip.samples.length
-      ? `MediaPipe ${Math.round(clip.landmarkDetectionRate * 100)}%${clip.homeMatch ? ` / HOME ${clip.homeMatch.returnTime.toFixed(2)}→${clip.homeMatch.homeTime.toFixed(2)}s` : ""}${clip.analyzed ? "" : " / 境界未検出"}`
+      ? `MediaPipe ${Math.round(clip.landmarkDetectionRate * 100)}%${clip.analyzed ? ` / SKIP ${clip.skipIn.toFixed(2)}s` : " / 境界未検出"}`
       : "未解析";
     el.detectionBadge.classList.toggle("ready", clip.analyzed);
     drawChart(clip);
@@ -1676,6 +1769,13 @@
       ctx.lineTo(rect.width - pad.x, y(value));
       ctx.stroke();
     });
+    ctx.fillStyle = "rgba(139, 111, 192, .16)";
+    ctx.fillRect(
+      x(cutTime(clip)),
+      pad.y,
+      Math.max(0, x(clip.skipIn) - x(cutTime(clip))),
+      rect.height - pad.y - pad.bottom,
+    );
     const drawLine = (samples, valueOf, color, width) => {
       ctx.strokeStyle = color;
       ctx.lineWidth = width;
@@ -1709,6 +1809,7 @@
     [
       [clip.onset, COLORS.onset],
       [clip.peak, COLORS.peak],
+      [clip.plateauEnd, COLORS.peak],
       [clip.settle, COLORS.settle],
     ].forEach(([time, color]) => {
       ctx.strokeStyle = color;
@@ -1720,11 +1821,8 @@
       ctx.setLineDash([]);
     });
     ctx.fillStyle = COLORS.target;
-    ctx.fillRect(
-      x(cutTime(clip)) - 2,
-      pad.y,
-      4,
-      rect.height - pad.y - pad.bottom,
+    [cutTime(clip), clip.skipIn].forEach((time) =>
+      ctx.fillRect(x(time) - 2, pad.y, 4, rect.height - pad.y - pad.bottom),
     );
   }
 
@@ -1744,39 +1842,38 @@
     updateTransport();
   }
 
-  function updateSelectedBoundaries() {
+  function updateSelectedBoundaries(event) {
     const clip = selectedClip();
     if (!clip) return;
-    setBoundaries(clip, {
-      onset: el.onsetInput.value,
-      peak: el.peakInput.value,
-      settle: el.settleInput.value,
-    });
-    if (clips[0]?.id === clip.id) {
-      clips.forEach((item) => {
-        item.importedHomeMatch = null;
-      });
-    } else {
-      clip.importedHomeMatch = null;
-    }
-    updateAlignmentPose(clip);
-    rebuildTransitions();
+    updateSkipRange(
+      el.skipOutInput.value,
+      el.skipInInput.value,
+      event.target.value,
+    );
     renderAll();
   }
 
-  function updateCutRatio(commit = false) {
+  function updateSkipRange(start, end, previewTime) {
     const clip = selectedClip();
     if (!clip) return;
-    clip.cutRatio = clamp(number(el.clipCutRatio.value, clip.cutRatio), 10, 99);
-    if (!commit) return;
-    el.clipCutRatio.value = clip.cutRatio;
-    rebuildTransitions();
+    clip.skipOut = clamp(number(start, clip.skipOut), clip.onset, clip.peak);
+    clip.skipIn = clamp(
+      number(end, clip.skipIn),
+      Math.min(clip.settle, clip.skipOut + 0.02),
+      clip.settle,
+    );
+    clip.skipInManual = true;
+    el.skipOutRange.value = clip.skipOut;
+    el.skipInRange.value = clip.skipIn;
+    el.skipOutInput.value = clip.skipOut.toFixed(2);
+    el.skipInInput.value = clip.skipIn.toFixed(2);
+    el.skipOutDuration.textContent = `上昇側 ${seconds(clip.skipOut)}`;
+    el.skipDuration.textContent = `下降側 ${seconds(clip.skipIn)}`;
+    el.clipPreviewVideo.currentTime = previewTime;
     pause();
     playPosition = clamp(playPosition, 0, sequenceDuration());
-    requestAnimationFrame(() => {
-      renderAll();
-      renderAt(playPosition, true);
-    });
+    renderTimeline();
+    drawChart(clip);
   }
 
   function download(blob, fileName) {
@@ -1805,7 +1902,13 @@
       applySetting(
         el[id],
         settings[key] ??
-          (id === "morphDuration" ? settings.introDuration : NaN),
+          (id === "skipDurationSetting"
+            ? settings.rewindDuration
+            : id === "decayDuration"
+              ? settings.returnDuration
+              : id === "morphDuration"
+                ? settings.introDuration
+                : NaN),
       ),
     );
     applySetting(el.sampleInterval, settings.sampleInterval);
@@ -1829,14 +1932,15 @@
       if (EMOTIONS.includes(saved.emotion) && saved.emotion !== BASE_EMOTION) {
         clip.emotion = saved.emotion;
       }
-      const ratio = number(saved.cutRatio, clip.cutRatio / 100);
-      clip.cutRatio = clamp(ratio <= 1 ? ratio * 100 : ratio, 10, 99);
-      setBoundaries(clip, saved.boundaries || {});
-      clip.importedHomeMatch =
-        saved.homeMatch ||
-        (Number.isFinite(Number(saved.returnTime))
-          ? { returnTime: Number(saved.returnTime) }
-          : null);
+      const boundaries = { ...(saved.boundaries || {}) };
+      if (!Number.isFinite(Number(boundaries.skipOut))) {
+        const ratio = clamp(number(saved.cutRatio, 0.7), 0.1, 0.99);
+        const onset = number(boundaries.onset, clip.onset);
+        const peak = number(boundaries.peak, clip.peak);
+        boundaries.skipOut = onset + (peak - onset) * ratio;
+      }
+      setBoundaries(clip, boundaries);
+      clip.skipInManual = Number.isFinite(Number(saved.boundaries?.skipIn));
       if (clip.samples.length) updateAlignmentPose(clip);
       ordered.push(clip);
       matched += 1;
@@ -1886,9 +1990,9 @@
 
   function exportJson() {
     const data = {
-      version: 3,
-      mode: "incomplete-deformation-home-anchor",
-      algorithm: "fixed-tempo_onset-overlap_forward-reverse_home-loop",
+      version: 5,
+      mode: "incomplete-deformation-peak-skip",
+      algorithm: "fixed-tempo_rise_peak-skip_natural-decay",
       settings: {
         ...Object.fromEntries(
           PLAYBACK_SETTINGS.map(([id, key, fallback]) => [
@@ -1906,7 +2010,6 @@
           source: clip.name,
           duration: clip.duration,
           emotion: clip.emotion,
-          cutRatio: clip.cutRatio / 100,
           analysisMethod: "mediapipe-landmarks-75_expression-25",
           landmarkDetectionRate: clip.landmarkDetectionRate,
           eyeAlignedToFirstClip: Boolean(
@@ -1915,21 +2018,21 @@
           boundaries: {
             onset: clip.onset,
             peak: clip.peak,
+            skipOut: clip.skipOut,
+            plateauEnd: clip.plateauEnd,
+            skipIn: clip.skipIn,
             settle: clip.settle,
           },
           sourceStart: plan.sourceStart,
-          morphInRange: [plan.morphInStart, plan.morphInEnd],
-          cutTime: plan.cut,
-          returnTime: plan.returnTime,
-          reverseMorphStart: plan.reverseMorphStart,
-          homeTime: plan.homeTime,
-          homeMatch: clip.homeMatch,
+          skipOut: plan.cut,
+          skipIn: plan.skipIn,
+          skipMatchDistance: clip.skipMatchDistance,
           outputPhases: {
             intro: plan.intro,
             morphIn: plan.morphIn,
             rise: plan.forward,
-            rewind: plan.reverse,
-            returnHome: plan.morphOut + plan.returnReverse,
+            peakSkipMorph: plan.skip,
+            decay: plan.decay,
             hold: plan.hold,
           },
           outputDuration: plan.duration,
@@ -2078,7 +2181,7 @@
       const clip = selectedClip();
       if (clip) requestAnimationFrame(() => drawChart(clip));
     });
-    [el.onsetInput, el.peakInput, el.settleInput].forEach((input) =>
+    [el.skipOutInput, el.skipInInput].forEach((input) =>
       input.addEventListener("change", updateSelectedBoundaries),
     );
     el.emotionSelect.addEventListener("change", () => {
@@ -2089,16 +2192,33 @@
       rebuildTransitions();
       renderAll();
     });
-    el.clipCutRatio.addEventListener("input", () => updateCutRatio());
-    el.clipCutRatio.addEventListener("change", () => updateCutRatio(true));
+    el.skipOutRange.addEventListener("input", () => {
+      const clip = selectedClip();
+      if (!clip) return;
+      updateSkipRange(
+        Math.min(number(el.skipOutRange.value), clip.skipIn - 0.02),
+        el.skipInRange.value,
+        number(el.skipOutRange.value),
+      );
+    });
+    el.skipInRange.addEventListener("input", () => {
+      const clip = selectedClip();
+      if (!clip) return;
+      updateSkipRange(
+        el.skipOutRange.value,
+        Math.max(number(el.skipInRange.value), cutTime(clip) + 0.02),
+        number(el.skipInRange.value),
+      );
+    });
+    [el.skipOutRange, el.skipInRange].forEach((input) =>
+      input.addEventListener("change", () => {
+        renderAll();
+        renderAt(playPosition, true);
+      }),
+    );
     PLAYBACK_SETTINGS.map(([id]) => el[id]).forEach((input) =>
       input.addEventListener("change", () => {
         input.value = setting(input.id);
-        if (input === el.preOnsetReturn) {
-          clips.forEach((clip) => {
-            clip.importedHomeMatch = null;
-          });
-        }
         rebuildTransitions();
         pause();
         playPosition = clamp(playPosition, 0, sequenceDuration());
@@ -2138,5 +2258,6 @@
     updateControls();
   }
 
+  console.assert(clamp(2, 0, 1) === 1 && number("0.2") === 0.2);
   initialize();
 })();

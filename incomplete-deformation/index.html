@@ -7,7 +7,7 @@
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <title>Incomplete Deformation</title>
     <script defer src="../modules/faceAPI/face-api.min.js"></script>
-    <script defer src="app.js?v=20260922-12"></script>
+    <script defer src="app.js?v=20260926-6"></script>
     <style>
         :root {
             --bg: #f2f1ee;
@@ -64,13 +64,14 @@
         }
 
         .app {
-            width: min(1560px, 100%);
+            width: min(1900px, 100%);
             min-height: 100dvh;
             margin: auto;
             display: grid;
-            grid-template-columns: minmax(0, 1.55fr) minmax(390px, .85fr);
+            grid-template-columns: minmax(260px, .7fr) minmax(480px, 520px) minmax(0, 1.3fr);
         }
 
+        .rawPreview,
         .workspace,
         .sidebar {
             min-width: 0;
@@ -78,11 +79,16 @@
         }
 
         .sidebar {
+            grid-column: 2;
             border-left: 1px solid var(--line);
+            border-right: 1px solid var(--line);
             background: rgba(255, 255, 255, .68);
         }
 
-        @media (min-width: 941px) {
+        .rawPreview { grid-column: 1; grid-row: 1; }
+        .workspace { grid-column: 3; grid-row: 1; }
+
+        @media (min-width: 1181px) {
 
             html,
             body {
@@ -96,9 +102,8 @@
                 overflow: hidden;
             }
 
+            .rawPreview,
             .workspace {
-                position: sticky;
-                top: 0;
                 height: 100dvh;
                 overflow: hidden;
             }
@@ -116,6 +121,31 @@
             display: grid;
             align-content: start;
             gap: 14px;
+        }
+
+        .rawStage {
+            aspect-ratio: 9 / 16;
+            display: grid;
+            place-items: center;
+            overflow: hidden;
+            border-radius: 9px;
+            background: #111416;
+        }
+
+        #clipPreviewVideo {
+            display: block;
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+
+        .rawMeta {
+            margin-top: 9px;
+            overflow: hidden;
+            color: var(--muted);
+            font: .66rem ui-monospace, monospace;
+            text-overflow: ellipsis;
+            white-space: nowrap;
         }
 
         .panel {
@@ -323,11 +353,11 @@
             background: #f7d8ca;
         }
 
-        .timelinePhase.rewind {
+        .timelinePhase.skip {
             background: #ddd3ee;
         }
 
-        .timelinePhase.returnHome {
+        .timelinePhase.decay {
             background: #d4eadc;
         }
 
@@ -365,7 +395,7 @@
             background: var(--mint);
         }
 
-        .timelineEvent.fold {
+        .timelineEvent.skipPoint {
             width: 2px;
             background: var(--ink);
         }
@@ -404,11 +434,11 @@
             background: #f7d8ca;
         }
 
-        .timelineLegend .rewind {
+        .timelineLegend .skip {
             background: #ddd3ee;
         }
 
-        .timelineLegend .returnHome {
+        .timelineLegend .decay {
             background: #d4eadc;
         }
 
@@ -428,7 +458,7 @@
             box-shadow: 0 0 0 1px rgba(255, 255, 255, .8);
         }
 
-        .timelineLegend .fold {
+        .timelineLegend .skipPoint {
             width: 2px;
             height: 11px;
             margin: 0 8px;
@@ -639,6 +669,30 @@
             padding-top: 10px;
         }
 
+        .rangeWrap {
+            position: relative;
+            height: 24px;
+            margin: 8px 2px 2px;
+        }
+
+        .rangeWrap input {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            margin: 0;
+            pointer-events: none;
+            background: transparent;
+            accent-color: var(--accent);
+        }
+
+        .rangeWrap input::-webkit-slider-thumb {
+            pointer-events: auto;
+        }
+
+        .rangeWrap input::-moz-range-thumb {
+            pointer-events: auto;
+        }
+
         .materialAnalysisSetting {
             display: grid;
             grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -778,7 +832,7 @@
 
         .boundaryGrid {
             display: grid;
-            grid-template-columns: repeat(3, minmax(0, 1fr));
+            grid-template-columns: repeat(2, minmax(0, 1fr));
             gap: 7px;
             margin-top: 10px;
         }
@@ -817,7 +871,8 @@
             grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
             gap: 8px;
             align-items: end;
-            margin-top: 10px;
+            margin-top: 8px;
+            margin-bottom: 8px;
         }
 
         .miniCanvas {
@@ -832,8 +887,9 @@
 
         .legend {
             display: flex;
-            flex-wrap: wrap;
+            flex-wrap: nowrap;
             gap: 10px;
+            overflow-x: auto;
             color: var(--muted);
             font-size: .62rem;
         }
@@ -850,19 +906,32 @@
             border-radius: 2px;
         }
 
-        @media (max-width: 940px) {
+        @media (max-width: 1180px) {
             .app {
                 grid-template-columns: 1fr;
             }
 
+            .rawPreview,
+            .workspace,
+            .sidebar {
+                grid-column: 1;
+                grid-row: auto;
+            }
+
+            .rawPreview { grid-row: 1; }
+            .sidebar { grid-row: 2; }
+            .workspace { grid-row: 3; }
+
             .sidebar {
                 border-left: 0;
+                border-right: 0;
                 border-top: 1px solid var(--line);
             }
         }
 
         @media (max-width: 560px) {
 
+            .rawPreview,
             .workspace,
             .sidebar {
                 padding: 10px;
@@ -892,6 +961,16 @@
 
 <body>
     <main class="app">
+        <section class="rawPreview stack">
+            <section class="panel">
+                <div class="panelHeader"><h2>素材プレビュー</h2></div>
+                <div class="rawStage">
+                    <video id="clipPreviewVideo" playsinline muted controls preload="metadata"></video>
+                </div>
+                <div class="rawMeta" id="clipPreviewMeta">素材を選択してください</div>
+            </section>
+        </section>
+
         <section class="workspace stack">
             <section class="panel">
                 <progress id="progress" class="previewProgress" min="0" max="1" value="0" hidden></progress>
@@ -917,12 +996,11 @@
                 <div class="timelineLegend" aria-label="タイムライン凡例">
                     <span><i class="intro"></i>導入</span>
                     <span><i class="expression"></i>表情化</span>
-                    <span><i class="rewind"></i>巻戻し</span>
-                    <span><i class="returnHome"></i>ホーム復帰</span>
+                    <span><i class="skip"></i>スキップ</span>
+                    <span><i class="decay"></i>自然収束</span>
                     <span><i class="hold"></i>保持</span>
                     <span><i class="morph"></i>素材が重なるモーフ</span>
                     <span><i class="onset"></i>表情発生</span>
-                    <span><i class="fold"></i>折返し</span>
                 </div>
                 <div class="previewExportRow">
                     <span class="status" id="status">MediaPipe / Face APIモデルを読み込んでいます</span>
@@ -953,32 +1031,27 @@
                             <label class="field">対象の表情
                                 <select id="emotionSelect"></select>
                             </label>
-                            <label class="field">ピーク前の折返し位置（%）
-                                <input id="clipCutRatio" type="number" min="10" max="99" step="1" value="85">
-                            </label>
                             <button id="analyzeClipButton" class="accent" type="button">再解析</button>
                         </div>
-                        <canvas id="analysisChart" class="miniCanvas"></canvas>
                         <div class="legend">
                             <span><i style="background:#7f8993"></i>無表情</span>
                             <span><i style="background:var(--accent)"></i><b id="emotionLegend">喜び</b></span>
-                            <span><i style="background:#3478d4"></i>ランドマーク変位</span>
+                            <span><i style="background:#3478d4"></i>顔形状変位</span>
                             <span><i style="background:#171a1d"></i>合成進行度</span>
-                            <span><i style="background:var(--mint)"></i>発生</span>
-                            <span><i style="background:var(--violet)"></i>ピーク / 収束</span>
+                        </div>
+                        <canvas id="analysisChart" class="miniCanvas"></canvas>
+                        <div class="rangeWrap">
+                            <input id="skipOutRange" type="range" min="0" max="1" value="0" step="0.01" aria-label="切り取り開始">
+                            <input id="skipInRange" type="range" min="0" max="1" value="1" step="0.01" aria-label="切り取り終了">
                         </div>
                         <div class="boundaryGrid">
                             <div class="boundary">
-                                <label>表情が発生するまで<input id="onsetInput" type="number" min="0" step="0.01"></label>
-                                <div class="boundaryValue" id="onsetDuration">0.00s</div>
+                                <label>切り取り開始<input id="skipOutInput" type="number" min="0" step="0.01"></label>
+                                <div class="boundaryValue" id="skipOutDuration">上昇側</div>
                             </div>
                             <div class="boundary">
-                                <label>発生からピーク<input id="peakInput" type="number" min="0" step="0.01"></label>
-                                <div class="boundaryValue" id="riseDuration">0.00s</div>
-                            </div>
-                            <div class="boundary">
-                                <label>ピークから収束<input id="settleInput" type="number" min="0" step="0.01"></label>
-                                <div class="boundaryValue" id="settleDuration">0.00s</div>
+                                <label>切り取り終了<input id="skipInInput" type="number" min="0" step="0.01"></label>
+                                <div class="boundaryValue" id="skipDuration">下降側</div>
                             </div>
                         </div>
                     </div>
@@ -996,30 +1069,26 @@
                 </div>
                 <div class="settingsGrid">
                     <div class="settingsGroupLabel">再生テンポ</div>
-                    <label class="field">表情化：発生→折返し（秒）
+                    <label class="field">表情化：発生→上昇終了（秒）
                         <input id="risePlaybackDuration" type="number" min="0.05" max="5" step="0.05" value="0.45">
-                        <span class="fieldHint">発生点から手動の折返し位置まで</span>
+                        <span class="fieldHint">素材ごとの上昇区間をこの長さに揃える</span>
                     </label>
-                    <label class="field">巻戻し：折返し→発生（秒）
-                        <input id="rewindDuration" type="number" min="0.05" max="5" step="0.05" value="0.45">
-                        <span class="fieldHint">折返し位置から発生点へ戻るまで</span>
+                    <label class="field">ピークスキップ・モーフ（秒）
+                        <input id="skipDurationSetting" type="number" min="0.05" max="1" step="0.05" value="0.20">
+                        <span class="fieldHint">上昇側から形状の近い下降側へ重ねる</span>
                     </label>
-                    <div class="settingsGroupLabel">ホームとの接続</div>
-                    <label class="field">初回導入／表情へのモーフ（秒）
+                    <label class="field">自然収束（秒）
+                        <input id="decayDuration" type="number" min="0.05" max="5" step="0.05" value="0.60">
+                        <span class="fieldHint">下降側の再開位置から無表情まで</span>
+                    </label>
+                    <div class="settingsGroupLabel">素材間の接続</div>
+                    <label class="field">初回導入／次素材へのモーフ（秒）
                         <input id="morphDuration" type="number" min="0" max="1" step="0.05" value="0.20">
-                        <span class="fieldHint">1本目は導入尺、以降はHOME→素材のモーフ尺</span>
+                        <span class="fieldHint">1本目は冒頭尺、以降は前素材の無表情→次素材の発生</span>
                     </label>
-                    <label class="field">ホーム復帰＋モーフ（秒）
-                        <input id="returnDuration" type="number" min="0.05" max="5" step="0.05" value="0.30">
-                        <span class="fieldHint">発生点からHOMEまで。区間全体でモーフ</span>
-                    </label>
-                    <label class="field">ホーム位置：発生の何秒前
-                        <input id="preOnsetReturn" type="number" min="0" max="2" step="0.05" value="0.30">
-                        <span class="fieldHint">各素材内で、発生点より前へ戻す量</span>
-                    </label>
-                    <label class="field">ホーム保持（秒）
+                    <label class="field">無表情の保持（秒）
                         <input id="holdDuration" type="number" min="0" max="5" step="0.05" value="0.10">
-                        <span class="fieldHint">次の素材へ移る前にHOMEを見せる時間</span>
+                        <span class="fieldHint">次の素材へ移る前に無表情を見せる時間</span>
                     </label>
                 </div>
             </section>
