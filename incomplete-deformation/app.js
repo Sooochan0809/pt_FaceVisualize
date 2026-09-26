@@ -41,7 +41,6 @@
     target: "#ff6b45",
     onset: "#42d392",
     peak: "#8b6fc0",
-    settle: "#8b6fc0",
   };
   const LANDMARK_COLOR = "#3478d4";
   const PROGRESSION_COLOR = "#171a1d";
@@ -67,6 +66,9 @@
       ),
     ]),
   ];
+  const MORPH_POINT_INDEX = new Map(
+    MORPH_LANDMARK_INDICES.map((landmark, index) => [landmark, index]),
+  );
   const TRIANGLE_OVERDRAW = 0.75;
   const PREVIEW_MAX_EDGE = 720;
   const EXPORT_FPS = 30;
@@ -121,6 +123,11 @@
     ["holdDuration", "holdDuration", 0.1],
     ["morphDuration", "morphDuration", 0.2],
   ];
+  const LEGACY_SETTING_KEYS = {
+    skipDurationSetting: "rewindDuration",
+    decayDuration: "returnDuration",
+    morphDuration: "introDuration",
+  };
 
   const detectorOptions = new faceapi.TinyFaceDetectorOptions({
     inputSize: 320,
@@ -143,9 +150,6 @@
   let playPosition = 0;
   let playStartedAt = 0;
   let animationId = 0;
-  let loadedClipId = null;
-  let transitionLoadedClipId = null;
-  let lastRenderedTime = -1;
   let previewPhaseKey = "";
   let previewRendering = false;
   let previewVideo = el.sourceVideo;
@@ -310,7 +314,7 @@
       } else {
         rebuildTransitions();
         renderAll();
-        await renderAt(playPosition, true);
+        await renderAt(playPosition);
         setStatus(`${additions.length}本の映像を追加しました`);
       }
     } catch (error) {
@@ -361,7 +365,7 @@
     );
   }
 
-  function clipPlan(clip, index = clips.indexOf(clip)) {
+  function clipPlan(clip, index) {
     const previousClip = clips[index - 1] || null;
     const cut = cutTime(clip);
     const skipIn = clamp(clip.skipIn || clip.settle, cut, clip.settle);
@@ -375,7 +379,6 @@
       clip,
       index,
       previousClip,
-      sourceStart: clip.onset,
       cut,
       skipIn,
       intro,
@@ -432,7 +435,8 @@
         if (cursor <= plan.forward)
           return mapped(plan, index, {
             sourceTime:
-              plan.sourceStart + (plan.cut - plan.sourceStart) * (cursor / plan.forward),
+              plan.clip.onset +
+              (plan.cut - plan.clip.onset) * (cursor / plan.forward),
             phase: "FORWARD",
           });
         cursor -= plan.forward;
@@ -467,14 +471,9 @@
   }
 
   function loadVideoSlot(video, clip) {
-    const secondary = video === el.transitionVideo;
-    const loadedId = secondary ? transitionLoadedClipId : loadedClipId;
-    if (loadedId === clip.id && video.src) return Promise.resolve();
-    if (secondary) transitionLoadedClipId = clip.id;
-    else {
-      loadedClipId = clip.id;
-      lastRenderedTime = -1;
-    }
+    if (video.dataset.clipId === String(clip.id) && video.src)
+      return Promise.resolve();
+    video.dataset.clipId = clip.id;
     video.src = clip.url;
     video.load();
     if (video.readyState >= 1) return Promise.resolve();
@@ -851,14 +850,8 @@
     morphCtx.drawImage(warpedCanvasB, 0, 0);
     morphCtx.globalAlpha = 1;
 
-    const indexMap = new Map(
-      MORPH_LANDMARK_INDICES.map((landmarkIndex, pointIndex) => [
-        landmarkIndex,
-        pointIndex,
-      ]),
-    );
     const oval = FACE_OVAL_INDICES.map(
-      (index) => destinationPoints[indexMap.get(index)],
+      (index) => destinationPoints[MORPH_POINT_INDEX.get(index)],
     ).filter(Boolean);
     const maskCtx = maskCanvas.getContext("2d");
     maskCtx.setTransform(1, 0, 0, 1, 0, 0);
@@ -881,32 +874,32 @@
   }
 
   function updateStage(mapped) {
-    el.stageTitle.textContent =
-      mapped.phase === "MORPH_IN"
-        ? `${mapped.index}. ${mapped.clip.name} → ${mapped.index + 1}. ${mapped.nextClip.name}`
-        : `${mapped.index + 1}. ${mapped.clip.name}`;
-    el.stagePhase.textContent = mapped.phase.startsWith("MORPH")
-      ? `${mapped.phase === "MORPH_IN" ? "NEUTRAL → ONSET" : "PEAK SKIP"}  ${Math.round(mapped.transitionProgress * 100)}%`
-      : mapped.phase === "HOME"
-        ? `NEUTRAL  ${mapped.sourceTime.toFixed(2)}s`
-        : `${mapped.phase}  ${mapped.sourceTime.toFixed(2)}s / CUT ${mapped.cut.toFixed(2)}s`;
+    const morphing = mapped.phase.startsWith("MORPH");
+    el.stageTitle.textContent = mapped.phase === "MORPH_IN"
+      ? `${mapped.index}. ${mapped.clip.name} → ${mapped.index + 1}. ${mapped.nextClip.name}`
+      : `${mapped.index + 1}. ${mapped.clip.name}`;
+    if (morphing) {
+      const label = mapped.phase === "MORPH_IN" ? "NEUTRAL → ONSET" : "PEAK SKIP";
+      el.stagePhase.textContent = `${label}  ${Math.round(mapped.transitionProgress * 100)}%`;
+    } else if (mapped.phase === "HOME") {
+      el.stagePhase.textContent = `NEUTRAL  ${mapped.sourceTime.toFixed(2)}s`;
+    } else {
+      el.stagePhase.textContent = `${mapped.phase}  ${mapped.sourceTime.toFixed(2)}s / CUT ${mapped.cut.toFixed(2)}s`;
+    }
   }
 
   function playbackRate(mapped) {
     if (mapped.phase === "INTRO") return mapped.clip.onset / mapped.intro;
     if (mapped.phase === "FORWARD")
-      return (mapped.cut - mapped.sourceStart) / mapped.forward;
+      return (mapped.cut - mapped.clip.onset) / mapped.forward;
     if (mapped.phase === "DECAY")
       return (mapped.clip.settle - mapped.skipIn) / mapped.decay;
     return mapped.phase === "MORPH_IN" ? 1 : 0;
   }
 
-  const loadedId = (video) =>
-    video === el.transitionVideo ? transitionLoadedClipId : loadedClipId;
-
   function closestLoadedVideo(clip, time) {
     return [el.sourceVideo, el.transitionVideo]
-      .filter((video) => loadedId(video) === clip.id)
+      .filter((video) => video.dataset.clipId === String(clip.id))
       .sort(
         (a, b) =>
           Math.abs(a.currentTime - time) - Math.abs(b.currentTime - time),
@@ -992,7 +985,7 @@
     updateStage(mapped);
   }
 
-  async function renderAt(position, force = false) {
+  async function renderAt(position) {
     const mapped = mapSequenceTime(position);
     if (!mapped) {
       outputContext.fillStyle = "#111416";
@@ -1012,19 +1005,15 @@
         el.outputCanvas.width,
         el.outputCanvas.height,
       );
-      lastRenderedTime = -1;
     } else {
       await loadVideoSlot(el.sourceVideo, mapped.clip);
-      if (force || Math.abs(lastRenderedTime - mapped.sourceTime) > 0.006) {
-        await seekVideoSlot(el.sourceVideo, mapped.sourceTime);
-        drawAlignedFrame(
-          outputContext,
-          mapped.clip,
-          el.outputCanvas.width,
-          el.outputCanvas.height,
-        );
-        lastRenderedTime = mapped.sourceTime;
-      }
+      await seekVideoSlot(el.sourceVideo, mapped.sourceTime);
+      drawAlignedFrame(
+        outputContext,
+        mapped.clip,
+        el.outputCanvas.width,
+        el.outputCanvas.height,
+      );
     }
     updateStage(mapped);
     updateTransport(mapped.index);
@@ -1428,10 +1417,8 @@
   }
 
   async function analyzeClip(clip, progressOffset = 0, progressTotal = 1) {
-    await models;
-    const faceLandmarker = await getFaceLandmarker();
-    const { Input, ALL_FORMATS, BlobSource, CanvasSink } =
-      await mediabunnyPromise;
+    const [, , faceLandmarker, , { Input, ALL_FORMATS, BlobSource, CanvasSink }] =
+      await models;
     const input = new Input({
       formats: ALL_FORMATS,
       source: new BlobSource(clip.file),
@@ -1523,7 +1510,7 @@
     } finally {
       setBusy(false);
       renderAll();
-      await renderAt(playPosition, true).catch(() => {});
+      await renderAt(playPosition).catch(() => {});
     }
   }
 
@@ -1536,7 +1523,7 @@
     rebuildTransitions();
     playPosition = 0;
     renderAll();
-    renderAt(0, true);
+    renderAt(0);
   }
 
   function removeClip(id) {
@@ -1547,20 +1534,16 @@
     clips.splice(index, 1);
     if (selectedId === id)
       selectedId = clips[Math.min(index, clips.length - 1)]?.id ?? null;
-    if (loadedClipId === id) {
-      loadedClipId = null;
-      el.sourceVideo.removeAttribute("src");
-      el.sourceVideo.load();
-    }
-    if (transitionLoadedClipId === id) {
-      transitionLoadedClipId = null;
-      el.transitionVideo.removeAttribute("src");
-      el.transitionVideo.load();
-    }
+    [el.sourceVideo, el.transitionVideo].forEach((video) => {
+      if (video.dataset.clipId !== String(id)) return;
+      delete video.dataset.clipId;
+      video.removeAttribute("src");
+      video.load();
+    });
     rebuildTransitions();
     playPosition = 0;
     renderAll();
-    if (clips.length) renderAt(0, true);
+    if (clips.length) renderAt(0);
     else clearStage();
   }
 
@@ -1589,7 +1572,7 @@
       card.innerHTML = `
         <div class="clipTop">
           <span class="clipIndex">${String(index + 1).padStart(2, "0")}</span>
-          <div><div class="clipName" title="${escapeHtml(clip.name)}">${escapeHtml(clip.name)}</div><div class="clipMeta">${LABELS[clip.emotion]} · IN ${seconds(plan.sourceStart)} · SKIP ${seconds(plan.cut)}→${seconds(plan.skipIn)} · OUT ${seconds(clip.settle)}</div></div>
+          <div><div class="clipName" title="${escapeHtml(clip.name)}">${escapeHtml(clip.name)}</div><div class="clipMeta">${LABELS[clip.emotion]} · IN ${seconds(clip.onset)} · SKIP ${seconds(plan.cut)}→${seconds(plan.skipIn)} · OUT ${seconds(clip.settle)}</div></div>
           <div class="clipActions"><button class="iconButton" data-action="up" title="上へ">↑</button><button class="iconButton" data-action="down" title="下へ">↓</button><button class="iconButton" data-action="remove" title="削除">×</button></div>
         </div>
         <div class="phaseBar"><i class="before" style="width:${phasePercent(clip.onset, clip.duration)}"></i><i class="rise" style="width:${phasePercent(clip.peak - clip.onset, clip.duration)}"></i><i class="settle" style="width:${phasePercent(clip.settle - clip.peak, clip.duration)}"></i></div>
@@ -1805,7 +1788,7 @@
       [clip.onset, COLORS.onset],
       [clip.peak, COLORS.peak],
       [clip.plateauEnd, COLORS.peak],
-      [clip.settle, COLORS.settle],
+      [clip.settle, COLORS.peak],
     ].forEach(([time, color]) => {
       ctx.strokeStyle = color;
       ctx.setLineDash([4, 3]);
@@ -1896,14 +1879,7 @@
     PLAYBACK_SETTINGS.forEach(([id, key]) =>
       applySetting(
         el[id],
-        settings[key] ??
-          (id === "skipDurationSetting"
-            ? settings.rewindDuration
-            : id === "decayDuration"
-              ? settings.returnDuration
-              : id === "morphDuration"
-                ? settings.introDuration
-                : NaN),
+        settings[key] ?? settings[LEGACY_SETTING_KEYS[id]],
       ),
     );
     const configClips = [...config.clips].sort(
@@ -1946,7 +1922,7 @@
     pause();
     playPosition = 0;
     renderAll();
-    if (clips.length) await renderAt(0, true);
+    if (clips.length) await renderAt(0);
     else clearStage();
     const missing = Math.max(0, configClips.length - matched);
     if (announce) {
@@ -2015,7 +1991,7 @@
             skipIn: clip.skipIn,
             settle: clip.settle,
           },
-          sourceStart: plan.sourceStart,
+          sourceStart: clip.onset,
           skipOut: plan.cut,
           skipIn: plan.skipIn,
           skipMatchDistance: clip.skipMatchDistance,
@@ -2056,18 +2032,16 @@
         Output,
         WebMOutputFormat,
         canEncodeVideo,
-      } = await import(MEDIABUNNY_URL);
+      } = await mediabunnyPromise;
       const options = {
         width,
         height,
         bitrate: 8_000_000,
         latencyMode: "quality",
       };
-      const codec = (await canEncodeVideo("vp9", options))
-        ? "vp9"
-        : (await canEncodeVideo("vp8", options))
-          ? "vp8"
-          : "";
+      let codec = "";
+      if (await canEncodeVideo("vp9", options)) codec = "vp9";
+      else if (await canEncodeVideo("vp8", options)) codec = "vp8";
       if (!codec) throw new Error("VP8/VP9エンコーダーを利用できません");
       const target = new BufferTarget();
       const output = new Output({ format: new WebMOutputFormat(), target });
@@ -2111,7 +2085,7 @@
       setStatus(`書き出しに失敗しました: ${error.message}`, 0, 0, true);
     } finally {
       setBusy(false);
-      await renderAt(playPosition, true).catch(() => {});
+      await renderAt(playPosition).catch(() => {});
     }
   }
 
@@ -2143,7 +2117,7 @@
     el.playhead.addEventListener("input", () => {
       pause();
       playPosition = number(el.playhead.value);
-      renderAt(playPosition, true);
+      renderAt(playPosition);
     });
     el.analyzeAllButton.addEventListener("click", () => runAnalysis(clips));
     el.analyzeClipButton.addEventListener("click", () => {
@@ -2205,7 +2179,7 @@
     [el.skipOutRange, el.skipInRange].forEach((input) =>
       input.addEventListener("change", () => {
         renderAll();
-        renderAt(playPosition, true);
+        renderAt(playPosition);
       }),
     );
     PLAYBACK_SETTINGS.map(([id]) => el[id]).forEach((input) =>
@@ -2215,7 +2189,7 @@
         pause();
         playPosition = clamp(playPosition, 0, sequenceDuration());
         renderAll();
-        renderAt(playPosition, true);
+        renderAt(playPosition);
       }),
     );
     el.exportJsonButton.addEventListener("click", exportJson);

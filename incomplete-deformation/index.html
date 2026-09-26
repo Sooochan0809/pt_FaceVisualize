@@ -179,15 +179,9 @@
             white-space: nowrap;
         }
 
-        h1,
         h2,
         p {
             margin: 0;
-        }
-
-        h1 {
-            font-size: 1rem;
-            letter-spacing: .04em;
         }
 
         h2 {
@@ -465,13 +459,6 @@
             box-shadow: 0 0 0 1px rgba(255, 255, 255, .8);
         }
 
-        .timelineLegend .skipPoint {
-            width: 2px;
-            height: 11px;
-            margin: 0 8px;
-            background: var(--ink);
-        }
-
         .previewExportRow,
         .sequenceHeaderActions {
             display: flex;
@@ -483,16 +470,6 @@
         .previewExportRow {
             justify-content: flex-end;
             margin-top: 12px;
-        }
-
-        .previewExportRow .status {
-            flex: 1;
-            min-width: 0;
-            text-align: left;
-        }
-
-        .previewExportRow button {
-            flex: 0 0 auto;
         }
 
         .accent {
@@ -705,12 +682,9 @@
             pointer-events: auto;
         }
 
-        .materialAnalysisSetting {
-            margin-bottom: 10px;
-        }
-
         #analyzeAllButton {
             width: 100%;
+            margin-bottom: 10px;
         }
 
         .clipTop {
@@ -1004,9 +978,7 @@
                     <span class="badge" id="clipCount">0 clips</span>
                 </div>
                 <input id="fileInput" type="file" accept="video/*" multiple hidden>
-                <div class="materialAnalysisSetting">
-                    <button id="analyzeAllButton" class="accent" type="button" disabled>すべて解析</button>
-                </div>
+                <button id="analyzeAllButton" class="accent" type="button" disabled>すべて解析</button>
                 <span class="status" id="status">MediaPipe / Face APIモデルを読み込んでいます</span>
                 <progress id="progress" class="previewProgress" min="0" max="1" value="0" hidden></progress>
                 <div class="clipList" id="clipList"></div>
