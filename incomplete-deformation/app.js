@@ -70,7 +70,7 @@
     MORPH_LANDMARK_INDICES.map((landmark, index) => [landmark, index]),
   );
   const TRIANGLE_OVERDRAW = 0.75;
-  const PREVIEW_MAX_EDGE = 720;
+  const PREVIEW_MAX_EDGE = 480;
   const EXPORT_FPS = 30;
   const MEDIABUNNY_URL = "https://cdn.jsdelivr.net/npm/mediabunny@1.49.0/+esm";
   const el = Object.fromEntries(
@@ -90,6 +90,7 @@
       "jsonInput",
       "importJsonButton",
       "analyzeAllButton",
+      "cancelAnalysisButton",
       "clipCount",
       "clipList",
       "risePlaybackDuration",
@@ -97,6 +98,12 @@
       "decayDuration",
       "holdDuration",
       "morphDuration",
+      "alignX",
+      "alignY",
+      "alignScale",
+      "alignXOutput",
+      "alignYOutput",
+      "alignScaleOutput",
       "loopToggle",
       "clipEditor",
       "analyzeClipButton",
@@ -128,6 +135,11 @@
     decayDuration: "returnDuration",
     morphDuration: "introDuration",
   };
+  const ALIGNMENT_SETTINGS = [
+    ["alignX", "alignXOutput", "x", 0],
+    ["alignY", "alignYOutput", "y", 0],
+    ["alignScale", "alignScaleOutput", "scale", 100],
+  ];
 
   const detectorOptions = new faceapi.TinyFaceDetectorOptions({
     inputSize: 320,
@@ -146,6 +158,8 @@
   let selectedId = null;
   let modelsReady = false;
   let busy = false;
+  let analyzing = false;
+  let analysisCancelled = false;
   let playing = false;
   let playPosition = 0;
   let playStartedAt = 0;
@@ -235,6 +249,7 @@
     el.jsonInput.disabled = busy;
     el.importJsonButton.disabled = busy;
     el.analyzeAllButton.disabled = busy || !hasClips || !modelsReady;
+    el.cancelAnalysisButton.disabled = !analyzing || analysisCancelled;
     el.analyzeClipButton.disabled = busy || !selectedClip() || !modelsReady;
     el.playButton.disabled = busy || !hasClips;
     el.playhead.disabled = busy || !hasClips;
@@ -245,8 +260,8 @@
     el.exportButton.disabled = busy || !hasClips || !("VideoEncoder" in window);
   }
 
-  function readMetadata(clip) {
-    return new Promise((resolve, reject) => {
+  async function readMetadata(clip) {
+    await new Promise((resolve, reject) => {
       const video = document.createElement("video");
       video.preload = "metadata";
       video.muted = true;
@@ -272,6 +287,19 @@
         reject(new Error(`${clip.name} を読み込めませんでした`));
       video.src = clip.url;
     });
+    try {
+      const { Input, ALL_FORMATS, BlobSource } = await mediabunnyPromise;
+      const input = new Input({
+        formats: ALL_FORMATS,
+        source: new BlobSource(clip.file),
+      });
+      const track = await input.getPrimaryVideoTrack();
+      const stats = await track?.computePacketStats(256);
+      clip.frameRate = Math.max(1, number(stats?.averagePacketRate, EXPORT_FPS));
+    } catch (error) {
+      console.warn(`${clip.name} のFPSを取得できませんでした`, error);
+      clip.frameRate = EXPORT_FPS;
+    }
   }
 
   async function addFiles(files) {
@@ -286,6 +314,7 @@
         duration: 0,
         width: 0,
         height: 0,
+        frameRate: EXPORT_FPS,
         emotion: emotionFromFileName(file.name),
         onset: 0,
         peak: 0,
@@ -366,11 +395,10 @@
   }
 
   function clipPlan(clip, index) {
-    const previousClip = clips[index - 1] || null;
+    const previousClip = clips.at(index - 1) || null;
     const cut = cutTime(clip);
     const skipIn = clamp(clip.skipIn || clip.settle, cut, clip.settle);
     const morphIn = previousClip ? setting("morphDuration", 0.2) : 0;
-    const intro = previousClip ? 0 : setting("morphDuration", 0.2);
     const forward = setting("risePlaybackDuration", 0.45);
     const skip = setting("skipDurationSetting", 0.2);
     const decay = setting("decayDuration", 0.6);
@@ -381,13 +409,12 @@
       previousClip,
       cut,
       skipIn,
-      intro,
       morphIn,
       forward,
       skip,
       decay,
       hold,
-      duration: intro + morphIn + forward + skip + decay + hold,
+      duration: morphIn + forward + skip + decay + hold,
     };
   }
 
@@ -407,13 +434,6 @@
     for (let index = 0; index < all.length; index += 1) {
       const plan = all[index];
       if (cursor <= plan.duration || index === all.length - 1) {
-        if (cursor <= plan.intro && plan.intro > 0) {
-          return mapped(plan, index, {
-            sourceTime: plan.clip.onset * clamp(cursor / plan.intro, 0, 1),
-            phase: "INTRO",
-          });
-        }
-        cursor -= plan.intro;
         if (cursor <= plan.morphIn && plan.morphIn > 0) {
           const transitionProgress = clamp(cursor / plan.morphIn, 0, 1);
           return mapped(plan, index, {
@@ -535,27 +555,19 @@
     );
   }
 
-  function alignmentTransform(clip, targetWidth, targetHeight) {
+  function faceTarget(targetWidth, targetHeight) {
     const reference = clips[0];
-    const sourcePose = clip.alignmentPose;
     const targetPose = reference?.alignmentPose;
-    if (
-      !sourcePose ||
-      !targetPose ||
-      !clip.width ||
-      !clip.height ||
-      !reference.width ||
-      !reference.height
-    )
-      return null;
-    const sourceLeft = {
-      x: sourcePose.left.x * clip.width,
-      y: sourcePose.left.y * clip.height,
-    };
-    const sourceRight = {
-      x: sourcePose.right.x * clip.width,
-      y: sourcePose.right.y * clip.height,
-    };
+    const xOffset = targetWidth * (setting("alignX", 0) / 100);
+    const yOffset = targetHeight * (setting("alignY", 0) / 100);
+    const size = setting("alignScale", 100) / 100;
+    if (!targetPose || !reference?.width || !reference.height)
+      return {
+        x: targetWidth / 2 + xOffset,
+        y: targetHeight * 0.36 + yOffset,
+        eyeDistance: targetWidth * 0.34 * size,
+        angle: 0,
+      };
     const targetScaleX = targetWidth / reference.width;
     const targetScaleY = targetHeight / reference.height;
     const targetLeft = {
@@ -566,37 +578,84 @@
       x: targetPose.right.x * reference.width * targetScaleX,
       y: targetPose.right.y * reference.height * targetScaleY,
     };
+    return {
+      x: (targetLeft.x + targetRight.x) / 2 + xOffset,
+      y: (targetLeft.y + targetRight.y) / 2 + yOffset,
+      eyeDistance:
+        Math.hypot(
+          targetRight.x - targetLeft.x,
+          targetRight.y - targetLeft.y,
+        ) * size,
+      angle: Math.atan2(
+        targetRight.y - targetLeft.y,
+        targetRight.x - targetLeft.x,
+      ),
+    };
+  }
+
+  function alignmentTransform(clip, targetWidth, targetHeight) {
+    if (!clip.width || !clip.height) return null;
+    const sourcePose = clip.alignmentPose;
+    if (!sourcePose) {
+      return {
+        sourceCenter: { x: clip.width / 2, y: clip.height / 2 },
+        targetCenter: {
+          x: targetWidth * (0.5 + setting("alignX", 0) / 100),
+          y: targetHeight * (0.5 + setting("alignY", 0) / 100),
+        },
+        rotation: 0,
+        scale:
+          Math.min(targetWidth / clip.width, targetHeight / clip.height) *
+          (setting("alignScale", 100) / 100),
+      };
+    }
+    const sourceLeft = {
+      x: sourcePose.left.x * clip.width,
+      y: sourcePose.left.y * clip.height,
+    };
+    const sourceRight = {
+      x: sourcePose.right.x * clip.width,
+      y: sourcePose.right.y * clip.height,
+    };
     const sourceCenter = {
       x: (sourceLeft.x + sourceRight.x) / 2,
       y: (sourceLeft.y + sourceRight.y) / 2,
     };
-    const targetCenter = {
-      x: (targetLeft.x + targetRight.x) / 2,
-      y: (targetLeft.y + targetRight.y) / 2,
-    };
+    const target = faceTarget(targetWidth, targetHeight);
     const sourceAngle = Math.atan2(
       sourceRight.y - sourceLeft.y,
       sourceRight.x - sourceLeft.x,
-    );
-    const targetAngle = Math.atan2(
-      targetRight.y - targetLeft.y,
-      targetRight.x - targetLeft.x,
     );
     const sourceDistance = Math.hypot(
       sourceRight.x - sourceLeft.x,
       sourceRight.y - sourceLeft.y,
     );
-    const targetDistance = Math.hypot(
-      targetRight.x - targetLeft.x,
-      targetRight.y - targetLeft.y,
-    );
     if (sourceDistance < 1) return null;
     return {
       sourceCenter,
-      targetCenter,
-      rotation: targetAngle - sourceAngle,
-      scale: targetDistance / sourceDistance,
+      targetCenter: { x: target.x, y: target.y },
+      rotation: target.angle - sourceAngle,
+      scale: target.eyeDistance / sourceDistance,
     };
+  }
+
+  function drawFaceGuide(ctx) {
+    const target = faceTarget(ctx.canvas.width, ctx.canvas.height);
+    const size = target.eyeDistance;
+    ctx.save();
+    ctx.translate(target.x, target.y);
+    ctx.rotate(target.angle);
+    ctx.strokeStyle = "rgba(255,255,255,.62)";
+    ctx.lineWidth = Math.max(1, ctx.canvas.width * 0.0015);
+    ctx.setLineDash([ctx.lineWidth * 4, ctx.lineWidth * 3]);
+    ctx.beginPath();
+    ctx.ellipse(0, size * 0.72, size * 1.08, size * 1.42, 0, 0, Math.PI * 2);
+    ctx.moveTo(-size * 0.32, 0);
+    ctx.ellipse(-size * 0.5, 0, size * 0.18, size * 0.09, 0, 0, Math.PI * 2);
+    ctx.moveTo(size * 0.68, 0);
+    ctx.ellipse(size * 0.5, 0, size * 0.18, size * 0.09, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
   }
 
   function transformPoint(point, clip, transform) {
@@ -876,7 +935,7 @@
   function updateStage(mapped) {
     const morphing = mapped.phase.startsWith("MORPH");
     el.stageTitle.textContent = mapped.phase === "MORPH_IN"
-      ? `${mapped.index}. ${mapped.clip.name} → ${mapped.index + 1}. ${mapped.nextClip.name}`
+      ? `${clips.indexOf(mapped.clip) + 1}. ${mapped.clip.name} → ${mapped.index + 1}. ${mapped.nextClip.name}`
       : `${mapped.index + 1}. ${mapped.clip.name}`;
     if (morphing) {
       const label = mapped.phase === "MORPH_IN" ? "NEUTRAL → ONSET" : "PEAK SKIP";
@@ -889,7 +948,6 @@
   }
 
   function playbackRate(mapped) {
-    if (mapped.phase === "INTRO") return mapped.clip.onset / mapped.intro;
     if (mapped.phase === "FORWARD")
       return (mapped.cut - mapped.clip.onset) / mapped.forward;
     if (mapped.phase === "DECAY")
@@ -982,6 +1040,7 @@
         previewVideo,
       );
     }
+    drawFaceGuide(outputContext);
     updateStage(mapped);
   }
 
@@ -1015,6 +1074,7 @@
         el.outputCanvas.height,
       );
     }
+    drawFaceGuide(outputContext);
     updateStage(mapped);
     updateTransport(mapped.index);
   }
@@ -1417,8 +1477,17 @@
   }
 
   async function analyzeClip(clip, progressOffset = 0, progressTotal = 1) {
+    const previousSamples = clip.samples;
+    const previousSeries = clip.analysisSeries;
+    const cancel = () => {
+      clip.samples = previousSamples;
+      clip.analysisSeries = previousSeries;
+      return false;
+    };
+    if (analysisCancelled) return cancel();
     const [, , faceLandmarker, , { Input, ALL_FORMATS, BlobSource, CanvasSink }] =
       await models;
+    if (analysisCancelled) return cancel();
     const input = new Input({
       formats: ALL_FORMATS,
       source: new BlobSource(clip.file),
@@ -1436,6 +1505,7 @@
     clip.samples = [];
     clip.analysisSeries = [];
     for await (const wrapped of sink.canvases()) {
+      if (analysisCancelled) return cancel();
       const time = wrapped.timestamp - firstTimestamp;
       setStatus(
         `${clip.name} の全フレームを解析中（${clip.samples.length + 1}フレーム）`,
@@ -1464,6 +1534,7 @@
       const landmarks = normalizeMediaPipeLandmarks(detectedMesh);
       const eyePose = mediaPipeEyePose(detectedMesh);
       const detection = await faceDetection;
+      if (analysisCancelled) return cancel();
       clip.samples.push({
         time,
         landmarks,
@@ -1481,22 +1552,32 @@
       if (clip.samples.length % 8 === 0)
         await new Promise(requestAnimationFrame);
     }
+    if (analysisCancelled) return cancel();
     if (!clip.samples.length) throw new Error(`${clip.name} に映像フレームがありません`);
     clip.landmarkDetectionRate =
       clip.samples.filter((sample) => sample.landmarks).length /
       clip.samples.length;
     clip.analyzed = detectBoundaries(clip);
     rebuildTransitions();
+    return true;
   }
 
   async function runAnalysis(targets) {
     if (busy || !modelsReady || !targets.length) return;
     pause();
+    analyzing = true;
+    analysisCancelled = false;
     setBusy(true);
+    let completed = 0;
     try {
       for (let i = 0; i < targets.length; i += 1) {
-        await analyzeClip(targets[i], i, targets.length);
+        if (!(await analyzeClip(targets[i], i, targets.length))) break;
+        completed += 1;
         renderAll();
+      }
+      if (analysisCancelled) {
+        setStatus(`解析をキャンセルしました（${completed}本完了）`);
+        return;
       }
       const failed = targets.filter((clip) => !clip.analyzed).length;
       setStatus(
@@ -1508,6 +1589,7 @@
       console.error(error);
       setStatus(`解析に失敗しました: ${error.message}`, 0, 0, true);
     } finally {
+      analyzing = false;
       setBusy(false);
       renderAll();
       await renderAt(playPosition).catch(() => {});
@@ -1628,9 +1710,9 @@
         const phases = [
           [
             "intro",
-            plan.intro + plan.morphIn,
-            "導入",
-            index === 0 ? "冒頭→発生" : "前素材の無表情→発生",
+            plan.morphIn,
+            "素材間接続",
+            "前素材の無表情→発生",
           ],
           ["expression", plan.forward, "表情化", "発生→上昇終了"],
           ["skip", plan.skip, "スキップ", "ピーク維持区間をモーフで省略"],
@@ -1647,10 +1729,10 @@
         composition.className = "timelineComposition";
         const sources = [
           [
-            index === 0 ? "single" : "morph",
-            plan.intro + plan.morphIn,
-            "導入",
-            index === 0 ? `${plan.clip.name}のみ` : "前素材と次素材のモーフ",
+            "morph",
+            plan.morphIn,
+            "素材間接続",
+            "前素材と次素材のモーフ",
           ],
           ["single", plan.forward, `${clipNumber}のみ`, `${plan.clip.name}のみ`],
           ["morph", plan.skip, "スキップ", "同一素材内のピークスキップ・モーフ"],
@@ -1663,7 +1745,7 @@
             .map((part) => timelinePart("timelineSource", part, plan.duration)),
         );
 
-        const onsetOffset = plan.intro + plan.morphIn;
+        const onsetOffset = plan.morphIn;
         const skipOutOffset = onsetOffset + plan.forward;
         const skipInOffset = skipOutOffset + plan.skip;
         const events = [
@@ -1701,7 +1783,7 @@
         { once: true },
       );
     }
-    el.clipPreviewMeta.textContent = `${clip.name} · ${clip.width}×${clip.height} · ${seconds(clip.duration)}`;
+    el.clipPreviewMeta.textContent = `${clip.name} · ${clip.width}×${clip.height} · ${clip.frameRate.toFixed(2).replace(/\.00$/, "")}fps · ${seconds(clip.duration)}`;
     el.emotionSelect.value = clip.emotion;
     el.emotionLegend.textContent = LABELS[clip.emotion];
     el.skipOutInput.value = cutTime(clip).toFixed(2);
@@ -1882,6 +1964,10 @@
         settings[key] ?? settings[LEGACY_SETTING_KEYS[id]],
       ),
     );
+    ALIGNMENT_SETTINGS.forEach(([id, outputId, key]) => {
+      applySetting(el[id], config.alignment?.[key]);
+      el[outputId].value = `${el[id].value}%`;
+    });
     const configClips = [...config.clips].sort(
       (a, b) => number(a.order, 0) - number(b.order, 0),
     );
@@ -1959,9 +2045,9 @@
 
   function exportJson() {
     const data = {
-      version: 6,
+      version: 7,
       mode: "incomplete-deformation-peak-skip",
-      algorithm: "fixed-tempo_rise_peak-skip_natural-decay",
+      algorithm: "cyclic_fixed-tempo_peak-skip_natural-decay",
       settings: {
         ...Object.fromEntries(
           PLAYBACK_SETTINGS.map(([id, key, fallback]) => [
@@ -1969,14 +2055,20 @@
             number(el[id].value, fallback),
           ]),
         ),
-        introDuration: number(el.morphDuration.value, 0.2),
       },
+      alignment: Object.fromEntries(
+        ALIGNMENT_SETTINGS.map(([id, , key, fallback]) => [
+          key,
+          number(el[id].value, fallback),
+        ]),
+      ),
       clips: clips.map((clip, index) => {
         const plan = clipPlan(clip, index);
         return {
           order: index + 1,
           source: clip.name,
           duration: clip.duration,
+          frameRate: clip.frameRate,
           emotion: clip.emotion,
           analysisMethod: "mediapipe-landmarks-75_expression-25",
           landmarkDetectionRate: clip.landmarkDetectionRate,
@@ -1996,7 +2088,6 @@
           skipIn: plan.skipIn,
           skipMatchDistance: clip.skipMatchDistance,
           outputPhases: {
-            intro: plan.intro,
             morphIn: plan.morphIn,
             rise: plan.forward,
             peakSkipMorph: plan.skip,
@@ -2018,7 +2109,8 @@
     pause();
     setBusy(true);
     const total = sequenceDuration();
-    const frameCount = Math.max(2, Math.round(total * EXPORT_FPS));
+    const exportFps = Math.max(...clips.map((clip) => clip.frameRate || EXPORT_FPS));
+    const frameCount = Math.max(2, Math.round(total * exportFps));
     const width = clips[0].width;
     const height = clips[0].height;
     const canvas = document.createElement("canvas");
@@ -2036,6 +2128,7 @@
       const options = {
         width,
         height,
+        frameRate: exportFps,
         bitrate: 8_000_000,
         latencyMode: "quality",
       };
@@ -2051,10 +2144,10 @@
         latencyMode: "quality",
         keyFrameInterval: 1,
       });
-      output.addVideoTrack(source, { frameRate: EXPORT_FPS });
+      output.addVideoTrack(source, { frameRate: exportFps });
       await output.start();
       for (let frame = 0; frame < frameCount; frame += 1) {
-        const time = frame / EXPORT_FPS;
+        const time = frame / exportFps;
         const mapped = mapSequenceTime(Math.min(time, total));
         if (mapped.phase.startsWith("MORPH")) {
           await renderMorphFrame(ctx, mapped, width, height);
@@ -2063,7 +2156,7 @@
           await seekVideoSlot(el.sourceVideo, mapped.sourceTime);
           drawAlignedFrame(ctx, mapped.clip, width, height);
         }
-        await source.add(time, 1 / EXPORT_FPS, { keyFrame: frame === 0 });
+        await source.add(time, 1 / exportFps, { keyFrame: frame === 0 });
         setStatus(
           `WebMを書き出し中 ${frame + 1}/${frameCount}`,
           frame + 1,
@@ -2078,7 +2171,7 @@
         "incomplete-deformation.webm",
       );
       setStatus(
-        `WebMを書き出しました（${(frameCount / EXPORT_FPS).toFixed(2)}秒）`,
+        `WebMを書き出しました（${(frameCount / exportFps).toFixed(2)}秒 / ${exportFps.toFixed(2).replace(/\.00$/, "")}fps）`,
       );
     } catch (error) {
       console.error(error);
@@ -2120,6 +2213,11 @@
       renderAt(playPosition);
     });
     el.analyzeAllButton.addEventListener("click", () => runAnalysis(clips));
+    el.cancelAnalysisButton.addEventListener("click", () => {
+      analysisCancelled = true;
+      updateControls();
+      setStatus("解析をキャンセルしています…", el.progress.value, el.progress.max);
+    });
     el.analyzeClipButton.addEventListener("click", () => {
       const clip = selectedClip();
       if (clip) runAnalysis([clip]);
@@ -2192,6 +2290,16 @@
         renderAt(playPosition);
       }),
     );
+    ALIGNMENT_SETTINGS.forEach(([id, outputId]) => {
+      const input = el[id];
+      const update = () => {
+        el[outputId].value = `${input.value}%`;
+        pause();
+        renderAt(playPosition);
+      };
+      input.addEventListener("input", update);
+      update();
+    });
     el.exportJsonButton.addEventListener("click", exportJson);
     el.exportButton.addEventListener("click", exportWebM);
     new ResizeObserver(() => {
@@ -2225,5 +2333,11 @@
   }
 
   console.assert(clamp(2, 0, 1) === 1 && number("0.2") === 0.2);
+  console.assert(
+    Number.isFinite(
+      alignmentTransform({ width: 100, height: 200 }, 200, 400)?.scale,
+    ),
+    "Manual alignment must work before face analysis",
+  );
   initialize();
 })();

@@ -7,7 +7,7 @@
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <title>Incomplete Deformation</title>
     <script defer src="../modules/faceAPI/face-api.min.js"></script>
-    <script defer src="app.js?v=20260926-7"></script>
+    <script defer src="app.js?v=20260927-5"></script>
     <style>
         :root {
             --bg: #f2f1ee;
@@ -546,6 +546,11 @@
             line-height: 1.25;
         }
 
+        .rangeLabel {
+            display: flex;
+            justify-content: space-between;
+        }
+
         .field input[type="number"],
         .field select {
             width: 100%;
@@ -682,8 +687,10 @@
             pointer-events: auto;
         }
 
-        #analyzeAllButton {
-            width: 100%;
+        .analysisActions {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            gap: 8px;
             margin-bottom: 10px;
         }
 
@@ -956,7 +963,7 @@
                 </div>
                 <div class="sequenceTimeline" id="sequenceTimeline" aria-label="シーケンスタイムライン"></div>
                 <div class="timelineLegend" aria-label="タイムライン凡例">
-                    <span><i class="intro"></i>導入</span>
+                    <span><i class="intro"></i>素材間接続</span>
                     <span><i class="expression"></i>表情化</span>
                     <span><i class="skip"></i>スキップ</span>
                     <span><i class="decay"></i>自然収束</span>
@@ -978,7 +985,10 @@
                     <span class="badge" id="clipCount">0 clips</span>
                 </div>
                 <input id="fileInput" type="file" accept="video/*" multiple hidden>
-                <button id="analyzeAllButton" class="accent" type="button" disabled>すべて解析</button>
+                <div class="analysisActions">
+                    <button id="analyzeAllButton" class="accent" type="button" disabled>すべて解析</button>
+                    <button id="cancelAnalysisButton" type="button" disabled>キャンセル</button>
+                </div>
                 <span class="status" id="status">MediaPipe / Face APIモデルを読み込んでいます</span>
                 <progress id="progress" class="previewProgress" min="0" max="1" value="0" hidden></progress>
                 <div class="clipList" id="clipList"></div>
@@ -1042,13 +1052,23 @@
                         <span class="fieldHint">下降側の再開位置から無表情まで</span>
                     </label>
                     <div class="settingsGroupLabel">素材間の接続</div>
-                    <label class="field">初回導入／次素材へのモーフ（秒）
-                        <input id="morphDuration" type="number" min="0" max="1" step="0.05" value="0.20">
-                        <span class="fieldHint">1本目は冒頭尺、以降は前素材の無表情→次素材の発生</span>
+                    <label class="field">素材間モーフ（秒）
+                        <input id="morphDuration" type="number" min="0.05" max="1" step="0.05" value="0.20">
+                        <span class="fieldHint">前素材の無表情から次素材の発生へ。最後から最初にも適用</span>
                     </label>
                     <label class="field">無表情の保持（秒）
                         <input id="holdDuration" type="number" min="0" max="5" step="0.05" value="0.10">
                         <span class="fieldHint">次の素材へ移る前に無表情を見せる時間</span>
+                    </label>
+                    <div class="settingsGroupLabel">顔位置</div>
+                    <label class="field"><span class="rangeLabel">横位置 <output id="alignXOutput">0%</output></span>
+                        <input id="alignX" type="range" min="-25" max="25" step="1" value="0">
+                    </label>
+                    <label class="field"><span class="rangeLabel">縦位置 <output id="alignYOutput">0%</output></span>
+                        <input id="alignY" type="range" min="-25" max="25" step="1" value="0">
+                    </label>
+                    <label class="field"><span class="rangeLabel">顔サイズ <output id="alignScaleOutput">100%</output></span>
+                        <input id="alignScale" type="range" min="50" max="150" step="1" value="100">
                     </label>
                 </div>
             </section>
